@@ -8,7 +8,7 @@ import {
   type NodeRegistration,
   type Provider,
   type WorkspaceDescriptor,
-} from "./index.js";
+} from "./index.ts";
 
 type Clock = () => Date;
 
@@ -26,11 +26,13 @@ function providerCapability(provider: Provider): HostedNode["capabilities"][numb
 
 export class NodeRegistry {
   private readonly nodes = new Map<string, HostedNode>();
+  private readonly clock: Clock;
+  private readonly heartbeatTimeoutMs: number;
 
-  constructor(
-    private readonly clock: Clock = defaultClock,
-    private readonly heartbeatTimeoutMs = DEFAULT_HEARTBEAT_TIMEOUT_MS,
-  ) {}
+  constructor(clock: Clock = defaultClock, heartbeatTimeoutMs = DEFAULT_HEARTBEAT_TIMEOUT_MS) {
+    this.clock = clock;
+    this.heartbeatTimeoutMs = heartbeatTimeoutMs;
+  }
 
   enroll(registration: NodeRegistration): HostedNode {
     const now = this.clock().toISOString();
@@ -152,8 +154,11 @@ export class NodeRegistry {
 export class JobStore {
   private readonly jobs = new Map<string, AgentJob>();
   private readonly byIdempotencyKey = new Map<string, string>();
+  private readonly clock: Clock;
 
-  constructor(private readonly clock: Clock = defaultClock) {}
+  constructor(clock: Clock = defaultClock) {
+    this.clock = clock;
+  }
 
   create(request: CreateJobRequest, nodeId: string): AgentJob {
     const existingId = this.byIdempotencyKey.get(request.idempotencyKey);
@@ -191,6 +196,11 @@ export class JobStore {
     return this.jobs.get(jobId);
   }
 
+  getByIdempotencyKey(idempotencyKey: string): AgentJob | undefined {
+    const jobId = this.byIdempotencyKey.get(idempotencyKey);
+    return jobId ? this.jobs.get(jobId) : undefined;
+  }
+
   private update(jobId: string, patch: Partial<AgentJob>): AgentJob {
     const job = this.require(jobId);
     const updated = { ...job, ...patch };
@@ -207,8 +217,11 @@ export class JobStore {
 
 export class AuditLog {
   private readonly events: AuditEvent[] = [];
+  private readonly clock: Clock;
 
-  constructor(private readonly clock: Clock = defaultClock) {}
+  constructor(clock: Clock = defaultClock) {
+    this.clock = clock;
+  }
 
   append(
     type: AuditEvent["type"],

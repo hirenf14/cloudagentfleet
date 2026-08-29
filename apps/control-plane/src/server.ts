@@ -1,6 +1,10 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
-import { ControlPlane } from "./index.js";
-import type { NodeRegistration } from "@hosted-agents/protocol";
+import { ControlPlane } from "./index.ts";
+import type {
+  CreateJobRequest,
+  NodeHeartbeat,
+  NodeRegistration,
+} from "../../../packages/protocol/src/index.ts";
 
 const MAX_BODY_BYTES = 1_048_576;
 
@@ -83,6 +87,42 @@ async function route(
     const registration = await readJson<NodeRegistration>(request);
     const worker = controlPlane.enrollNode(registration);
     sendJson(response, 201, { worker });
+    return;
+  }
+
+  const heartbeatMatch = url.pathname.match(/^\/api\/workers\/([^/]+)\/heartbeat$/);
+  if (method === "POST" && heartbeatMatch) {
+    const heartbeat = await readJson<NodeHeartbeat>(request);
+    const worker = controlPlane.heartbeatNode({
+      ...heartbeat,
+      nodeId: heartbeatMatch[1]!,
+    });
+    sendJson(response, 200, { worker });
+    return;
+  }
+
+  if (method === "POST" && url.pathname === "/api/jobs") {
+    const jobRequest = await readJson<CreateJobRequest>(request);
+    const job = await controlPlane.createJob(jobRequest);
+    sendJson(response, 202, { job });
+    return;
+  }
+
+  const jobMatch = url.pathname.match(/^\/api\/jobs\/([^/]+)$/);
+  if (method === "GET" && jobMatch) {
+    const job = controlPlane.jobs.get(jobMatch[1]!);
+    if (!job) {
+      sendJson(response, 404, { error: "Job not found" });
+      return;
+    }
+    sendJson(response, 200, { job });
+    return;
+  }
+
+  const cancelMatch = url.pathname.match(/^\/api\/jobs\/([^/]+)\/cancel$/);
+  if (method === "POST" && cancelMatch) {
+    await controlPlane.cancelJob(cancelMatch[1]!);
+    sendJson(response, 202, { job: controlPlane.jobs.get(cancelMatch[1]!) });
     return;
   }
 

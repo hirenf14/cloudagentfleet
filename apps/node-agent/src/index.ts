@@ -2,7 +2,7 @@ import type {
   ControlMessage,
   NodeMessage,
   NodeRegistration,
-} from "@hosted-agents/protocol";
+} from "../../../packages/protocol/src/index.ts";
 
 export interface NodeAgentConfig extends NodeRegistration {
   controlPlaneUrl: string;
@@ -32,10 +32,12 @@ export type SendNodeMessage = (message: NodeMessage) => Promise<void>;
 export type HandleControlMessage = (message: ControlMessage) => Promise<void>;
 
 export class NodeAgent {
+  readonly config: NodeAgentConfig;
   private connected = false;
   private revoked = false;
 
-  constructor(readonly config: NodeAgentConfig) {
+  constructor(config: NodeAgentConfig) {
+    this.config = config;
     validateConfig(config);
   }
 

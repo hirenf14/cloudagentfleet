@@ -6,7 +6,7 @@
   "scripts": {
     "build": "tsc --noEmit",
     "dev": "node --experimental-strip-types --watch src/server.ts",
-    "test": "node --test",
+    "test": "node --experimental-strip-types --test",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

@@ -1,14 +1,12 @@
-import {
-  AuditLog,
-  JobStore,
-  NodeRegistry,
-  type AgentJob,
-  type ControlMessage,
-  type CreateJobRequest,
-  type HostedNode,
-  type NodeHeartbeat,
-  type NodeRegistration,
-} from "@hosted-agents/protocol";
+import { AuditLog, JobStore, NodeRegistry } from "../../../packages/protocol/src/lifecycle.ts";
+import type {
+  AgentJob,
+  ControlMessage,
+  CreateJobRequest,
+  HostedNode,
+  NodeHeartbeat,
+  NodeRegistration,
+} from "../../../packages/protocol/src/index.ts";
 
 export interface NodeConnection {
   node: HostedNode;
@@ -52,6 +50,9 @@ export class ControlPlane {
   }
 
   async createJob(request: CreateJobRequest): Promise<AgentJob> {
+    const existing = this.jobs.getByIdempotencyKey(request.idempotencyKey);
+    if (existing) return existing;
+
     const node = this.nodes.select(request.provider, request.nodeId);
     this.nodes.selectWorkspace(node.id, request.workspaceId, request.provider);
     const connection = this.connections.get(node.id);
