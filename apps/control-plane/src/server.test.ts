@@ -116,11 +116,58 @@ test("enrolls, assigns, cancels, audits, and revokes a Worker", async () => {
     assert.equal(cancelled.job.status, "cancelled");
     assert.equal(messages[1].type, "job.cancel");
 
+    const completedJobResponse = await fetch(`${baseUrl}/api/jobs`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        provider: "codeman",
+        nodeId: registration.nodeId,
+        workspaceId: "workspace-app",
+        prompt: "Report completion through the Worker transport",
+        idempotencyKey: "smoke-test-2",
+      }),
+    });
+    const completedJob = await json(completedJobResponse);
+    for (const message of [
+      {
+        type: "job.accept",
+        jobId: completedJob.job.id,
+        idempotencyKey: "smoke-test-2",
+      },
+      {
+        type: "job.event",
+        jobId: completedJob.job.id,
+        event: "completed",
+        data: "done",
+      },
+    ]) {
+      const messageResponse = await fetch(
+        `${baseUrl}/api/workers/${registration.nodeId}/messages`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(message),
+        },
+      );
+      assert.equal(messageResponse.status, 202);
+    }
+    const completedState = await json(
+      await fetch(`${baseUrl}/api/jobs/${completedJob.job.id}`),
+    );
+    assert.equal(completedState.job.status, "completed");
+
     const auditResponse = await fetch(`${baseUrl}/api/audit`);
     const audit = await json(auditResponse);
     assert.deepEqual(
       audit.events.map((event: { type: string }) => event.type),
-      ["node.enrolled", "node.heartbeat", "job.created", "job.cancelled"],
+      [
+        "node.enrolled",
+        "node.heartbeat",
+        "job.created",
+        "job.cancelled",
+        "job.created",
+        "job.completed",
+      ],
     );
 
     app.controlPlane.revokeNode(registration.nodeId);

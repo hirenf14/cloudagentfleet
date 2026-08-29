@@ -35,9 +35,20 @@ hosted-agents setup
 
 The current bootstrap performs a read-only environment check. Pairing, identity
 storage, and user-service installation will be enabled once control-plane
-transport is implemented.
+installation is implemented. The Worker runtime itself is now real: it enrolls
+over an outbound SSE/HTTP transport and executes `codeman` jobs through
+Codeman's supported `/api/v1/sessions` API.
+
+## Run a Codeman Worker locally
+
+Install Codeman using its official installer, start `codeman web`, and then
+start our Worker with the environment described in
+[`docs/CODEMAN-WORKER.md`](docs/CODEMAN-WORKER.md). Codeman remains responsible
+for tmux, PTYs, CLI credentials, terminal streaming, and durable sessions; this
+project owns worker enrollment, workspace policy, routing, and job lifecycle.
 
 ## Status
 
-The repository currently contains the initial architecture and security
-baseline. Implementation follows the roadmap in `docs/ROADMAP.md`.
+The repository contains the Controller/Worker transport and a tested Codeman
+execution path. Dashboard, persistent enrollment, preview relay, remote browser,
+and official Cursor/Claude adapters remain on the roadmap in `docs/ROADMAP.md`.

@@ -3,6 +3,7 @@ import { ControlPlane } from "./index.ts";
 import type {
   CreateJobRequest,
   NodeHeartbeat,
+  NodeMessage,
   NodeRegistration,
 } from "../../../packages/protocol/src/index.ts";
 
@@ -87,6 +88,44 @@ async function route(
     const registration = await readJson<NodeRegistration>(request);
     const worker = controlPlane.enrollNode(registration);
     sendJson(response, 201, { worker });
+    return;
+  }
+
+  const connectMatch = url.pathname.match(/^\/api\/workers\/([^/]+)\/connect$/);
+  if (method === "GET" && connectMatch) {
+    const nodeId = decodeURIComponent(connectMatch[1]!);
+    const node = controlPlane.nodes.list().find((candidate) => candidate.id === nodeId);
+    if (!node) {
+      sendJson(response, 404, { error: "Worker not found" });
+      return;
+    }
+
+    response.writeHead(200, {
+      "content-type": "text/event-stream; charset=utf-8",
+      "cache-control": "no-cache, no-store",
+      connection: "keep-alive",
+    });
+    response.write(`event: connected\ndata: ${JSON.stringify({ nodeId })}\n\n`);
+    controlPlane.registerConnection({
+      node,
+      send: async (message) => {
+        if (!response.writableEnded) {
+          response.write(`data: ${JSON.stringify(message)}\n\n`);
+        }
+      },
+      close: async () => {
+        if (!response.writableEnded) response.end();
+      },
+    });
+    response.on("close", () => controlPlane.removeConnection(nodeId));
+    return;
+  }
+
+  const messageMatch = url.pathname.match(/^\/api\/workers\/([^/]+)\/messages$/);
+  if (method === "POST" && messageMatch) {
+    const message = await readJson<NodeMessage>(request);
+    controlPlane.receiveNodeMessage(decodeURIComponent(messageMatch[1]!), message);
+    sendJson(response, 202, { accepted: true });
     return;
   }
 

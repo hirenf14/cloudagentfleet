@@ -6,6 +6,7 @@ import type {
 
 export interface NodeAgentConfig extends NodeRegistration {
   controlPlaneUrl: string;
+  authToken?: string;
 }
 
 /**
@@ -18,7 +19,8 @@ export function validateConfig(config: NodeAgentConfig): NodeAgentConfig {
   }
 
   const controlPlane = new URL(config.controlPlaneUrl);
-  if (controlPlane.protocol !== "https:" && controlPlane.hostname !== "localhost") {
+  const localHost = ["localhost", "127.0.0.1", "::1"].includes(controlPlane.hostname);
+  if (controlPlane.protocol !== "https:" && !localHost) {
     throw new Error("controlPlaneUrl must use HTTPS outside local development");
   }
 

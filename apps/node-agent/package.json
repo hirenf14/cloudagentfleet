@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "build": "tsc --noEmit",
-    "dev": "node --watch src/index.ts",
+    "dev": "node --experimental-strip-types --watch src/main.ts",
+    "start": "node --experimental-strip-types src/main.ts",
     "test": "node --test",
     "typecheck": "tsc --noEmit"
   },

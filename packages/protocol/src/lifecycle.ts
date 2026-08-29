@@ -184,6 +184,14 @@ export class JobStore {
     return this.update(jobId, { status: "running" });
   }
 
+  complete(jobId: string): AgentJob {
+    return this.update(jobId, { status: "completed" });
+  }
+
+  fail(jobId: string): AgentJob {
+    return this.update(jobId, { status: "failed" });
+  }
+
   cancel(jobId: string): AgentJob {
     const job = this.require(jobId);
     if (job.status === "completed" || job.status === "failed") {

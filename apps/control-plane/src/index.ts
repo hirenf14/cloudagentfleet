@@ -4,6 +4,7 @@ import type {
   ControlMessage,
   CreateJobRequest,
   HostedNode,
+  NodeMessage,
   NodeHeartbeat,
   NodeRegistration,
 } from "../../../packages/protocol/src/index.ts";
@@ -42,11 +43,49 @@ export class ControlPlane {
     if (connection.node.status === "revoked") {
       throw new Error(`Cannot register revoked node: ${connection.node.id}`);
     }
+    void this.connections.get(connection.node.id)?.close();
     this.connections.set(connection.node.id, connection);
   }
 
   removeConnection(nodeId: string): void {
     this.connections.delete(nodeId);
+  }
+
+  receiveNodeMessage(nodeId: string, message: NodeMessage): void {
+    if (message.type === "heartbeat") {
+      this.heartbeatNode({ ...message, nodeId });
+      return;
+    }
+
+    const jobId = message.type === "job.accept" || message.type === "job.event"
+      ? message.jobId
+      : undefined;
+    if (!jobId) return;
+
+    const job = this.jobs.get(jobId);
+    if (!job) throw new Error(`Unknown job: ${jobId}`);
+    if (job.nodeId !== nodeId) {
+      throw new Error(`Job ${jobId} is assigned to a different node`);
+    }
+
+    if (message.type === "job.accept") {
+      this.jobs.start(jobId);
+      return;
+    }
+
+    if (message.event === "started") {
+      this.jobs.start(jobId);
+      this.audit.append("job.started", "node", jobId, { nodeId });
+    } else if (message.event === "completed") {
+      this.jobs.complete(jobId);
+      this.audit.append("job.completed", "node", jobId, { nodeId });
+    } else if (message.event === "failed") {
+      this.jobs.fail(jobId);
+      this.audit.append("job.failed", "node", jobId, { nodeId });
+    } else if (message.event === "cancelled") {
+      if (job.status !== "cancelled") this.jobs.cancel(jobId);
+      this.audit.append("job.cancelled", "node", jobId, { nodeId });
+    }
   }
 
   async createJob(request: CreateJobRequest): Promise<AgentJob> {
