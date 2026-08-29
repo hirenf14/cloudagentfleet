@@ -33,11 +33,17 @@ The onboarding entry point is:
 hosted-agents setup
 ```
 
-The current bootstrap performs a read-only environment check. Pairing, identity
-storage, and user-service installation will be enabled once control-plane
-installation is implemented. The Worker runtime itself is now real: it enrolls
-over an outbound SSE/HTTP transport and executes `codeman` jobs through
-Codeman's supported `/api/v1/sessions` API.
+The setup flow detects prerequisites, asks before installing Codeman, lets you
+select approved folders or whole-system access, discovers workspaces, and can
+start the real Worker:
+
+```bash
+node apps/cli/bin/hosted-agents.mjs setup --run
+```
+
+The Worker enrolls over an outbound SSE/HTTP transport and executes `codeman`
+jobs through Codeman's supported `/api/v1/sessions` API. Pairing, protected
+identity storage, and persistent service installation are still being built.
 
 ## Run a Codeman Worker locally
 

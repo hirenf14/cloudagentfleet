@@ -18,7 +18,30 @@ On Windows, run those commands inside WSL. Keep Codeman's authentication and
 provider login local to that machine. Hosted Agents does not copy those
 credentials to the Controller.
 
-## Start the Worker
+## Configure and start with the CLI
+
+From the repository root, run:
+
+```bash
+node apps/cli/bin/hosted-agents.mjs setup --run
+```
+
+The guided flow detects WSL/Codeman, asks before installing Codeman, lets you
+choose approved folders or whole-system access, discovers workspaces beneath
+those roots, selects the Codeman mode, writes a machine-local configuration,
+starts Codeman, and launches the Worker. To configure without launching, omit
+`--run`; later use `hosted-agents run`.
+
+Once a Worker is online, run this Controller-side selection flow:
+
+```bash
+node apps/cli/bin/hosted-agents.mjs start
+```
+
+It selects an online Worker, then a ready workspace, then a ready agent, asks
+for the prompt, and creates the job with an idempotency key.
+
+## Start the Worker manually
 
 The current runtime accepts configuration through environment variables:
 

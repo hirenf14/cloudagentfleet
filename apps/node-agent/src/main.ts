@@ -1,4 +1,4 @@
-import { CodemanClient, CodemanWorkerRuntime } from "./codeman.ts";
+import { CodemanClient, CodemanWorkerRuntime, type CodemanMode } from "./codeman.ts";
 import { validateConfig, type NodeAgentConfig } from "./index.ts";
 import { ControllerTransport } from "./transport.ts";
 import type { WorkspaceDescriptor, WorkspacePolicy } from "../../../packages/protocol/src/index.ts";
@@ -31,6 +31,25 @@ function platform(): NodeAgentConfig["platform"] {
   return "linux";
 }
 
+function mode(): CodemanMode {
+  const selected = process.env.HOSTED_AGENTS_CODEMAN_MODE ?? "claude";
+  const modes: CodemanMode[] = [
+    "claude",
+    "shell",
+    "opencode",
+    "codex",
+    "gemini",
+    "antigravity",
+    "pi",
+    "grok",
+    "deepseek",
+  ];
+  if (!modes.includes(selected as CodemanMode)) {
+    throw new Error(`Unsupported HOSTED_AGENTS_CODEMAN_MODE: ${selected}`);
+  }
+  return selected as CodemanMode;
+}
+
 export async function runWorker(): Promise<void> {
   const workspaces = parseWorkspaces();
   const config = validateConfig({
@@ -55,6 +74,7 @@ export async function runWorker(): Promise<void> {
     workspaces,
     workspacePolicy: config.workspacePolicy ?? { mode: "folders", roots: [] },
     send: (message) => transport.send(message),
+    mode: mode(),
   });
 
   process.once("SIGINT", () => transport.stop());

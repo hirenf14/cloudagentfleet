@@ -6,7 +6,7 @@ import type {
   WorkspacePolicy,
 } from "../../../packages/protocol/src/index.ts";
 
-type CodemanMode =
+export type CodemanMode =
   | "claude"
   | "shell"
   | "opencode"
