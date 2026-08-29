@@ -1,0 +1,12 @@
+{
+  "name": "hosted-agents",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Private multi-machine fleet control for Codeman, Cursor, and Claude Code.",
+  "scripts": {
+    "build": "pnpm -r build",
+    "dev": "pnpm --parallel --filter './apps/*' dev",
+    "test": "pnpm -r test",
+    "typecheck": "pnpm -r typecheck"
+  }
+}
