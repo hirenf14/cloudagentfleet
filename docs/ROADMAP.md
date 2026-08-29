@@ -9,9 +9,12 @@
 
 ## Phase 1a: One-command setup
 
+- Signed standalone installers for Windows, macOS, and Linux
 - `hosted-agents setup` prerequisite detection
+- Capability selection and confirmation-based dependency provisioning
 - One-time pairing and protected node identity
 - User-level startup service installation
+- Resume after reboot, dry-run, doctor, and remove flows
 - Outbound connectivity and capability health checks
 - Explicit confirmation for optional installs
 

@@ -14,8 +14,9 @@ verification, and missing setup steps are shown before they are applied.
 
 1. Detect the operating system, WSL, Node, Git, Codeman, tmux, Docker, browser,
    Cursor CLI, and Claude Code.
-2. Show a required/optional checklist. Ask before installing optional software,
-   enabling Docker, or registering a startup service.
+2. Ask which execution capabilities to enable, then show the required
+   dependency checklist. Ask before installing software, enabling Docker, or
+   registering a startup service.
 3. Ask for the control-plane URL and a short-lived pairing code displayed in the
    dashboard.
 4. Generate a machine keypair locally and send only the public key during
@@ -44,9 +45,11 @@ hosted-agents worker stop
 hosted-agents worker remove
 ```
 
-The worker can launch or connect to already-configured Codeman, Cursor, and
-Claude runtimes. It only checks their availability and authentication state.
-Users continue to run provider-specific login/setup commands themselves.
+The worker can launch or connect to Codeman, Cursor, and Claude runtimes. When
+Codeman is selected and missing, setup provisions the required WSL/tmux
+environment on Windows and installs Codeman after confirmation. Cursor and
+Claude are only checked for availability and authentication state; users
+continue to run provider-specific login/setup commands themselves.
 
 The command can be used as:
 

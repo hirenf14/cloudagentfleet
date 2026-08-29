@@ -17,30 +17,32 @@ one browser.
 1. Run `hosted-agents setup` to check prerequisites, pair a machine with a
    one-time enrollment code, install the companion as a user-level service, and
    display its health.
-2. Configure a Worker with either one or more approved default folders or an
+2. Provide a signed standalone installer and guided CLI that works without
+   Cursor, Claude, Codeman, or an AI agent running.
+3. Configure a Worker with either one or more approved default folders or an
    explicitly approved whole-system scope.
-3. Discover and display multiple workspaces per Worker, including canonical
+4. Discover and display multiple workspaces per Worker, including canonical
    path, name, provider readiness, and workspace health.
-4. Install and persist the Hosted Agents worker as a user-level background
+5. Install and persist the Hosted Agents worker as a user-level background
    service. Detect Codeman, Cursor, and Claude readiness without taking over
    their login or provider-worker setup.
-5. Reuse Codeman for persistent tmux sessions, live terminal output, remote SSH
+6. Reuse Codeman for persistent tmux sessions, live terminal output, remote SSH
    cases, and optional Docker isolation.
-6. Start work using the ordered flow: select machine, select workspace, select
+7. Start work using the ordered flow: select machine, select workspace, select
    agent/provider, then start.
-7. Show all active agent sessions in a live sidebar grouped by Worker and
+8. Show all active agent sessions in a live sidebar grouped by Worker and
    workspace, including provider, status, needs-input state, and preview/browser
    availability.
-8. Offer a collapsible sidebar view and a responsive card/grid view backed by
+9. Offer a collapsible sidebar view and a responsive card/grid view backed by
    the same session state; selecting either opens the same session detail view.
-9. Forward a session's localhost preview through an authenticated browser URL.
-10. Provide an optional local tunnel that maps a remote preview to
+10. Forward a session's localhost preview through an authenticated browser URL.
+11. Provide an optional local tunnel that maps a remote preview to
    `127.0.0.1:<available-port>`.
-11. Open an isolated Chromium session on a machine, show its webpage viewport in
+12. Open an isolated Chromium session on a machine, show its webpage viewport in
    the dashboard, and relay authorized mouse and keyboard events.
-12. Integrate official Cursor and Claude worker/runner paths without conflating
+13. Integrate official Cursor and Claude worker/runner paths without conflating
    their credentials or control planes.
-13. Record auditable lifecycle events and provide an emergency stop/revoke
+14. Record auditable lifecycle events and provide an emergency stop/revoke
    action.
 
 ## Non-goals for V1
