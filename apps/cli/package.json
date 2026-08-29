@@ -1,0 +1,15 @@
+{
+  "name": "@hosted-agents/cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "hosted-agents": "./bin/hosted-agents.mjs"
+  },
+  "scripts": {
+    "build": "tsc --outDir dist",
+    "dev": "node --watch src/index.ts",
+    "test": "node --test",
+    "typecheck": "tsc --noEmit"
+  }
+}
