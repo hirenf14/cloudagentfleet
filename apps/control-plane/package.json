@@ -1,0 +1,15 @@
+{
+  "name": "@hosted-agents/control-plane",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc --noEmit",
+    "dev": "node --watch src/index.ts",
+    "test": "node --test",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@hosted-agents/protocol": "workspace:*"
+  }
+}
