@@ -99,8 +99,10 @@ function workerPlans(environment) {
       available: environment.codeman,
       action: environment.codeman
         ? "Report the existing Codeman runtime and persistent sessions"
-        : "Report Codeman as unavailable; installation remains optional",
-      command: "codeman --version",
+        : "Offer to provision WSL/tmux and install Codeman after confirmation",
+      command: environment.codeman
+        ? "codeman --version"
+        : "wsl --install && install Codeman (confirmation required)",
     },
     {
       id: "cursor",
@@ -184,7 +186,7 @@ if (command === "help" || command === "--help" || command === "-h") {
       "  hosted-agents setup [--json]",
       "  hosted-agents check [--json]",
       "",
-      "The current bootstrap is read-only and confirmation-safe.",
+      "Setup is human-operated, confirmation-based, and independent of AI agents.",
     ].join("\n"),
   );
 } else if (command === "setup" || command === "check") {
