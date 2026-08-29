@@ -1,0 +1,11 @@
+{
+  "name": "@hosted-agents/dashboard",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "echo Dashboard scaffold is ready",
+    "dev": "echo Dashboard scaffold is ready",
+    "test": "echo Dashboard tests pending",
+    "typecheck": "echo Dashboard typecheck pending"
+  }
+}
