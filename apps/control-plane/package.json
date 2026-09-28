@@ -6,7 +6,10 @@
   "scripts": {
     "build": "tsc --noEmit",
     "dev": "node --experimental-strip-types --watch src/server.ts",
+    "start": "node --experimental-strip-types src/server.ts",
     "test": "node --experimental-strip-types --test",
+    "test:multihost:mock": "node --experimental-strip-types src/multihost-harness.ts --mock",
+    "test:multihost:live": "node --experimental-strip-types src/multihost-harness.ts --live",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
