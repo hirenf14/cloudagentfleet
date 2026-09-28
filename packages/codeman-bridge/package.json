@@ -1,0 +1,11 @@
+{
+  "name": "@hosted-agents/codeman-bridge",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc --noEmit",
+    "test": "node --test",
+    "typecheck": "tsc --noEmit"
+  }
+}
