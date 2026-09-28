@@ -41,14 +41,24 @@ Worker from the browser.
 
 ## Machine connection
 
-One chosen local server runs the Controller and web router. Every other machine
-runs a Worker client. The Worker initiates an outbound TLS connection to the
-Controller and receives only authorized, capability-scoped commands. No inbound
-port is required on client machines.
+One chosen local server runs the Controller and web router. Direct Codeman
+hosts are reached by the Controller over Tailscale; machines that cannot accept
+that path run the optional Worker connector instead. The connector initiates
+an outbound TLS connection to the Controller and receives only authorized,
+capability-scoped commands.
 
 The Controller routes and records work; it never launches shells, agents,
 browsers, or containers. A Worker owns local process execution, provider
 credentials, Codeman sessions, preview connections, and browser sessions.
+
+For private remote operator access, the current phase is Tailscale SSH on a
+dedicated port only (80 and 443 stay unused by Hosted Agents; no Hub UI yet).
+Later, the Controller can remain bound to `127.0.0.1` and optionally publish a
+single Hub origin with Tailscale Serve. The Hub password is then the browser
+application boundary. Tailnet ACLs allow operators to reach the Hub tag and
+allow the Hub tag to reach only Codeman-host ports. Codeman endpoints are
+never returned to the browser or published through Funnel. See
+`docs/TAILSCALE-SERVE.md`.
 
 ## Workspace model
 
@@ -70,10 +80,11 @@ The start contract is intentionally ordered:
 select machine → select workspace → select agent → start
 ```
 
-The browser sends a workspace ID, not an arbitrary path. The Worker resolves
-the ID to its locally stored canonical path, checks the path remains inside the
+The browser normally sends a workspace ID. It may also send an explicit path
+when the operator needs a workspace that was not discovered during scanning.
+The Worker resolves the ID or path locally, checks the path remains inside the
 current policy, validates the selected provider, and only then launches the
-local runtime.
+local runtime. A path never overrides the `folders` or `system` policy.
 
 ## Setup CLI and persistent worker
 
@@ -127,7 +138,8 @@ requires a separate OS capture and remote-desktop subsystem.
 ## Provider adapters
 
 - `CodemanBridge`: discovers and controls Codeman-managed sessions using its
-  supported interface; SSH is a fallback for remote cases.
+  supported interface and proxies Codeman's native HTTP/SSE/WebSocket UI over
+  the tailnet; the Worker connector is a fallback for remote cases.
 - `CursorAdapter`: validates and targets the official Cursor machine/pool
   worker path where available.
 - `ClaudeAdapter`: validates and targets the official Claude self-hosted

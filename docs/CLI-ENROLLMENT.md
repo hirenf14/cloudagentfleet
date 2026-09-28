@@ -1,6 +1,6 @@
 # CLI Enrollment
 
-## Command
+## Worker setup
 
 ```text
 hosted-agents setup
@@ -9,6 +9,43 @@ hosted-agents setup
 The command is the single supported path for adding a machine to a private
 fleet. It is safe to run repeatedly: an existing node identity is reused after
 verification, and missing setup steps are shown before they are applied.
+
+## Codeman instance enrollment
+
+Use `enroll` after the Controller and, for connector mode, the Worker have been
+started. The command registers the instance, saves only non-secret registration
+metadata locally, and verifies health through the Hub:
+
+```text
+hosted-agents enroll connector \
+  --controller-url https://controller.example.test \
+  --instance-id codeman-linux-1 \
+  --name "Linux Codeman" \
+  --node-id worker-linux-1 \
+  --workspace-mode folders \
+  --workspace-root "$HOME/workspaces" \
+  --agent-mode claude
+
+hosted-agents enroll tailscale-url \
+  --controller-url https://controller.example.test \
+  --instance-id codeman-remote \
+  --name "Remote Codeman" \
+  --url https://codeman-remote.tailnet.ts.net \
+  --agent-profile claude:"Claude Code":claude:true
+```
+
+`--mode` can be used instead of the positional mode. Connector mode requires
+an enrolled Worker node ID; the Worker must use the same
+`CODEMAN_INSTANCE_ID` (the command updates a matching local Worker config;
+restart the Worker afterward).
+Tailscale URL mode requires an HTTPS URL and does not enable Tailscale Serve.
+Use `--workspace-root` repeatedly or separate roots with `;`; use
+`--workspace-mode system` only when whole-system access is intentional.
+`--agent-mode` accepts a comma-separated list and `--agent-profile` uses
+`id:name:mode[:ready]`. The controller token is read from
+`HOSTED_AGENTS_AUTH_TOKEN` and is never written to the instance metadata file.
+Use `--no-health` only to defer verification while a connector Worker is
+starting.
 
 ## Setup flow
 

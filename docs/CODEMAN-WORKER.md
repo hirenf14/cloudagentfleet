@@ -41,6 +41,30 @@ node apps/cli/bin/hosted-agents.mjs start
 It selects an online Worker, then a ready workspace, then a ready agent, asks
 for the prompt, and creates the job with an idempotency key.
 
+To expose the Worker-backed Codeman as a Hub instance, enroll it explicitly:
+
+```bash
+node apps/cli/bin/hosted-agents.mjs enroll connector \
+  --controller-url http://127.0.0.1:8787 \
+  --instance-id codeman-worker-linux \
+  --name "Codeman on Linux" \
+  --node-id worker-linux-1 \
+  --workspace-mode folders \
+  --workspace-root "$HOME/workspaces"
+```
+
+The command checks `/api/instances/:id/health` after registration. For a
+Codeman endpoint already reachable over Tailscale, use
+`enroll tailscale-url --url https://<name>.<tailnet>.ts.net` instead. This is
+the preferred path for the native Codeman UI: the Controller proxies the
+selected host's Codeman REST, SSE, and WebSocket traffic over the tailnet, so
+terminal input does not pass through the request-per-keystroke Worker path.
+The connector remains available for machines that cannot accept Controller
+connections. To serve the single private Hub, use the `hub serve` command
+described in [`TAILSCALE-SERVE.md`](TAILSCALE-SERVE.md).
+`HOSTED_AGENTS_AUTH_TOKEN` is read from the environment when the Controller
+requires authentication.
+
 ## Start the Worker manually
 
 The current runtime accepts configuration through environment variables:
@@ -81,14 +105,23 @@ requests.
    clean `last-response` is posted as a `job.event`.
 6. Controller cancellation deletes the corresponding Codeman session.
 
-Workspace IDs, not arbitrary paths, cross the Controller boundary. The Worker
-checks health, Codeman readiness, and the approved-folder/system policy again
-before creating a session.
+The Controller normally sends a workspace ID. The dashboard can also send an
+explicit workspace path for a newly discovered location. The Worker checks
+health, Codeman readiness, and the approved-folder/system policy again before
+creating a session; paths outside the policy are rejected.
+
+The dashboard's path picker requests suggestions from
+`GET /api/instances/:id/workspaces/suggestions?path=...`. Connector Workers
+enumerate local directories, skip symlinks, verify canonical paths against the
+policy, and return at most 50 entries. Direct Tailscale instances can only
+complete against their registered workspace metadata because Codeman does not
+provide a documented remote filesystem listing endpoint.
 
 ## Current limits
 
-- The first Codeman mode is Claude; the mode becomes configurable when the
-  provider adapter contract is added.
-- Session output is reported on completion; the live terminal/session sidebar
-  is a separate dashboard task.
-- The setup CLI does not yet install Codeman or the Worker service.
+- Provider login remains owned by Codeman and is not automated by the Worker.
+- Cursor Agent availability depends on the official `agent` CLI (or the
+  legacy `cursor-agent` command) being installed and authenticated on each
+  machine. Claude Code remains owned by Codeman.
+- Codeman installation remains confirmation-based; install the Worker service
+  explicitly with `hosted-agents worker install`.
