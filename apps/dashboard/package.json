@@ -3,9 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "build": "echo Dashboard scaffold is ready",
-    "dev": "echo Dashboard scaffold is ready",
-    "test": "echo Dashboard tests pending",
-    "typecheck": "echo Dashboard typecheck pending"
+    "build": "node --check public/app.js",
+    "dev": "node --watch --check public/app.js",
+    "test": "node --test",
+    "typecheck": "node --check public/app.js"
   }
 }
