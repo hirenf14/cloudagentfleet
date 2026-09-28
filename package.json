@@ -1,12 +1,29 @@
 {
   "name": "hosted-agents",
   "version": "0.1.0",
-  "private": true,
+  "private": false,
   "description": "Private multi-machine fleet control for Codeman, Cursor, and Claude Code.",
+  "engines": {
+    "node": ">=22.6.0"
+  },
+  "bin": {
+    "hosted-agents": "dist/release/apps/cli/bin/hosted-agents.mjs"
+  },
+  "files": [
+    "dist/release"
+  ],
   "scripts": {
     "build": "pnpm -r build",
+    "build:release": "node scripts/build-release.mjs",
+    "package:standalone": "node scripts/package-standalone.mjs",
     "dev": "pnpm --parallel --filter './apps/*' dev",
     "test": "pnpm -r test",
+    "test:multihost:mock": "pnpm --filter @hosted-agents/control-plane test:multihost:mock",
+    "test:multihost:live": "pnpm --filter @hosted-agents/control-plane test:multihost:live",
     "typecheck": "pnpm -r typecheck"
+  },
+  "devDependencies": {
+    "esbuild": "latest",
+    "typescript": "^7.0.2"
   }
 }
