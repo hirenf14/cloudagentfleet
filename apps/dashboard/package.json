@@ -4,21 +4,22 @@
   "private": false,
   "description": "Cloud Agent Fleet Hub UI assets.",
   "files": [
-    "public"
+    "dist"
   ],
   "exports": {
     "./package.json": "./package.json",
-    "./public/*": "./public/*"
+    "./public/*": "./dist/public/*"
   },
   "publishConfig": {
     "access": "public",
     "registry": "https://registry.npmjs.org/"
   },
   "scripts": {
-    "build": "node --check public/app.js",
+    "build": "node ../../scripts/build-release.mjs",
     "dev": "node --watch --check public/app.js",
     "test": "node --test",
-    "typecheck": "node --check public/app.js"
+    "typecheck": "node --check public/app.js",
+    "prepublishOnly": "node ../../scripts/build-release.mjs"
   },
   "engines": {
     "node": ">=22.6.0"

@@ -10,6 +10,7 @@
     "build": "pnpm -r build",
     "build:release": "node scripts/build-release.mjs",
     "package:standalone": "node scripts/package-standalone.mjs",
+    "verify:packs": "node scripts/verify-npm-packs.mjs",
     "changeset": "changeset",
     "version-packages": "changeset version",
     "release": "pnpm build:release && changeset publish",

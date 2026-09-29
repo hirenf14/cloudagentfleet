@@ -1,0 +1,14 @@
+# Publish only staged dist/public build — not the working public/ tree.
+public
+src
+bin
+test
+tests
+*.test.*
+design-draft.html
+tsconfig.json
+coverage
+data
+.env
+.env.*
+!dist/**

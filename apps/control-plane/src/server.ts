@@ -21,14 +21,22 @@ const CODEMAN_INSTANCE_COOKIE = "hosted_agents_codeman_instance";
 
 function resolveDashboardRoot(): string {
   const here = dirname(fileURLToPath(import.meta.url));
+  const candidates = [];
   try {
     const require = createRequire(import.meta.url);
-    return join(dirname(require.resolve("@cloudagentfleet/ui/package.json")), "public");
+    const packageRoot = dirname(require.resolve("@cloudagentfleet/ui/package.json"));
+    candidates.push(join(packageRoot, "dist", "public"), join(packageRoot, "public"));
   } catch {
-    const sibling = resolve(here, "../../dashboard/public");
-    if (existsSync(sibling)) return sibling;
-    throw new Error("Unable to resolve @cloudagentfleet/ui public assets");
+    // Fall through to monorepo paths for local strip-types runs.
   }
+  candidates.push(
+    resolve(here, "../../dashboard/dist/public"),
+    resolve(here, "../../dashboard/public"),
+  );
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) return candidate;
+  }
+  throw new Error("Unable to resolve @cloudagentfleet/ui public assets");
 }
 
 const DASHBOARD_ROOT = resolveDashboardRoot();

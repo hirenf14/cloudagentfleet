@@ -1,0 +1,14 @@
+# Never publish source, tests, or local launchers — only dist/ from files.
+src
+bin
+cli
+test
+tests
+*.test.*
+*.ts
+!dist/**
+tsconfig.json
+coverage
+data
+.env
+.env.*
