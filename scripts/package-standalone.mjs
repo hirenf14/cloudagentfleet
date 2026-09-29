@@ -10,9 +10,11 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const release = join(root, "dist", "release");
 const platform = process.platform;
 const architecture = process.arch;
-const artifactName = `hosted-agents-${platform}-${architecture}`;
+const artifactName = `cloudagentfleet-${platform}-${architecture}`;
 const artifactRoot = join(root, "dist", "standalone", artifactName);
 const nodeName = platform === "win32" ? "node.exe" : "node";
+const launcherName = platform === "win32" ? "cloudagentfleet.cmd" : "cloudagentfleet";
+const entryScript = "apps/cli/bin/hosted-agents.mjs";
 
 await mkdir(dirname(artifactRoot), { recursive: true });
 await rm(artifactRoot, { recursive: true, force: true });
@@ -20,49 +22,27 @@ await cp(release, artifactRoot, { recursive: true });
 await cp(process.execPath, join(artifactRoot, nodeName));
 
 const launcher = platform === "win32"
-  ? `@echo off\r\n"%~dp0${nodeName}" "%~dp0apps\\cli\\bin\\hosted-agents.mjs" %*\r\n`
-  : `#!/usr/bin/env sh\nset -eu\nROOT="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"\nexec "$ROOT/${nodeName}" "$ROOT/apps/cli/bin/hosted-agents.mjs" "$@"\n`;
-const launcherPath = join(artifactRoot, platform === "win32" ? "hosted-agents.cmd" : "hosted-agents");
+  ? `@echo off\r\n"%~dp0${nodeName}" "%~dp0${entryScript.replace(/\//g, "\\")}" %*\r\n`
+  : `#!/usr/bin/env sh\nset -eu\nROOT="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"\nexec "$ROOT/${nodeName}" "$ROOT/${entryScript}" "$@"\n`;
+const launcherPath = join(artifactRoot, launcherName);
 await writeFile(launcherPath, launcher);
 if (platform !== "win32") await chmod(launcherPath, 0o755);
-if (platform === "win32") {
-  await writeFile(
-    join(artifactRoot, "install.ps1"),
-    [
-      "$ErrorActionPreference = 'Stop'",
-      "$target = Join-Path $env:LOCALAPPDATA 'HostedAgents'",
-      "New-Item -ItemType Directory -Force -Path $target | Out-Null",
-      "Copy-Item -Recurse -Force (Join-Path $PSScriptRoot '*') $target",
-      "Write-Host \"Installed Hosted Agents to $target\"",
-      "Write-Host \"Run $target\\hosted-agents.cmd setup\"",
-      "",
-    ].join("\r\n"),
-  );
-} else {
-  await writeFile(
-    join(artifactRoot, "install.sh"),
-    [
-      "#!/usr/bin/env sh",
-      "set -eu",
-      "TARGET=\"${XDG_DATA_HOME:-$HOME/.local/share}/hosted-agents\"",
-      "mkdir -p \"$TARGET\" \"$HOME/.local/bin\"",
-      "cp -R \"$(CDPATH= cd -- \"$(dirname -- \"$0\")\" && pwd)\"/. \"$TARGET\"/",
-      "ln -sf \"$TARGET/hosted-agents\" \"$HOME/.local/bin/hosted-agents\"",
-      "printf 'Installed Hosted Agents to %s\\n' \"$TARGET\"",
-      "",
-    ].join("\n"),
-  );
-  await chmod(join(artifactRoot, "install.sh"), 0o755);
-}
+
+const compatibilityLauncher = platform === "win32"
+  ? `@echo off\r\n"%~dp0${launcherName}" %*\r\n`
+  : `#!/usr/bin/env sh\nset -eu\nROOT="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"\nexec "$ROOT/${launcherName}" "$@"\n`;
+const compatibilityName = platform === "win32" ? "hosted-agents.cmd" : "hosted-agents";
+await writeFile(join(artifactRoot, compatibilityName), compatibilityLauncher);
+if (platform !== "win32") await chmod(join(artifactRoot, compatibilityName), 0o755);
 
 const manifest = {
-  name: "hosted-agents",
+  name: "cloudagentfleet",
   version: process.env.HOSTED_AGENTS_VERSION ?? "0.1.0",
   platform,
   architecture,
   node: nodeName,
-  entrypoint: platform === "win32" ? "hosted-agents.cmd" : "hosted-agents",
-  providerSetup: "Run hosted-agents setup; Codeman and provider login remain user-owned.",
+  entrypoint: launcherName,
+  providerSetup: "Run cloudagentfleet setup; Codeman and provider login remain user-owned.",
 };
 await writeFile(join(artifactRoot, "release-manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
 
@@ -84,8 +64,7 @@ for (const path of (await filesIn(artifactRoot)).sort()) {
 }
 await writeFile(join(artifactRoot, "SHA256SUMS"), `${checksums.join("\n")}\n`);
 
-const archiveExtension = platform === "win32" ? "tar.gz" : "tar.gz";
-const archiveName = `${artifactName}.${archiveExtension}`;
+const archiveName = `${artifactName}.tar.gz`;
 const archive = join(dirname(artifactRoot), archiveName);
 await execFileAsync("tar", ["-czf", archiveName, "-C", ".", basename(artifactRoot)], {
   cwd: dirname(artifactRoot),

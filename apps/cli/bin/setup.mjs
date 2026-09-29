@@ -1015,17 +1015,18 @@ async function startJob() {
 
 function help() {
   console.log([
-    "Hosted Agents CLI",
+    "Cloud Agent Fleet CLI",
     "",
     "Usage:",
-    "  hosted-agents setup [--run]  Detect, select, configure, and optionally run",
-    "  hosted-agents run              Run the saved Codeman-backed Worker",
-    "  hosted-agents worker <install|start|status|stop|remove>  Manage the user service",
-    "  hosted-agents start            Select Worker, workspace, agent, and prompt",
-    "  hosted-agents enroll           Register a Codeman instance and verify health",
-    "  hosted-agents hub <serve|status|stop>  Manage private Tailscale Hub serving",
-    "  hosted-agents check            Print local prerequisites",
+    "  cloudagentfleet setup [--run]  Detect, select, configure, and optionally run",
+    "  cloudagentfleet run              Run the saved Codeman-backed Worker",
+    "  cloudagentfleet worker <install|start|status|stop|remove>  Manage the user service",
+    "  cloudagentfleet start            Select Worker, workspace, agent, and prompt",
+    "  cloudagentfleet enroll           Register a Codeman instance and verify health",
+    "  cloudagentfleet hub <serve|status|stop>  Manage private Tailscale Hub serving",
+    "  cloudagentfleet doctor           Print local prerequisites",
     "",
+    "Compatibility alias: hosted-agents",
     "The setup flow asks before installing Codeman and never performs provider login.",
   ].join("\n"));
 }

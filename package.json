@@ -1,12 +1,13 @@
 {
-  "name": "hosted-agents",
+  "name": "cloudagentfleet",
   "version": "0.1.0",
   "private": false,
-  "description": "Private multi-machine fleet control for Codeman, Cursor, and Claude Code.",
+  "description": "Cloud Agent Fleet — private multi-machine control for Codeman, Cursor, and Claude Code.",
   "engines": {
     "node": ">=22.6.0"
   },
   "bin": {
+    "cloudagentfleet": "dist/release/apps/cli/bin/hosted-agents.mjs",
     "hosted-agents": "dist/release/apps/cli/bin/hosted-agents.mjs"
   },
   "files": [

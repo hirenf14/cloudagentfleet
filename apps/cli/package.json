@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "bin": {
+    "cloudagentfleet": "./bin/hosted-agents.mjs",
     "hosted-agents": "./bin/hosted-agents.mjs"
   },
   "scripts": {
