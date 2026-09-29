@@ -1,11 +1,26 @@
 {
-  "name": "@hosted-agents/dashboard",
+  "name": "@cloudagentfleet/ui",
   "version": "0.1.0",
-  "private": true,
+  "private": false,
+  "description": "Cloud Agent Fleet Hub UI assets.",
+  "files": [
+    "public"
+  ],
+  "exports": {
+    "./package.json": "./package.json",
+    "./public/*": "./public/*"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
   "scripts": {
     "build": "node --check public/app.js",
     "dev": "node --watch --check public/app.js",
     "test": "node --test",
     "typecheck": "node --check public/app.js"
+  },
+  "engines": {
+    "node": ">=22.6.0"
   }
 }

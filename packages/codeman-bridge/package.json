@@ -1,5 +1,5 @@
 {
-  "name": "@hosted-agents/codeman-bridge",
+  "name": "@cloudagentfleet/codeman-bridge",
   "version": "0.1.0",
   "private": true,
   "type": "module",

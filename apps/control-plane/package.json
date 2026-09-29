@@ -1,8 +1,20 @@
 {
-  "name": "@hosted-agents/control-plane",
+  "name": "@cloudagentfleet/hub",
   "version": "0.1.0",
-  "private": true,
+  "private": false,
+  "description": "Cloud Agent Fleet Hub — control plane, routing, and Codeman proxy.",
   "type": "module",
+  "bin": {
+    "cloudagentfleet-hub": "./bin/cloudagentfleet-hub.mjs"
+  },
+  "files": [
+    "bin",
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
   "scripts": {
     "build": "tsc --noEmit",
     "dev": "node --experimental-strip-types --watch src/server.ts",
@@ -13,6 +25,9 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@hosted-agents/protocol": "workspace:*"
+    "@cloudagentfleet/ui": "workspace:*"
+  },
+  "engines": {
+    "node": ">=22.6.0"
   }
 }
