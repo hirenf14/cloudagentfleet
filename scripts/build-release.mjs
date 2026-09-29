@@ -4,12 +4,9 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const output = join(root, "dist", "release");
 
-await rm(output, { recursive: true, force: true });
-await mkdir(output, { recursive: true });
-
-async function bundle(entryPoint, outfile) {
+async function bundle(entryPoint, outfile, options = {}) {
+  await mkdir(dirname(outfile), { recursive: true });
   await build({
     entryPoints: [join(root, entryPoint)],
     bundle: true,
@@ -17,22 +14,36 @@ async function bundle(entryPoint, outfile) {
     platform: "node",
     target: "node22",
     sourcemap: true,
-    outfile: join(output, outfile),
+    outfile,
     absWorkingDir: root,
     logLevel: "info",
+    packages: "bundle",
+    ...options,
   });
 }
 
-await bundle("apps/node-agent/src/main.ts", "apps/cli/runtime/worker.mjs");
+const hubDist = join(root, "apps", "control-plane", "dist");
+await rm(hubDist, { recursive: true, force: true });
+await bundle("apps/control-plane/src/server.ts", join(hubDist, "server.mjs"), {
+  external: ["@cloudagentfleet/ui"],
+});
 
+const workerRoot = join(root, "apps", "node-agent");
+const workerDist = join(workerRoot, "dist");
+const workerCli = join(workerRoot, "cli");
+await rm(workerDist, { recursive: true, force: true });
+await rm(workerCli, { recursive: true, force: true });
+await bundle("apps/node-agent/src/main.ts", join(workerDist, "worker.mjs"));
+await mkdir(workerCli, { recursive: true });
+await cp(join(root, "apps", "cli", "bin", "hosted-agents.mjs"), join(workerCli, "hosted-agents.mjs"));
+await cp(join(root, "apps", "cli", "bin", "setup.mjs"), join(workerCli, "setup.mjs"));
+
+const output = join(root, "dist", "release");
+await rm(output, { recursive: true, force: true });
 await mkdir(join(output, "apps", "cli", "bin"), { recursive: true });
-await cp(
-  join(root, "apps", "cli", "bin", "hosted-agents.mjs"),
-  join(output, "apps", "cli", "bin", "hosted-agents.mjs"),
-);
-await cp(
-  join(root, "apps", "cli", "bin", "setup.mjs"),
-  join(output, "apps", "cli", "bin", "setup.mjs"),
-);
+await mkdir(join(output, "apps", "cli", "runtime"), { recursive: true });
+await cp(join(workerDist, "worker.mjs"), join(output, "apps", "cli", "runtime", "worker.mjs"));
+await cp(join(root, "apps", "cli", "bin", "hosted-agents.mjs"), join(output, "apps", "cli", "bin", "hosted-agents.mjs"));
+await cp(join(root, "apps", "cli", "bin", "setup.mjs"), join(output, "apps", "cli", "bin", "setup.mjs"));
 
-console.log(`Worker release runtime written to ${output}`);
+console.log("Release builds ready for @cloudagentfleet/hub, @cloudagentfleet/ui, and @cloudagentfleet/worker");

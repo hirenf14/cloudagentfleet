@@ -1,5 +1,7 @@
 node_modules/
 dist/
+apps/*/dist/
+apps/node-agent/cli/
 build/
 .turbo/
 .env
