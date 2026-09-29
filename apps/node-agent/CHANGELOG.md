@@ -1,5 +1,11 @@
 # @cloudagentfleet/worker
 
+## 0.1.5
+
+### Patch Changes
+
+- [`35f2a3d`](https://github.com/hirenf14/cloudagentfleet/commit/35f2a3dcb5cd656c76338454b022de3c34dedf6b) Thanks [@hirenf14](https://github.com/hirenf14)! - Fix Worker CLI exiting immediately when invoked as cloudagentfleet.mjs.
+
 ## 0.1.4
 
 ### Patch Changes
