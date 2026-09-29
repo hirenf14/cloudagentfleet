@@ -10,7 +10,9 @@
     "hosted-agents": "./dist/cloudagentfleet.mjs"
   },
   "files": [
-    "dist"
+    "dist",
+    "README.md",
+    "CHANGELOG.md"
   ],
   "publishConfig": {
     "access": "public",

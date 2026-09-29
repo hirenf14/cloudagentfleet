@@ -8,7 +8,9 @@
     "cloudagentfleet-hub": "./dist/cloudagentfleet-hub.mjs"
   },
   "files": [
-    "dist"
+    "dist",
+    "README.md",
+    "CHANGELOG.md"
   ],
   "publishConfig": {
     "access": "public",

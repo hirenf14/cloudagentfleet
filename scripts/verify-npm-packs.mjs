@@ -9,23 +9,27 @@ const packages = [
   {
     name: "@cloudagentfleet/hub",
     dir: "apps/control-plane",
-    allowed: [/^package\.json$/, /^dist\/cloudagentfleet-hub\.mjs$/],
+    required: [/^package\.json$/, /^README\.md$/, /^dist\/cloudagentfleet-hub\.mjs$/],
+    optional: [/^CHANGELOG\.md$/],
     forbidden: [/src\//, /\.ts$/, /^bin\//, /\.test\./],
   },
   {
     name: "@cloudagentfleet/ui",
     dir: "apps/dashboard",
-    allowed: [/^package\.json$/, /^dist\/public\/[^/]+$/],
+    required: [/^package\.json$/, /^README\.md$/, /^dist\/public\/[^/]+$/],
+    optional: [/^CHANGELOG\.md$/],
     forbidden: [/src\//, /\.ts$/, /design-draft/, /^public\//, /^bin\//],
   },
   {
     name: "@cloudagentfleet/worker",
     dir: "apps/node-agent",
-    allowed: [
+    required: [
       /^package\.json$/,
+      /^README\.md$/,
       /^dist\/cloudagentfleet\.mjs$/,
       /^dist\/cloudagentfleet-worker\.mjs$/,
     ],
+    optional: [/^CHANGELOG\.md$/],
     forbidden: [/src\//, /\.ts$/, /^bin\//, /^cli\//, /\.test\./],
   },
 ];
@@ -76,13 +80,14 @@ for (const pkg of packages) {
       console.error(`FAIL ${pkg.name}: forbidden path in tarball: ${file}`);
       failed = true;
     }
-    if (!pkg.allowed.some((pattern) => pattern.test(file))) {
+    const allowed = [...pkg.required, ...pkg.optional];
+    if (!allowed.some((pattern) => pattern.test(file))) {
       console.error(`FAIL ${pkg.name}: unexpected path in tarball: ${file}`);
       failed = true;
     }
   }
 
-  for (const pattern of pkg.allowed) {
+  for (const pattern of pkg.required) {
     if (!files.some((file) => pattern.test(file))) {
       console.error(`FAIL ${pkg.name}: missing required path matching ${pattern}`);
       failed = true;

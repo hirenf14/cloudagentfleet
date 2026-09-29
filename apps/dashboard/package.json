@@ -4,7 +4,9 @@
   "private": false,
   "description": "Cloud Agent Fleet Hub UI assets.",
   "files": [
-    "dist"
+    "dist",
+    "README.md",
+    "CHANGELOG.md"
   ],
   "exports": {
     "./package.json": "./package.json",
