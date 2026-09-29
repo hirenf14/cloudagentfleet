@@ -1,5 +1,14 @@
 # @cloudagentfleet/hub
 
+## 0.1.4
+
+### Patch Changes
+
+- [`c917cb8`](https://github.com/hirenf14/cloudagentfleet/commit/c917cb83c20000d1d42a4a4eeefde5c9935f1a6b) Thanks [@hirenf14](https://github.com/hirenf14)! - Add GitHub repository, homepage, and bugs links to published packages.
+
+- Updated dependencies [[`c917cb8`](https://github.com/hirenf14/cloudagentfleet/commit/c917cb83c20000d1d42a4a4eeefde5c9935f1a6b)]:
+  - @cloudagentfleet/ui@0.1.4
+
 ## 0.1.3
 
 ### Patch Changes
