@@ -21,41 +21,41 @@ npx cloudagentfleet --help
 
 ## Quick start
 
-Point the Worker at a running Hub, then configure and start:
+**Same `HOSTED_AGENTS_AUTH_TOKEN` as the Hub** is required (Hub UI auth rejects
+Worker enroll without it). Codeman should already be running (`codeman web`).
 
 ```bash
+export HOSTED_AGENTS_AUTH_TOKEN="replace-with-a-long-shared-secret"
 cloudagentfleet setup --run
 ```
 
-Or install as a user service:
+Use the Hub’s reachable URL as Controller URL (not `127.0.0.1` if Hub is on
+another machine). Note the Worker ID printed/chosen during setup.
+
+### Enroll so the Hub UI shows an instance
+
+The dashboard lists **instances**, not raw Workers. After the Worker is online:
 
 ```bash
-cloudagentfleet setup
-cloudagentfleet worker install
-cloudagentfleet worker start
-cloudagentfleet worker status
-```
+export HOSTED_AGENTS_AUTH_TOKEN="replace-with-a-long-shared-secret"
 
-## Enroll with the Hub
-
-Connector mode (Worker-backed):
-
-```bash
 cloudagentfleet enroll connector \
-  --controller-url http://127.0.0.1:8787 \
+  --controller-url http://<hub-host>:8787 \
   --instance-id codeman-1 \
   --name "My Codeman" \
-  --node-id worker-1
+  --node-id <worker-id-from-setup> \
+  --workspace-mode folders \
+  --workspace-root "$HOME/workspaces"
 ```
 
-Direct Tailscale mode (preferred when Codeman is reachable on the tailnet):
+Restart the Worker (`cloudagentfleet worker stop` / `start`, or re-run
+`cloudagentfleet setup --run`) so it uses `CODEMAN_INSTANCE_ID=codeman-1`.
+
+Check:
 
 ```bash
-cloudagentfleet enroll tailscale-url \
-  --controller-url http://127.0.0.1:8787 \
-  --instance-id codeman-1 \
-  --name "My Codeman" \
-  --url https://codeman.tailnet.ts.net
+curl -H "Authorization: Bearer $HOSTED_AGENTS_AUTH_TOKEN" http://<hub-host>:8787/api/workers
+curl -H "Authorization: Bearer $HOSTED_AGENTS_AUTH_TOKEN" http://<hub-host>:8787/api/instances
 ```
 
 ## Useful commands
