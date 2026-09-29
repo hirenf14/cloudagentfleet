@@ -1,7 +1,9 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
+import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
-import { resolve, dirname, sep } from "node:path";
+import { resolve, dirname, join, sep } from "node:path";
 import type { Socket } from "node:net";
 import { ControlPlane, type NodeConnection } from "./index.ts";
 import { CodemanHub } from "./hub.ts";
@@ -16,7 +18,20 @@ import type {
 
 const MAX_BODY_BYTES = 1_048_576;
 const CODEMAN_INSTANCE_COOKIE = "hosted_agents_codeman_instance";
-const DASHBOARD_ROOT = resolve(fileURLToPath(new URL("../../dashboard/public/", import.meta.url)));
+
+function resolveDashboardRoot(): string {
+  const here = dirname(fileURLToPath(import.meta.url));
+  try {
+    const require = createRequire(import.meta.url);
+    return join(dirname(require.resolve("@cloudagentfleet/ui/package.json")), "public");
+  } catch {
+    const sibling = resolve(here, "../../dashboard/public");
+    if (existsSync(sibling)) return sibling;
+    throw new Error("Unable to resolve @cloudagentfleet/ui public assets");
+  }
+}
+
+const DASHBOARD_ROOT = resolveDashboardRoot();
 
 export interface ControllerServerOptions {
   host?: string;
