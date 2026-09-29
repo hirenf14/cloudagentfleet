@@ -5,25 +5,24 @@
   "description": "Cloud Agent Fleet Worker — machine companion and operator CLI.",
   "type": "module",
   "bin": {
-    "cloudagentfleet": "./bin/cloudagentfleet.mjs",
-    "cloudagentfleet-worker": "./bin/cloudagentfleet-worker.mjs",
-    "hosted-agents": "./bin/cloudagentfleet.mjs"
+    "cloudagentfleet": "./dist/cloudagentfleet.mjs",
+    "cloudagentfleet-worker": "./dist/cloudagentfleet-worker.mjs",
+    "hosted-agents": "./dist/cloudagentfleet.mjs"
   },
   "files": [
-    "bin",
-    "dist",
-    "cli"
+    "dist"
   ],
   "publishConfig": {
     "access": "public",
     "registry": "https://registry.npmjs.org/"
   },
   "scripts": {
-    "build": "tsc --noEmit",
+    "build": "node ../../scripts/build-release.mjs",
     "dev": "node --experimental-strip-types --watch src/main.ts",
     "start": "node --experimental-strip-types src/main.ts",
     "test": "node --test",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "node ../../scripts/build-release.mjs"
   },
   "engines": {
     "node": ">=22.6.0"

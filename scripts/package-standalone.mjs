@@ -7,33 +7,40 @@ import { fileURLToPath } from "node:url";
 
 const execFileAsync = promisify(execFile);
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const release = join(root, "dist", "release");
+const cliBundle = join(root, "dist", "cli-bundle");
 const platform = process.platform;
 const architecture = process.arch;
 const artifactName = `cloudagentfleet-${platform}-${architecture}`;
 const artifactRoot = join(root, "dist", "standalone", artifactName);
 const nodeName = platform === "win32" ? "node.exe" : "node";
 const launcherName = platform === "win32" ? "cloudagentfleet.cmd" : "cloudagentfleet";
-const entryScript = "apps/cli/bin/hosted-agents.mjs";
+const entryScript = "cloudagentfleet.mjs";
 
 await mkdir(dirname(artifactRoot), { recursive: true });
 await rm(artifactRoot, { recursive: true, force: true });
-await cp(release, artifactRoot, { recursive: true });
+await cp(cliBundle, artifactRoot, { recursive: true });
 await cp(process.execPath, join(artifactRoot, nodeName));
 
 const launcher = platform === "win32"
-  ? `@echo off\r\n"%~dp0${nodeName}" "%~dp0${entryScript.replace(/\//g, "\\")}" %*\r\n`
+  ? `@echo off\r\n"%~dp0${nodeName}" "%~dp0${entryScript}" %*\r\n`
   : `#!/usr/bin/env sh\nset -eu\nROOT="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"\nexec "$ROOT/${nodeName}" "$ROOT/${entryScript}" "$@"\n`;
-const launcherPath = join(artifactRoot, launcherName);
-await writeFile(launcherPath, launcher);
-if (platform !== "win32") await chmod(launcherPath, 0o755);
+await writeFile(join(artifactRoot, launcherName), launcher);
+if (platform !== "win32") await chmod(join(artifactRoot, launcherName), 0o755);
 
+const compatibilityName = platform === "win32" ? "hosted-agents.cmd" : "hosted-agents";
 const compatibilityLauncher = platform === "win32"
   ? `@echo off\r\n"%~dp0${launcherName}" %*\r\n`
   : `#!/usr/bin/env sh\nset -eu\nROOT="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"\nexec "$ROOT/${launcherName}" "$@"\n`;
-const compatibilityName = platform === "win32" ? "hosted-agents.cmd" : "hosted-agents";
 await writeFile(join(artifactRoot, compatibilityName), compatibilityLauncher);
 if (platform !== "win32") await chmod(join(artifactRoot, compatibilityName), 0o755);
+
+const hubLauncher = platform === "win32" ? "cloudagentfleet-hub.cmd" : "cloudagentfleet-hub";
+const hubEntry = "cloudagentfleet-hub.mjs";
+const hubScript = platform === "win32"
+  ? `@echo off\r\n"%~dp0${nodeName}" "%~dp0${hubEntry}" %*\r\n`
+  : `#!/usr/bin/env sh\nset -eu\nROOT="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"\nexec "$ROOT/${nodeName}" "$ROOT/${hubEntry}" "$@"\n`;
+await writeFile(join(artifactRoot, hubLauncher), hubScript);
+if (platform !== "win32") await chmod(join(artifactRoot, hubLauncher), 0o755);
 
 const manifest = {
   name: "cloudagentfleet",
@@ -42,6 +49,7 @@ const manifest = {
   architecture,
   node: nodeName,
   entrypoint: launcherName,
+  binaries: ["cloudagentfleet", "cloudagentfleet-worker", "cloudagentfleet-hub"],
   providerSetup: "Run cloudagentfleet setup; Codeman and provider login remain user-owned.",
 };
 await writeFile(join(artifactRoot, "release-manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
@@ -69,4 +77,4 @@ const archive = join(dirname(artifactRoot), archiveName);
 await execFileAsync("tar", ["-czf", archiveName, "-C", ".", basename(artifactRoot)], {
   cwd: dirname(artifactRoot),
 });
-console.log(`Standalone artifact written to ${archive}`);
+console.log(`Standalone CLI bundle archive written to ${archive}`);
