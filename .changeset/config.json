@@ -1,0 +1,20 @@
+{
+  "$schema": "https://unpkg.com/@changesets/config@3.1.1/schema.json",
+  "changelog": [
+    "@changesets/changelog-github",
+    { "repo": "hirenf14/cloudagentfleet" }
+  ],
+  "commit": false,
+  "fixed": [],
+  "linked": [
+    ["@cloudagentfleet/hub", "@cloudagentfleet/ui", "@cloudagentfleet/worker"]
+  ],
+  "access": "public",
+  "baseBranch": "master",
+  "updateInternalDependencies": "patch",
+  "ignore": [
+    "@cloudagentfleet/cli",
+    "@cloudagentfleet/codeman-bridge",
+    "@cloudagentfleet/protocol"
+  ]
+}
