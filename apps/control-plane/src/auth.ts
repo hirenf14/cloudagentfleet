@@ -4,6 +4,15 @@ import {
   scryptSync,
   timingSafeEqual,
 } from "node:crypto";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
+import { join } from "node:path";
 import type { IncomingMessage } from "node:http";
 
 const DEFAULT_SESSION_TTL_MS = 8 * 60 * 60 * 1_000;
@@ -294,6 +303,139 @@ export function encodePasswordVerifier(verifier: PasswordVerifier): string {
 
 export function createUiPasswordHash(password: string): string {
   return encodePasswordVerifier(createPasswordVerifier(password));
+}
+
+export interface ResolveUiAuthOptions {
+  /** Directory that holds hub-ui-auth.json (usually dirname of hub state path). */
+  dataDir?: string;
+  password?: string;
+  passwordHash?: string;
+  sessionTtlMs?: number;
+  secureCookies?: boolean;
+}
+
+export interface ResolvedUiAuth {
+  auth: UiAuth;
+  /**
+   * Auto-generated Hub password. Present whenever the bootstrap plaintext is
+   * still on disk (password has not been replaced by env or a hash-only file).
+   * Print this on every Hub start until the operator changes it.
+   */
+  revealPassword?: string;
+}
+
+const BOOTSTRAP_AUTH_FILE = "hub-ui-auth.json";
+
+/**
+ * Resolve Hub UI auth for process start.
+ *
+ * Priority: explicit/env hash → explicit/env password → durable bootstrap file
+ * → generate a new bootstrap password. Ephemeral mode (no dataDir) leaves auth
+ * disabled so unit tests stay open unless a password is supplied.
+ */
+export function resolveUiAuth(options: ResolveUiAuthOptions = {}): ResolvedUiAuth {
+  const passwordHash = options.passwordHash
+    ?? process.env.HOSTED_AGENTS_UI_PASSWORD_HASH;
+  const password = options.password ?? process.env.HOSTED_AGENTS_UI_PASSWORD;
+  const common = {
+    sessionTtlMs: options.sessionTtlMs,
+    secureCookies: options.secureCookies,
+  };
+
+  if (passwordHash || password) {
+    if (options.dataDir) clearBootstrapPlaintext(options.dataDir);
+    return {
+      auth: new UiAuth({
+        ...common,
+        passwordHash,
+        password,
+      }),
+    };
+  }
+
+  if (!options.dataDir) {
+    return { auth: new UiAuth(common) };
+  }
+
+  const bootstrap = loadOrCreateBootstrapAuth(options.dataDir);
+  return {
+    auth: new UiAuth({
+      ...common,
+      passwordHash: bootstrap.hash,
+    }),
+    revealPassword: bootstrap.password,
+  };
+}
+
+interface BootstrapAuthFile {
+  hash: string;
+  /** Omitted once the operator replaces the auto-generated password. */
+  password?: string;
+}
+
+function bootstrapAuthPath(dataDir: string): string {
+  return join(dataDir, BOOTSTRAP_AUTH_FILE);
+}
+
+function loadOrCreateBootstrapAuth(dataDir: string): { hash: string; password?: string } {
+  mkdirSync(dataDir, { recursive: true });
+  const path = bootstrapAuthPath(dataDir);
+  if (existsSync(path)) {
+    const raw = JSON.parse(readFileSync(path, "utf8")) as BootstrapAuthFile;
+    if (typeof raw.hash !== "string" || raw.hash.length === 0) {
+      throw new Error(`${BOOTSTRAP_AUTH_FILE} is missing a password hash`);
+    }
+    parsePasswordVerifier(raw.hash);
+    if (typeof raw.password === "string" && raw.password.length > 0) {
+      return { hash: raw.hash, password: raw.password };
+    }
+    return { hash: raw.hash };
+  }
+
+  const password = randomBytes(18).toString("base64url");
+  const hash = createUiPasswordHash(password);
+  writeBootstrapAuth(dataDir, { hash, password });
+  return { hash, password };
+}
+
+function writeBootstrapAuth(dataDir: string, value: BootstrapAuthFile): void {
+  mkdirSync(dataDir, { recursive: true });
+  const path = bootstrapAuthPath(dataDir);
+  writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
+  try {
+    chmodSync(path, 0o600);
+  } catch {
+    // Windows may ignore mode; the file still holds the bootstrap secret locally.
+  }
+}
+
+/**
+ * Drop the printable bootstrap password after the operator configures their own.
+ * Keeps the hash file only when one already existed.
+ */
+export function clearBootstrapPlaintext(dataDir: string): void {
+  const path = bootstrapAuthPath(dataDir);
+  if (!existsSync(path)) return;
+  try {
+    const raw = JSON.parse(readFileSync(path, "utf8")) as BootstrapAuthFile;
+    if (typeof raw.hash === "string" && raw.hash.length > 0 && raw.password) {
+      writeBootstrapAuth(dataDir, { hash: raw.hash });
+      return;
+    }
+    if (raw.password) unlinkSync(path);
+  } catch {
+    // Ignore malformed bootstrap files when clearing.
+  }
+}
+
+/**
+ * Replace the Hub UI password and stop printing plaintext on startup.
+ */
+export function setUiPassword(dataDir: string, password: string): string {
+  if (!password) throw new Error("Password is required");
+  const hash = createUiPasswordHash(password);
+  writeBootstrapAuth(dataDir, { hash });
+  return hash;
 }
 
 function randomToken(): string {

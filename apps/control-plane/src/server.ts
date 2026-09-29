@@ -1,11 +1,11 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
-import { resolve, sep } from "node:path";
+import { resolve, dirname, sep } from "node:path";
 import type { Socket } from "node:net";
 import { ControlPlane, type NodeConnection } from "./index.ts";
 import { CodemanHub } from "./hub.ts";
-import { UiAuth, type UiAuthRequest } from "./auth.ts";
+import { resolveUiAuth, type UiAuth, type UiAuthRequest } from "./auth.ts";
 import type {
   CodemanInstanceRegistration,
   CreateJobRequest,
@@ -38,6 +38,8 @@ export interface ControllerServer {
   host: string;
   port: number;
   hub: CodemanHub;
+  /** Auto-generated Hub password still in bootstrap form (print on each start). */
+  revealPassword?: string;
 }
 
 export function startControllerServer(
@@ -46,6 +48,12 @@ export function startControllerServer(
   const controller = createControllerServer(options);
   controller.server.listen(controller.port, controller.host, () => {
     console.log(`Hosted Agents Controller listening on ${controller.host}:${controller.port}`);
+    if (controller.revealPassword) {
+      console.log(`Hub UI password: ${controller.revealPassword}`);
+      console.log(
+        "Shown on every start until you set HOSTED_AGENTS_UI_PASSWORD or HOSTED_AGENTS_UI_PASSWORD_HASH.",
+      );
+    }
   });
   return controller;
 }
@@ -56,15 +64,19 @@ export function createControllerServer(
   const host = options.host ?? process.env.HOSTED_AGENTS_HOST ?? "127.0.0.1";
   const port = options.port ?? Number(process.env.HOSTED_AGENTS_PORT ?? 8787);
   const authToken = options.authToken ?? process.env.HOSTED_AGENTS_AUTH_TOKEN;
-  const uiAuth = new UiAuth({
+  const statePath = options.statePath ?? process.env.HOSTED_AGENTS_DATA_PATH ?? "data/hub.json";
+  const dataDir = statePath ? dirname(resolve(statePath)) : undefined;
+  const resolvedAuth = resolveUiAuth({
+    dataDir,
     password: options.uiPassword,
     passwordHash: options.uiPasswordHash,
     sessionTtlMs: options.uiSessionTtlMs,
     secureCookies: options.uiCookieSecure,
   });
+  const uiAuth = resolvedAuth.auth;
   const controlPlane = options.controlPlane ?? new ControlPlane();
   const hub = options.hub ?? new CodemanHub({
-    statePath: options.statePath ?? process.env.HOSTED_AGENTS_DATA_PATH ?? "data/hub.json",
+    statePath,
     credentials: options.codemanCredentials ?? readCodemanCredentials(),
     connectorRequest: (nodeId, instanceId, operation, payload) =>
       controlPlane.requestConnector(nodeId, instanceId, operation, payload),
@@ -141,7 +153,7 @@ export function createControllerServer(
     void handleTerminalUpgrade(request, socket, head, hub, uiAuth, authToken);
   });
 
-  return { server, controlPlane, hub, host, port };
+  return { server, controlPlane, hub, host, port, revealPassword: resolvedAuth.revealPassword };
 }
 
 async function handleTerminalUpgrade(

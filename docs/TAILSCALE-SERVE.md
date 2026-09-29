@@ -145,9 +145,14 @@ HOSTED_AGENTS_HOST=127.0.0.1 HOSTED_AGENTS_PORT=9000 \
 node apps/cli/bin/hosted-agents.mjs hub serve --port 9000
 ```
 
-### Hub password (Serve phase only)
+### Hub password (Serve / Hub UI phase)
+
+On first Hub start with a durable data directory and no password env vars, the
+Controller generates a random UI password, stores it in `data/hub-ui-auth.json`,
+and prints the plaintext on **every** start until you replace it.
 
 ```bash
+# Optional override — stops printing the bootstrap password
 export HOSTED_AGENTS_UI_PASSWORD='use-a-long-random-password'
 # or
 export HOSTED_AGENTS_UI_PASSWORD_HASH='scrypt$N$r$p$salt$hash'
