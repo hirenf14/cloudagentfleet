@@ -20,8 +20,7 @@
     "build": "node ../../scripts/build-release.mjs",
     "dev": "node --watch --check public/app.js",
     "test": "node --test",
-    "typecheck": "node --check public/app.js",
-    "prepublishOnly": "node ../../scripts/build-release.mjs"
+    "typecheck": "node --check public/app.js"
   },
   "engines": {
     "node": ">=22.6.0"

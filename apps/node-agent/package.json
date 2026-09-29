@@ -23,8 +23,7 @@
     "dev": "node --experimental-strip-types --watch src/main.ts",
     "start": "node --experimental-strip-types src/main.ts",
     "test": "node --test",
-    "typecheck": "tsc --noEmit",
-    "prepublishOnly": "node ../../scripts/build-release.mjs"
+    "typecheck": "tsc --noEmit"
   },
   "engines": {
     "node": ">=22.6.0"

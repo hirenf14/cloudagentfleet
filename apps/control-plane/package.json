@@ -23,8 +23,7 @@
     "test": "node --experimental-strip-types --test",
     "test:multihost:mock": "node --experimental-strip-types src/multihost-harness.ts --mock",
     "test:multihost:live": "node --experimental-strip-types src/multihost-harness.ts --live",
-    "typecheck": "tsc --noEmit",
-    "prepublishOnly": "node ../../scripts/build-release.mjs"
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@cloudagentfleet/ui": "workspace:*"
