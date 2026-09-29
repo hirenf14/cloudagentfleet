@@ -1,71 +1,87 @@
-# Hosted Agents
+# Cloud Agent Fleet
 
 Private multi-machine agent fleet control for Codeman, Cursor, and Claude Code.
 
-Hosted Agents is a web overlay around Codeman. Codeman remains the local
-execution plane for persistent terminal and CLI sessions; Hosted Agents adds
-one Hub URL, fleet enrollment, host context, and routing.
+Cloud Agent Fleet is a web overlay around Codeman. Codeman remains the local
+execution plane for persistent terminal and CLI sessions; this project adds one
+Hub URL, fleet enrollment, host context, and routing.
 
 One local server runs the Controller and web router. Direct Codeman hosts are
-reached over Tailscale. A persistent Worker client is only needed as a fallback
-for machines that cannot accept Controller-to-Codeman connections.
+reached over Tailscale. A persistent Worker is only needed as a fallback for
+machines that cannot accept Controller-to-Codeman connections.
 
-## Project shape
+## Requirements
 
-- `apps/control-plane` — private API, scheduler, persistence, and relay
-- `apps/dashboard` — small fleet launcher and host context overlay
-- `apps/cli` — guided machine setup, pairing, and health checks
-- `apps/node-agent` — outbound-connected machine companion
-- `packages/protocol` — shared messages and domain types
+- Node.js 22.6 or newer
+- [pnpm](https://pnpm.io) (for development from source)
+- Tailscale on each machine you want on the private fleet
 
-## Provider boundary
+## Install the CLI
 
-Cursor and Claude use separate hosted-agent control planes and credentials.
-Hosted Agents integrates with both where their official worker/runner paths are
-available. Codeman remains the fallback/local execution plane for persistent
-CLI sessions.
+```bash
+npm install --global cloudagentfleet
+cloudagentfleet --help
+```
+
+From a clone of this repository:
+
+```bash
+pnpm install
+pnpm --filter @hosted-agents/cli link --global
+cloudagentfleet --help
+```
+
+`hosted-agents` remains a compatibility alias for the same CLI.
 
 ## Machine setup
 
-The onboarding entry point is:
-
 ```bash
-hosted-agents setup
+cloudagentfleet setup
 ```
 
-The setup flow detects prerequisites, asks before installing Codeman, lets you
-select approved folders or whole-system access, discovers workspaces, and can
-start the real Worker:
+To configure and start the Worker in one pass:
 
 ```bash
-node apps/cli/bin/hosted-agents.mjs setup --run
+cloudagentfleet setup --run
 ```
 
-The Worker enrolls over an outbound SSE/HTTP transport and executes fallback
-jobs through Codeman's supported `/api/v1/sessions` API. Direct Tailscale mode
-does not require the Worker for browser terminal traffic.
+The flow detects prerequisites, asks before installing Codeman, lets you select
+approved folders or whole-system access, discovers workspaces, and can start
+the Worker. The Worker enrolls over outbound SSE/HTTP and executes fallback
+jobs through Codeman's `/api/v1/sessions` API. Direct Tailscale mode does not
+require the Worker for browser terminal traffic.
 
-To register a Codeman instance with the Controller:
+## Enroll a Codeman host
 
 ```bash
-hosted-agents enroll connector --controller-url https://controller.example.test \
-  --instance-id codeman-linux-1 --name "Linux Codeman" --node-id worker-linux-1
+cloudagentfleet enroll connector \
+  --controller-url https://controller.example.test \
+  --instance-id codeman-linux-1 \
+  --name "Linux Codeman" \
+  --node-id worker-linux-1
 ```
 
-Use `hosted-agents enroll tailscale-url --url https://codeman.tailnet.ts.net`
-for the preferred direct mode. The Controller keeps the endpoint and optional
-Codeman credentials server-side, then proxies Codeman's native UI, REST, SSE,
-and terminal WebSocket through the Hub. Enrollment verifies Hub health, reads
-the optional Controller token from `HOSTED_AGENTS_AUTH_TOKEN`, and does not
-automate Tailscale Serve.
-
-To link another machine, repeat the Worker setup on that machine and give it a
-unique Worker/instance ID. Connector mode is the recommended path:
+Preferred direct mode:
 
 ```bash
-# On machine B
-node apps/cli/bin/hosted-agents.mjs setup --run
-node apps/cli/bin/hosted-agents.mjs enroll connector \
+cloudagentfleet enroll tailscale-url \
+  --controller-url https://controller.example.test \
+  --instance-id codeman-remote \
+  --name "Remote Codeman" \
+  --url https://codeman.tailnet.ts.net
+```
+
+The Controller keeps the endpoint and optional Codeman credentials server-side,
+then proxies Codeman's native UI, REST, SSE, and terminal WebSocket through the
+Hub. Enrollment verifies Hub health, reads the optional Controller token from
+`HOSTED_AGENTS_AUTH_TOKEN`, and does not automate Tailscale Serve.
+
+To link another machine, repeat setup on that host with a unique Worker and
+instance ID:
+
+```bash
+cloudagentfleet setup --run
+cloudagentfleet enroll connector \
   --controller-url http://<hub-host>:8787 \
   --instance-id codeman-machine-b \
   --name "Codeman Machine B" \
@@ -73,80 +89,106 @@ node apps/cli/bin/hosted-agents.mjs enroll connector \
 ```
 
 Each session is shown under its instance and includes its agent, workspace, and
-short stable session ID. Direct hosts open Codeman's own UI through the
-`Open Codeman UI` action; the terminal implementation, local echo, ANSI/TUI
-handling, and input semantics remain upstream Codeman behavior.
+short stable session ID. Direct hosts open Codeman's own UI through
+**Open Codeman UI**; terminal behavior remains upstream Codeman.
 
-The unified "Start a session" dialog supports either a discovered workspace or
-an explicit path. Explicit paths are accepted only inside the instance's
-configured folder roots; use `--workspace-mode system` during enrollment when
-whole-system path selection is intentionally required.
+The unified session dialog accepts a discovered workspace or an explicit path.
+Explicit paths must fall inside the instance's configured folder roots; use
+`--workspace-mode system` during enrollment only when whole-system path
+selection is intentional.
+
+## Worker service
+
+```bash
+cloudagentfleet worker install
+cloudagentfleet worker start
+cloudagentfleet worker status
+cloudagentfleet worker stop
+cloudagentfleet worker remove
+```
 
 ## Private Hub access with Tailscale Serve
 
-The Controller is one private Hub for the fleet and binds to `127.0.0.1` by
-default. After starting it with:
+Start the Controller on the Hub host (from a clone):
 
 ```bash
 pnpm --filter @hosted-agents/control-plane dev
 ```
 
-configure one tailnet route from a second terminal:
+Then publish only the loopback Hub through Tailscale:
 
 ```bash
-node apps/cli/bin/hosted-agents.mjs hub serve
+cloudagentfleet hub serve
+cloudagentfleet hub status
+cloudagentfleet hub stop
 ```
 
-This checks the installed, connected Tailscale CLI and the local Hub health
-endpoint, then serves only `http://127.0.0.1:8787` through Tailscale. It does
-not expose Codeman instances or create per-instance public domains. Use
-`hosted-agents hub status` to inspect the route and `hosted-agents hub stop` to
-reset Tailscale Serve routes. Restrict access with Tailscale ACLs and do not
-enable Funnel. The command rejects non-loopback Controller binds and does not
-use a shell to invoke Tailscale.
+The Hub binds to `127.0.0.1` by default. `hub serve` checks the Tailscale CLI
+and local Hub health, then serves only `http://127.0.0.1:8787`. It does not
+expose Codeman instances or create per-instance public domains. Restrict access
+with Tailscale ACLs and do not enable Funnel. The command rejects non-loopback
+Controller binds.
 
-See [`docs/TAILSCALE-SERVE.md`](docs/TAILSCALE-SERVE.md) for Windows
-PowerShell commands, alternate ports, and the complete security checklist.
-
-For a repeatable two-host validation flow, run the explicit mock or live
-harness documented in [`docs/MULTIHOST-E2E.md`](docs/MULTIHOST-E2E.md).
+See [`docs/TAILSCALE-SERVE.md`](docs/TAILSCALE-SERVE.md) for ACL examples,
+alternate ports, and the security checklist. For a two-host validation flow,
+see [`docs/MULTIHOST-E2E.md`](docs/MULTIHOST-E2E.md).
 
 ## Run a Codeman Worker locally
 
-Install Codeman using its official installer, start `codeman web`, and then
-start our Worker with the environment described in
-[`docs/CODEMAN-WORKER.md`](docs/CODEMAN-WORKER.md). Codeman remains responsible
-for tmux, PTYs, CLI credentials, terminal streaming, and durable sessions; this
-project owns worker enrollment, workspace policy, routing, and job lifecycle.
+Install Codeman with its official installer, start `codeman web`, then use:
+
+```bash
+cloudagentfleet setup --run
+cloudagentfleet doctor
+```
+
+Details are in [`docs/CODEMAN-WORKER.md`](docs/CODEMAN-WORKER.md). Codeman owns
+tmux, PTYs, CLI credentials, terminal streaming, and durable sessions; this
+project owns enrollment, workspace policy, routing, and job lifecycle.
 
 ## Install without the source tree
 
-Maintainers can publish the built package with:
+Maintainers publish with:
 
 ```bash
-npm install
-npm run build:release
+pnpm install
+pnpm build:release
+pnpm pack
 npm publish
 ```
 
-Operators can install the CLI globally and run guided setup:
+Operators install the CLI and run guided setup:
 
 ```bash
-npm install --global hosted-agents
-hosted-agents setup
-hosted-agents worker install
-hosted-agents worker start
+npm install --global cloudagentfleet
+cloudagentfleet setup
+cloudagentfleet worker install
+cloudagentfleet worker start
 ```
 
-The release workflow also produces platform archives containing a private Node
-runtime and a `hosted-agents` launcher. Unix archives provide `install.sh`;
-Windows archives provide `install.ps1` and `hosted-agents.cmd`. The release
-does not bundle Codeman, Claude credentials, Cursor credentials, or Tailscale
-identity.
+Release archives include a private Node runtime and a `cloudagentfleet`
+launcher. After extracting an archive, put the directory on your `PATH` (or
+invoke the launcher by path) and run the same CLI commands — there is no
+separate install script.
+
+The release does not bundle Codeman, Claude credentials, Cursor credentials, or
+Tailscale identity.
+
+## Project shape
+
+- `apps/control-plane` — private API, scheduler, persistence, and relay
+- `apps/dashboard` — fleet launcher and host context overlay
+- `apps/cli` — guided setup, pairing, enrollment, and Hub Serve helpers
+- `apps/node-agent` — outbound-connected machine companion
+- `packages/protocol` — shared messages and domain types
+
+## Contributing
+
+See [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 ## Status
 
 The repository contains the web overlay, Controller routing, native Codeman
 proxy, optional Worker fallback, and tested two-host Codeman execution path.
 Preview relay, remote browser, and official Cursor/Claude adapters remain on
-the roadmap in `docs/ROADMAP.md`.
+the roadmap in [`docs/ROADMAP.md`](docs/ROADMAP.md).
