@@ -12,6 +12,15 @@
     "README.md",
     "CHANGELOG.md"
   ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hirenf14/cloudagentfleet.git",
+    "directory": "apps/control-plane"
+  },
+  "homepage": "https://github.com/hirenf14/cloudagentfleet/tree/master/apps/control-plane#readme",
+  "bugs": {
+    "url": "https://github.com/hirenf14/cloudagentfleet/issues"
+  },
   "publishConfig": {
     "access": "public",
     "registry": "https://registry.npmjs.org/"

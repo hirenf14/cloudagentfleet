@@ -12,6 +12,15 @@
     "./package.json": "./package.json",
     "./public/*": "./dist/public/*"
   },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hirenf14/cloudagentfleet.git",
+    "directory": "apps/dashboard"
+  },
+  "homepage": "https://github.com/hirenf14/cloudagentfleet/tree/master/apps/dashboard#readme",
+  "bugs": {
+    "url": "https://github.com/hirenf14/cloudagentfleet/issues"
+  },
   "publishConfig": {
     "access": "public",
     "registry": "https://registry.npmjs.org/"

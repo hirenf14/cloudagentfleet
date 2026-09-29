@@ -3,6 +3,14 @@
   "version": "0.1.0",
   "private": true,
   "description": "Cloud Agent Fleet monorepo — Hub, UI, and Worker packages.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hirenf14/cloudagentfleet.git"
+  },
+  "homepage": "https://github.com/hirenf14/cloudagentfleet#readme",
+  "bugs": {
+    "url": "https://github.com/hirenf14/cloudagentfleet/issues"
+  },
   "engines": {
     "node": ">=22.6.0"
   },
