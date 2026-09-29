@@ -104,9 +104,9 @@ pnpm build:release
 pnpm release
 ```
 
-`build:release` bundles Hub and Worker (protocol inlined) and stages the CLI
-into the worker package. `package:standalone` wraps the combined CLI/worker
-runtime for offline archives.
+`build:release` bundles Hub and Worker into ignored `dist/` CLI binaries
+(protocol inlined) and stages a flat `dist/cli-bundle` for standalone archives.
+`package:standalone` wraps that CLI bundle with a private Node runtime.
 
 ## Branch and pull request workflow
 

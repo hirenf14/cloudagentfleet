@@ -180,10 +180,10 @@ npm install --global @cloudagentfleet/hub @cloudagentfleet/ui
 cloudagentfleet-hub
 ```
 
-Release archives include a private Node runtime and a `cloudagentfleet`
-launcher. After extracting an archive, put the directory on your `PATH` (or
-invoke the launcher by path) and run the same CLI commands — there is no
-separate install script.
+Release archives include a private Node runtime and compiled CLI bundles
+(`cloudagentfleet`, `cloudagentfleet-worker`, `cloudagentfleet-hub`). After
+extracting an archive, put the directory on your `PATH` (or invoke a launcher
+by path) and run the same CLI commands — there is no separate install script.
 
 The release does not bundle Codeman, Claude credentials, Cursor credentials, or
 Tailscale identity.
