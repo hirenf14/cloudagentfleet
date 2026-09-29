@@ -18,30 +18,32 @@ machines that cannot accept Controller-to-Codeman connections.
 
 ## Install
 
-Public npm packages:
+Operators install **only the npm packages** — not this repository. Each package is
+self-contained:
 
-| Package | Role | Binary |
-| --- | --- | --- |
-| `@cloudagentfleet/hub` | Control plane | `cloudagentfleet-hub` |
-| `@cloudagentfleet/ui` | Hub UI assets | (dependency of Hub) |
-| `@cloudagentfleet/worker` | Machine companion + operator CLI | `cloudagentfleet`, `cloudagentfleet-worker` |
+| Package | What you get |
+| --- | --- |
+| `@cloudagentfleet/hub` | One Hub CLI binary (`cloudagentfleet-hub`) |
+| `@cloudagentfleet/ui` | Full Hub UI asset package (`public/…`) |
+| `@cloudagentfleet/worker` | Operator CLI + Worker binaries |
 
 ```bash
 npm install --global @cloudagentfleet/worker
 cloudagentfleet --help
 ```
 
-Hub host:
+Hub host (Hub binary resolves UI from the installed `@cloudagentfleet/ui` package):
 
 ```bash
 npm install --global @cloudagentfleet/hub @cloudagentfleet/ui
 cloudagentfleet-hub
 ```
 
-From a clone of this repository:
+From a clone of this repository (developers only):
 
 ```bash
 pnpm install
+pnpm build:release
 pnpm --filter @cloudagentfleet/worker link --global
 pnpm --filter @cloudagentfleet/hub link --global
 cloudagentfleet --help

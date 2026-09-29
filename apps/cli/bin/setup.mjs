@@ -15,11 +15,8 @@ import { createInterface } from "node:readline/promises";
 import { createHash, randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 
-const executableRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
-const runtimeRoot = existsSync(join(executableRoot, "runtime"))
-  ? executableRoot
-  : repoRoot;
+const thisFile = fileURLToPath(import.meta.url);
+const thisDir = dirname(thisFile);
 const configPath = join(homedir(), ".hosted-agents", "worker.json");
 const instancesConfigPath = join(homedir(), ".hosted-agents", "instances.json");
 const modes = ["claude", "shell", "opencode", "codex", "gemini", "antigravity", "pi", "grok", "deepseek"];
@@ -27,6 +24,29 @@ const defaultAgentNames = { claude: "Claude Code" };
 const tailscaleCommand = process.platform === "win32" ? "tailscale.exe" : "tailscale";
 const loopbackHosts = new Set(["localhost", "127.0.0.1", "::1", "[::1]"]);
 const wslDistro = process.env.HOSTED_AGENTS_WSL_DISTRO?.trim() || "Ubuntu";
+
+function resolveWorkerScript() {
+  const candidates = [
+    // npm / built package: sibling CLI bundle next to cloudagentfleet.mjs
+    join(thisDir, "cloudagentfleet-worker.mjs"),
+    // legacy standalone layout
+    join(thisDir, "runtime", "worker.mjs"),
+    join(thisDir, "..", "runtime", "worker.mjs"),
+    // monorepo checkout without a release build
+    join(thisDir, "..", "..", "node-agent", "src", "main.ts"),
+  ];
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) return candidate;
+  }
+  throw new Error(
+    "Unable to locate the Worker runtime. Install @cloudagentfleet/worker from npm, "
+    + "or run pnpm build:release in a checkout.",
+  );
+}
+
+function resolveRuntimeRoot(workerScript) {
+  return dirname(workerScript);
+}
 
 function command(commandName, args = [], options = {}) {
   return spawnSync(commandName, args, {
@@ -358,10 +378,8 @@ function workerEnvironment(config) {
 
 function runWorker(config) {
   const env = workerEnvironment(config);
-  const packagedWorker = join(runtimeRoot, "runtime/worker.mjs");
-  const workerScript = existsSync(packagedWorker)
-    ? packagedWorker
-    : join(repoRoot, "apps/node-agent/src/main.ts");
+  const workerScript = resolveWorkerScript();
+  const runtimeRoot = resolveRuntimeRoot(workerScript);
   if (config.execution !== "wsl") {
     return spawn(
       process.execPath,
