@@ -944,11 +944,17 @@ async function readJson<T>(request: IncomingMessage): Promise<T> {
   return JSON.parse(chunks.join("")) as T;
 }
 
-if (
-  process.argv[1]?.endsWith("/server.ts")
-  || process.argv[1]?.endsWith("\\server.ts")
-  || process.argv[1]?.endsWith("/server.mjs")
-  || process.argv[1]?.endsWith("\\server.mjs")
-) {
+function isDirectHubEntrypoint(): boolean {
+  const entry = process.argv[1];
+  if (!entry) return false;
+  const normalized = entry.replaceAll("\\", "/");
+  return (
+    normalized.endsWith("/server.ts")
+    || normalized.endsWith("/server.mjs")
+    || normalized.endsWith("/cloudagentfleet-hub.mjs")
+  );
+}
+
+if (isDirectHubEntrypoint()) {
   startControllerServer();
 }
