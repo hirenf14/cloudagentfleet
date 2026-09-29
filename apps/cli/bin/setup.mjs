@@ -1049,13 +1049,18 @@ function help() {
   ].join("\n"));
 }
 
-if (
-  process.argv[1]
-  && (
-    resolve(process.argv[1]) === resolve(fileURLToPath(import.meta.url))
-    || process.argv[1].endsWith("hosted-agents.mjs")
-  )
-) {
+function isDirectCliEntrypoint() {
+  const entry = process.argv[1];
+  if (!entry) return false;
+  const normalized = entry.replaceAll("\\", "/");
+  return (
+    normalized.endsWith("/hosted-agents.mjs")
+    || normalized.endsWith("/cloudagentfleet.mjs")
+    || resolve(entry) === resolve(fileURLToPath(import.meta.url))
+  );
+}
+
+if (isDirectCliEntrypoint()) {
   try {
     const commandName = process.argv[2] ?? "help";
     if (commandName === "setup") await setup();
