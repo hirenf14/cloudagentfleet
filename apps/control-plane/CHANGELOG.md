@@ -1,5 +1,11 @@
 # @cloudagentfleet/hub
 
+## 0.1.2
+
+### Patch Changes
+
+- [`add55cd`](https://github.com/hirenf14/cloudagentfleet/commit/add55cdecc20e049719cd8b06c7ff399dd491866) Thanks [@hirenf14](https://github.com/hirenf14)! - Fix Hub binary exiting immediately: start when invoked as cloudagentfleet-hub.mjs.
+
 ## 0.1.1
 
 ### Patch Changes
