@@ -1,0 +1,417 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0c1218">
+  <title>Hosted Agents — UI draft (open design)</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@500;700;800&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --ink: #0c1218;
+      --ink-2: #121a24;
+      --mist: #d5dde8;
+      --mist-dim: #8b97a8;
+      --line: rgba(213, 221, 232, 0.12);
+      --accent: #3d9b8f;
+      --accent-soft: rgba(61, 155, 143, 0.18);
+      --warn: #d4a05a;
+      --danger: #d46868;
+      --ok: #6fbf8a;
+      --font-display: "Syne", system-ui, sans-serif;
+      --font-body: "Outfit", system-ui, sans-serif;
+      --pad: clamp(1.25rem, 4vw, 3rem);
+    }
+
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      min-height: 100%;
+      background: var(--ink);
+      color: var(--mist);
+      font-family: var(--font-body);
+      font-weight: 400;
+      letter-spacing: 0.01em;
+    }
+
+    body {
+      background:
+        radial-gradient(1200px 700px at 12% -10%, rgba(61, 155, 143, 0.22), transparent 55%),
+        radial-gradient(900px 600px at 90% 10%, rgba(90, 120, 160, 0.16), transparent 50%),
+        radial-gradient(800px 500px at 50% 120%, rgba(61, 155, 143, 0.08), transparent 45%),
+        var(--ink);
+      background-attachment: fixed;
+    }
+
+    .grain {
+      pointer-events: none;
+      position: fixed;
+      inset: 0;
+      opacity: 0.045;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+      z-index: 0;
+    }
+
+    .draft-note {
+      position: fixed;
+      top: 0.75rem;
+      right: var(--pad);
+      z-index: 20;
+      font-size: 0.75rem;
+      color: var(--mist-dim);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .screen { display: none; position: relative; z-index: 1; min-height: 100vh; }
+    .screen.is-active { display: flex; flex-direction: column; }
+
+    /* —— Login (open, brand-first) —— */
+    .login {
+      justify-content: center;
+      align-items: center;
+      padding: var(--pad);
+      text-align: center;
+      animation: rise 700ms ease-out both;
+    }
+    .login__brand {
+      font-family: var(--font-display);
+      font-weight: 800;
+      font-size: clamp(2.75rem, 8vw, 5.5rem);
+      line-height: 0.95;
+      letter-spacing: -0.03em;
+      margin: 0 0 1rem;
+    }
+    .login__lede {
+      margin: 0 0 2.75rem;
+      color: var(--mist-dim);
+      font-weight: 300;
+      font-size: 1.1rem;
+      max-width: 22rem;
+    }
+    .login form {
+      display: flex;
+      flex-direction: column;
+      gap: 0.85rem;
+      width: min(100%, 22rem);
+    }
+    .login label {
+      text-align: left;
+      font-size: 0.8rem;
+      color: var(--mist-dim);
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+    input[type="password"], input[type="text"] {
+      width: 100%;
+      border: 1px solid var(--line);
+      background: rgba(18, 26, 36, 0.65);
+      color: var(--mist);
+      border-radius: 0;
+      padding: 0.9rem 1rem;
+      font: inherit;
+      font-size: 1rem;
+      outline: none;
+      transition: border-color 180ms ease, background 180ms ease;
+    }
+    input:focus {
+      border-color: rgba(61, 155, 143, 0.7);
+      background: rgba(18, 26, 36, 0.9);
+    }
+    .btn {
+      appearance: none;
+      border: 0;
+      cursor: pointer;
+      font-family: var(--font-body);
+      font-weight: 500;
+      font-size: 0.95rem;
+      padding: 0.95rem 1.25rem;
+      transition: transform 160ms ease, background 160ms ease, color 160ms ease;
+    }
+    .btn:active { transform: translateY(1px); }
+    .btn--primary {
+      background: var(--accent);
+      color: #041210;
+    }
+    .btn--primary:hover { background: #4bb3a5; }
+    .btn--ghost {
+      background: transparent;
+      color: var(--mist);
+      border: 1px solid var(--line);
+      padding: 0.65rem 1rem;
+    }
+    .btn--ghost:hover { border-color: rgba(213, 221, 232, 0.35); }
+    .btn--text {
+      background: transparent;
+      color: var(--accent);
+      padding: 0;
+      text-align: left;
+      font-size: 0.95rem;
+    }
+    .btn--text:hover { color: #6fc4b8; }
+
+    /* —— Fleet (open composition, not card dashboard) —— */
+    .topbar {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 1rem;
+      padding: 1.25rem var(--pad) 0;
+      animation: fade 500ms ease both;
+    }
+    .topbar__brand {
+      font-family: var(--font-display);
+      font-weight: 700;
+      font-size: 1.15rem;
+      letter-spacing: -0.02em;
+    }
+    .topbar__live {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.45rem;
+      color: var(--mist-dim);
+      font-size: 0.85rem;
+    }
+    .topbar__live i {
+      width: 0.45rem;
+      height: 0.45rem;
+      border-radius: 50%;
+      background: var(--ok);
+      box-shadow: 0 0 0 0 rgba(111, 191, 138, 0.5);
+      animation: pulse 2.4s ease-out infinite;
+    }
+
+    .fleet {
+      flex: 1;
+      display: grid;
+      grid-template-columns: minmax(11rem, 16rem) 1fr;
+      gap: clamp(1.5rem, 4vw, 3.5rem);
+      padding: 2rem var(--pad) var(--pad);
+      animation: rise 650ms 80ms ease-out both;
+    }
+    @media (max-width: 800px) {
+      .fleet { grid-template-columns: 1fr; }
+    }
+
+    .hosts h2 {
+      margin: 0 0 1rem;
+      font-family: var(--font-display);
+      font-size: 0.75rem;
+      font-weight: 500;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--mist-dim);
+    }
+    .host-list {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 0.15rem;
+      border-top: 1px solid var(--line);
+    }
+    .host-list button {
+      width: 100%;
+      text-align: left;
+      background: transparent;
+      border: 0;
+      border-bottom: 1px solid var(--line);
+      color: var(--mist);
+      font: inherit;
+      padding: 0.95rem 0.15rem;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 0.65rem;
+      transition: color 160ms ease, padding-left 160ms ease;
+    }
+    .host-list button:hover { color: #fff; padding-left: 0.35rem; }
+    .host-list button.is-selected {
+      color: #fff;
+      padding-left: 0.35rem;
+    }
+    .dot {
+      width: 0.4rem;
+      height: 0.4rem;
+      border-radius: 50%;
+      background: var(--ok);
+      flex-shrink: 0;
+    }
+    .dot--warn { background: var(--warn); }
+    .dot--off { background: var(--mist-dim); }
+
+    .stage {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      min-height: 60vh;
+      max-width: 38rem;
+      padding-bottom: 2rem;
+    }
+    .stage__eyebrow {
+      margin: 0 0 0.75rem;
+      font-size: 0.75rem;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--mist-dim);
+    }
+    .stage__title {
+      margin: 0 0 1rem;
+      font-family: var(--font-display);
+      font-weight: 800;
+      font-size: clamp(2.2rem, 5vw, 3.6rem);
+      line-height: 1.02;
+      letter-spacing: -0.03em;
+    }
+    .stage__copy {
+      margin: 0 0 2rem;
+      color: var(--mist-dim);
+      font-weight: 300;
+      font-size: 1.05rem;
+      line-height: 1.55;
+      max-width: 28rem;
+    }
+    .stage__actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.85rem 1.5rem;
+      align-items: center;
+    }
+    .meta-row {
+      margin-top: 2.5rem;
+      padding-top: 1.25rem;
+      border-top: 1px solid var(--line);
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 1rem;
+      max-width: 28rem;
+    }
+    .meta-row span {
+      display: block;
+      font-size: 0.7rem;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--mist-dim);
+      margin-bottom: 0.35rem;
+    }
+    .meta-row strong {
+      font-weight: 500;
+      font-size: 1rem;
+    }
+
+    .nav-switch {
+      position: fixed;
+      bottom: 1rem;
+      left: var(--pad);
+      z-index: 20;
+      display: flex;
+      gap: 0.5rem;
+    }
+
+    @keyframes rise {
+      from { opacity: 0; transform: translateY(12px); }
+      to { opacity: 1; transform: none; }
+    }
+    @keyframes fade {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+    @keyframes pulse {
+      0% { box-shadow: 0 0 0 0 rgba(111, 191, 138, 0.45); }
+      70% { box-shadow: 0 0 0 8px rgba(111, 191, 138, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(111, 191, 138, 0); }
+    }
+  </style>
+</head>
+<body>
+  <div class="grain" aria-hidden="true"></div>
+  <p class="draft-note">Design draft · not production</p>
+
+  <section id="screen-login" class="screen login is-active" aria-label="Login draft">
+    <h1 class="login__brand">Hosted Agents</h1>
+    <p class="login__lede">Private fleet control for Codeman hosts. One Hub. Many machines.</p>
+    <form class="login form" onsubmit="event.preventDefault(); show('fleet')">
+      <label for="password">Hub password</label>
+      <input id="password" type="password" name="password" autocomplete="current-password" placeholder="••••••••••••">
+      <button class="btn btn--primary" type="submit">Enter fleet</button>
+    </form>
+  </section>
+
+  <section id="screen-fleet" class="screen" aria-label="Fleet draft">
+    <header class="topbar">
+      <div class="topbar__brand">Hosted Agents</div>
+      <div class="topbar__live"><i></i> Live</div>
+    </header>
+    <div class="fleet">
+      <aside class="hosts" aria-label="Hosts">
+        <h2>Hosts</h2>
+        <ul class="host-list">
+          <li><button type="button" class="is-selected" data-host="thefire007"><span class="dot"></span>thefire007</button></li>
+          <li><button type="button" data-host="nixvm5"><span class="dot"></span>nixvm5</button></li>
+          <li><button type="button" data-host="hirens-laptop"><span class="dot dot--warn"></span>hirens-laptop</button></li>
+        </ul>
+      </aside>
+      <main class="stage">
+        <p class="stage__eyebrow">Selected host</p>
+        <h2 class="stage__title" id="stage-title">thefire007</h2>
+        <p class="stage__copy" id="stage-copy">
+          WSL Codeman on this machine. Start a session from the Hub, or open Codeman’s native UI through the same origin.
+        </p>
+        <div class="stage__actions">
+          <button type="button" class="btn btn--primary">Start session</button>
+          <button type="button" class="btn btn--text">Open Codeman UI →</button>
+        </div>
+        <div class="meta-row" aria-label="Host summary">
+          <div><span>Status</span><strong id="meta-status">Online</strong></div>
+          <div><span>Workspaces</span><strong>2</strong></div>
+          <div><span>Agents</span><strong>Claude · Shell</strong></div>
+        </div>
+      </main>
+    </div>
+  </section>
+
+  <div class="nav-switch" role="navigation" aria-label="Draft screens">
+    <button type="button" class="btn btn--ghost" onclick="show('login')">Login</button>
+    <button type="button" class="btn btn--ghost" onclick="show('fleet')">Fleet</button>
+  </div>
+
+  <script>
+    const copy = {
+      thefire007: {
+        title: "thefire007",
+        copy: "WSL Codeman on this machine. Start a session from the Hub, or open Codeman’s native UI through the same origin.",
+        status: "Online",
+      },
+      nixvm5: {
+        title: "nixvm5",
+        copy: "Remote Codeman host on the tailnet. Hub reaches it directly; operators never see the Codeman endpoint.",
+        status: "Online",
+      },
+      "hirens-laptop": {
+        title: "hirens-laptop",
+        copy: "Laptop host — last seen recently. Check health before starting a long session.",
+        status: "Degraded",
+      },
+    };
+
+    function show(name) {
+      document.querySelectorAll(".screen").forEach((el) => el.classList.remove("is-active"));
+      document.getElementById("screen-" + name).classList.add("is-active");
+    }
+
+    document.querySelectorAll(".host-list button").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        document.querySelectorAll(".host-list button").forEach((b) => b.classList.remove("is-selected"));
+        btn.classList.add("is-selected");
+        const host = copy[btn.dataset.host];
+        document.getElementById("stage-title").textContent = host.title;
+        document.getElementById("stage-copy").textContent = host.copy;
+        document.getElementById("meta-status").textContent = host.status;
+      });
+    });
+  </script>
+</body>
+</html>
