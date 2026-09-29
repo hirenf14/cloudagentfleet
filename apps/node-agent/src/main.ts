@@ -177,12 +177,18 @@ export async function runWorker(): Promise<void> {
   }
 }
 
-if (
-  process.argv[1]?.endsWith("/main.ts")
-  || process.argv[1]?.endsWith("\\main.ts")
-  || process.argv[1]?.endsWith("/worker.mjs")
-  || process.argv[1]?.endsWith("\\worker.mjs")
-) {
+function isDirectWorkerEntrypoint(): boolean {
+  const entry = process.argv[1];
+  if (!entry) return false;
+  const normalized = entry.replaceAll("\\", "/");
+  return (
+    normalized.endsWith("/main.ts")
+    || normalized.endsWith("/worker.mjs")
+    || normalized.endsWith("/cloudagentfleet-worker.mjs")
+  );
+}
+
+if (isDirectWorkerEntrypoint()) {
   runWorker().catch((error) => {
     console.error(error instanceof Error ? error.message : error);
     process.exitCode = 1;
