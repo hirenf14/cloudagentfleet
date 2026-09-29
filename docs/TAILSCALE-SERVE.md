@@ -5,7 +5,7 @@ setup phase is **SSH over a dedicated port only**. Ports **80 and 443 stay
 untouched**: do not run `tailscale serve`, Funnel, or any Hosted Agents
 listener on them.
 
-The Hub web UI and `hosted-agents hub serve` are optional and deferred until
+The Hub web UI and `cloudagentfleet hub serve` are optional and deferred until
 you explicitly want a browser origin.
 
 ## Current phase: SSH only
@@ -21,7 +21,7 @@ Goals:
 
 - Install Tailscale on each machine and confirm `tailscale status` is connected.
 - Run `sshd` on the dedicated port (example `2222`), not on 80/443.
-- Do **not** run `hosted-agents hub serve` or `tailscale serve` in this phase.
+- Do **not** run `cloudagentfleet hub serve` or `tailscale serve` in this phase.
 - Do **not** enable Tailscale Funnel.
 
 ### ACL / grants (SSH port only)
@@ -128,7 +128,7 @@ proxies loopback (for example `127.0.0.1:8787`); the Controller does not bind
 
 ```bash
 pnpm --filter @hosted-agents/control-plane dev
-node apps/cli/bin/hosted-agents.mjs hub serve
+cloudagentfleet hub serve
 ```
 
 Equivalent Serve command:
@@ -142,7 +142,7 @@ Custom Controller port:
 ```bash
 HOSTED_AGENTS_HOST=127.0.0.1 HOSTED_AGENTS_PORT=9000 \
   pnpm --filter @hosted-agents/control-plane dev
-node apps/cli/bin/hosted-agents.mjs hub serve --port 9000
+cloudagentfleet hub serve --port 9000
 ```
 
 ### Hub password (Serve / Hub UI phase)
@@ -165,8 +165,8 @@ browser.
 ### Inspect or stop Serve
 
 ```bash
-node apps/cli/bin/hosted-agents.mjs hub status
-node apps/cli/bin/hosted-agents.mjs hub stop
+cloudagentfleet hub status
+cloudagentfleet hub stop
 ```
 
 `hub stop` runs `tailscale serve reset` on this node. Use it only when this

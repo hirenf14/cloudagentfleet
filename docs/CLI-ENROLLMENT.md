@@ -3,7 +3,7 @@
 ## Worker setup
 
 ```text
-hosted-agents setup
+cloudagentfleet setup
 ```
 
 The command is the single supported path for adding a machine to a private
@@ -17,7 +17,7 @@ started. The command registers the instance, saves only non-secret registration
 metadata locally, and verifies health through the Hub:
 
 ```text
-hosted-agents enroll connector \
+cloudagentfleet enroll connector \
   --controller-url https://controller.example.test \
   --instance-id codeman-linux-1 \
   --name "Linux Codeman" \
@@ -26,7 +26,7 @@ hosted-agents enroll connector \
   --workspace-root "$HOME/workspaces" \
   --agent-mode claude
 
-hosted-agents enroll tailscale-url \
+cloudagentfleet enroll tailscale-url \
   --controller-url https://controller.example.test \
   --instance-id codeman-remote \
   --name "Remote Codeman" \
@@ -75,11 +75,11 @@ connection, heartbeats, job delivery, preview relay, browser relay, reconnect
 backoff, and durable local session reattachment.
 
 ```text
-hosted-agents worker install
-hosted-agents worker start
-hosted-agents worker status
-hosted-agents worker stop
-hosted-agents worker remove
+cloudagentfleet worker install
+cloudagentfleet worker start
+cloudagentfleet worker status
+cloudagentfleet worker stop
+cloudagentfleet worker remove
 ```
 
 The worker can launch or connect to Codeman, Cursor, and Claude runtimes. When
@@ -91,12 +91,12 @@ continue to run provider-specific login/setup commands themselves.
 The command can be used as:
 
 ```text
-hosted-agents setup
+cloudagentfleet setup
 ```
 
 Official provider plan requirements, administrator approval, browser login, and
-one-time environment secrets remain provider-owned. Hosted Agents validates and
-monitors provider readiness but does not perform provider setup.
+one-time environment secrets remain provider-owned. Cloud Agent Fleet validates
+and monitors provider readiness but does not perform provider setup.
 
 ## Safety rules
 
@@ -105,5 +105,5 @@ monitors provider readiness but does not perform provider setup.
   Cursor or Anthropic API keys.
 - No privileged service is installed without explicit confirmation.
 - Releases are checksum/signature verified before self-update.
-- `hosted-agents remove` revokes the node, stops the companion, and removes
-  local service registration without deleting project workspaces.
+- `cloudagentfleet worker remove` revokes the node, stops the companion, and
+  removes local service registration without deleting project workspaces.

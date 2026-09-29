@@ -88,7 +88,7 @@ local runtime. A path never overrides the `folders` or `system` policy.
 
 ## Setup CLI and persistent worker
 
-The `hosted-agents setup` command is the supported onboarding path. It runs in
+The `cloudagentfleet setup` command is the supported onboarding path. It runs in
 four stages:
 
 1. Detect OS, WSL, Node, Git, Codeman, tmux, Docker, browser, and provider CLIs.

@@ -1,6 +1,6 @@
 # Codeman Worker
 
-The Worker is the machine-local execution side of Hosted Agents. It does not
+The Worker is the machine-local execution side of Cloud Agent Fleet. It does not
 open an inbound listener. It enrolls with the Controller, consumes assignments
 over an outbound Server-Sent Events stream, and posts lifecycle events back over
 HTTP.
@@ -15,27 +15,28 @@ codeman web
 ```
 
 On Windows, run those commands inside WSL. Keep Codeman's authentication and
-provider login local to that machine. Hosted Agents does not copy those
+provider login local to that machine. Cloud Agent Fleet does not copy those
 credentials to the Controller.
 
 ## Configure and start with the CLI
 
-From the repository root, run:
+Install or link the CLI (`npm install --global cloudagentfleet`, or
+`pnpm --filter @hosted-agents/cli link --global` from a clone), then run:
 
 ```bash
-node apps/cli/bin/hosted-agents.mjs setup --run
+cloudagentfleet setup --run
 ```
 
 The guided flow detects WSL/Codeman, asks before installing Codeman, lets you
 choose approved folders or whole-system access, discovers workspaces beneath
 those roots, selects the Codeman mode, writes a machine-local configuration,
 starts Codeman, and launches the Worker. To configure without launching, omit
-`--run`; later use `hosted-agents run`.
+`--run`; later use `cloudagentfleet run`.
 
 Once a Worker is online, run this Controller-side selection flow:
 
 ```bash
-node apps/cli/bin/hosted-agents.mjs start
+cloudagentfleet start
 ```
 
 It selects an online Worker, then a ready workspace, then a ready agent, asks
@@ -44,7 +45,7 @@ for the prompt, and creates the job with an idempotency key.
 To expose the Worker-backed Codeman as a Hub instance, enroll it explicitly:
 
 ```bash
-node apps/cli/bin/hosted-agents.mjs enroll connector \
+cloudagentfleet enroll connector \
   --controller-url http://127.0.0.1:8787 \
   --instance-id codeman-worker-linux \
   --name "Codeman on Linux" \
@@ -124,4 +125,4 @@ provide a documented remote filesystem listing endpoint.
   legacy `cursor-agent` command) being installed and authenticated on each
   machine. Claude Code remains owned by Codeman.
 - Codeman installation remains confirmation-based; install the Worker service
-  explicitly with `hosted-agents worker install`.
+  explicitly with `cloudagentfleet worker install`.

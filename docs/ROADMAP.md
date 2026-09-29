@@ -10,7 +10,7 @@
 ## Phase 1a: One-command setup
 
 - Signed standalone installers for Windows, macOS, and Linux
-- `hosted-agents setup` prerequisite detection
+- `cloudagentfleet setup` prerequisite detection
 - Capability selection and confirmation-based dependency provisioning
 - One-time pairing and protected node identity
 - User-level startup service installation

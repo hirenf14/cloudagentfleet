@@ -14,7 +14,7 @@ one browser.
 
 ## V1 requirements
 
-1. Run `hosted-agents setup` to check prerequisites, pair a machine with a
+1. Run `cloudagentfleet setup` to check prerequisites, pair a machine with a
    one-time enrollment code, install the companion as a user-level service, and
    display its health.
 2. Provide a signed standalone installer and guided CLI that works without

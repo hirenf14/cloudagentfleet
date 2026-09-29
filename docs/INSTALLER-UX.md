@@ -2,20 +2,20 @@
 
 ## Principle
 
-Hosted Agents must be installable by a normal developer without Cursor,
-Claude, Codeman, or any AI agent running. The installer owns the machine
-bootstrap; provider tools remain user-authenticated integrations.
+Cloud Agent Fleet must be installable by a normal developer without Cursor,
+Claude, Codeman, or any AI agent running. The CLI owns the machine bootstrap;
+provider tools remain user-authenticated integrations.
 
 ## Human setup journey
 
-1. Install the npm package or download a platform archive for Windows,
-   macOS, or Linux.
-2. Run the launcher or `hosted-agents setup`.
+1. Install the npm package (`npm install --global cloudagentfleet`) or extract
+   a platform archive and put its `cloudagentfleet` launcher on `PATH`.
+2. Run `cloudagentfleet setup`.
 3. Choose the machine name and workspace access:
    - approved folders
    - explicit whole-system scope
 4. Choose capabilities:
-   - Hosted Agents Worker
+   - Cloud Agent Fleet Worker
    - Codeman integration
    - preview relay
    - remote browser
@@ -25,8 +25,8 @@ bootstrap; provider tools remain user-authenticated integrations.
    selected. Provider installation and login remain explicit user actions.
 8. Enroll the Worker with the Controller.
 9. Install and start the user-level Worker service with
-   `hosted-agents worker install` and `hosted-agents worker start`.
-10. Run `hosted-agents doctor` and show the dashboard link.
+   `cloudagentfleet worker install` and `cloudagentfleet worker start`.
+10. Run `cloudagentfleet doctor` and show the dashboard link.
 
 ## Required UX behaviors
 
@@ -34,16 +34,19 @@ bootstrap; provider tools remain user-authenticated integrations.
   an installer follow-up.
 - `setup --dry-run` shows all detected and planned changes without applying
   them.
-- `hosted-agents doctor` explains detected dependencies and missing
+- `cloudagentfleet doctor` explains detected dependencies and missing
   prerequisites.
-- `hosted-agents worker status` shows service, connection, workspace, and
+- `cloudagentfleet worker status` shows service, connection, workspace, and
   provider readiness separately.
-- `hosted-agents remove` revokes the Worker and removes only Hosted Agents
-  service/configuration; it does not delete workspaces or provider installs.
+- `cloudagentfleet worker remove` revokes the Worker and removes only Cloud
+  Agent Fleet service/configuration; it does not delete workspaces or provider
+  installs.
 - Errors include a human-readable explanation without printing credentials or
   cookies. Standalone archives include SHA-256 checksums.
 - Provider login commands are shown as optional next steps, never run
   automatically.
+- Supported install paths are CLI commands only — no `install.sh` /
+  `install.ps1` bootstrap scripts.
 
 ## Windows/WSL behavior
 
@@ -54,12 +57,12 @@ manual step. The user should not need to understand the internal WSL commands.
 
 ## Distribution artifacts
 
-`npm run build:release` creates a source-free Worker/CLI runtime. The web Hub
-and dashboard are deployed separately on the Controller host.
-`npm run package:standalone` adds the current platform's Node runtime, launcher,
-install script, manifest, and checksum file, then creates a `.tar.gz` archive.
-The release workflow runs these commands on Windows, macOS, and Linux so each
-archive contains a native runtime.
+`pnpm build:release` creates a source-free Worker/CLI runtime. The web Hub and
+dashboard are deployed separately on the Controller host.
+`pnpm package:standalone` adds the current platform's Node runtime,
+`cloudagentfleet` launcher, manifest, and checksum file, then creates a
+`.tar.gz` archive. The release workflow runs these commands on Windows, macOS,
+and Linux so each archive contains a native runtime.
 
 The current release does not implement pairing codes, OS credential-store
 integration, automatic updates, or signed artifact publication. These are

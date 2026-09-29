@@ -103,15 +103,15 @@ pnpm --filter @hosted-agents/control-plane dev
 Then use either:
 
 ```text
-node apps/cli/bin/hosted-agents.mjs enroll connector ...
-node apps/cli/bin/hosted-agents.mjs enroll tailscale-url ...
+cloudagentfleet enroll connector ...
+cloudagentfleet enroll tailscale-url ...
 ```
 
 Connector mode requires an online Worker with the same instance ID. Direct
 Tailscale URL mode requires an HTTPS Codeman endpoint and performs health
 verification through the Controller. To publish the single private Hub, use
-`node apps/cli/bin/hosted-agents.mjs hub serve`; this requires a connected
-Tailscale CLI and does not publish individual Codeman endpoints.
+`cloudagentfleet hub serve`; this requires a connected Tailscale CLI and does
+not publish individual Codeman endpoints.
 
 The harness intentionally uses direct HTTP registration rather than the
 interactive CLI so it cannot overwrite `~/.hosted-agents/instances.json` or a
