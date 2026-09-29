@@ -251,10 +251,6 @@ export class ControlPlane {
     this.connections.delete(nodeId);
     return node;
   }
-
-  markOffline(): void {
-    this.nodes.markOffline();
-  }
 }
 
 function connectorKey(nodeId: string, instanceId: string): string {

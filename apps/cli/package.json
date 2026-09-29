@@ -7,9 +7,9 @@
     "hosted-agents": "./bin/hosted-agents.mjs"
   },
   "scripts": {
-    "build": "tsc --outDir dist",
+    "build": "node --check bin/hosted-agents.mjs && node --check bin/setup.mjs",
     "dev": "node --watch bin/hosted-agents.mjs",
     "test": "node --test",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "node --check bin/hosted-agents.mjs && node --check bin/setup.mjs"
   }
 }
