@@ -1,5 +1,11 @@
 # @cloudagentfleet/worker
 
+## 0.1.6
+
+### Patch Changes
+
+- [`92ee8b9`](https://github.com/hirenf14/cloudagentfleet/commit/92ee8b92b7a2d1c7934d887811eaebaad71b7735) Thanks [@hirenf14](https://github.com/hirenf14)! - Start the Worker when invoked as the cloudagentfleet-worker binary.
+
 ## 0.1.5
 
 ### Patch Changes
