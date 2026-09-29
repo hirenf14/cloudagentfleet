@@ -16,22 +16,39 @@ machines that cannot accept Controller-to-Codeman connections.
 - [pnpm](https://pnpm.io) (for development from source)
 - Tailscale on each machine you want on the private fleet
 
-## Install the CLI
+## Install
+
+Public npm packages:
+
+| Package | Role | Binary |
+| --- | --- | --- |
+| `@cloudagentfleet/hub` | Control plane | `cloudagentfleet-hub` |
+| `@cloudagentfleet/ui` | Hub UI assets | (dependency of Hub) |
+| `@cloudagentfleet/worker` | Machine companion + operator CLI | `cloudagentfleet`, `cloudagentfleet-worker` |
 
 ```bash
-npm install --global cloudagentfleet
+npm install --global @cloudagentfleet/worker
 cloudagentfleet --help
+```
+
+Hub host:
+
+```bash
+npm install --global @cloudagentfleet/hub @cloudagentfleet/ui
+cloudagentfleet-hub
 ```
 
 From a clone of this repository:
 
 ```bash
 pnpm install
-pnpm --filter @hosted-agents/cli link --global
+pnpm --filter @cloudagentfleet/worker link --global
+pnpm --filter @cloudagentfleet/hub link --global
 cloudagentfleet --help
+cloudagentfleet-hub --help
 ```
 
-`hosted-agents` remains a compatibility alias for the same CLI.
+`hosted-agents` remains a compatibility alias for the worker CLI.
 
 ## Machine setup
 
@@ -112,7 +129,7 @@ cloudagentfleet worker remove
 Start the Controller on the Hub host (from a clone):
 
 ```bash
-pnpm --filter @hosted-agents/control-plane dev
+pnpm --filter @cloudagentfleet/hub dev
 ```
 
 Then publish only the loopback Hub through Tailscale:
@@ -148,22 +165,19 @@ project owns enrollment, workspace policy, routing, and job lifecycle.
 
 ## Install without the source tree
 
-Maintainers publish with:
+Maintainers publish the three packages through Changesets (see
+[`CONTRIBUTING.md`](CONTRIBUTING.md#releases)). Operators install from npm:
 
 ```bash
-pnpm install
-pnpm build:release
-pnpm pack
-npm publish
-```
-
-Operators install the CLI and run guided setup:
-
-```bash
-npm install --global cloudagentfleet
+npm install --global @cloudagentfleet/worker
 cloudagentfleet setup
 cloudagentfleet worker install
 cloudagentfleet worker start
+```
+
+```bash
+npm install --global @cloudagentfleet/hub @cloudagentfleet/ui
+cloudagentfleet-hub
 ```
 
 Release archives include a private Node runtime and a `cloudagentfleet`
@@ -176,11 +190,11 @@ Tailscale identity.
 
 ## Project shape
 
-- `apps/control-plane` — private API, scheduler, persistence, and relay
-- `apps/dashboard` — fleet launcher and host context overlay
-- `apps/cli` — guided setup, pairing, enrollment, and Hub Serve helpers
-- `apps/node-agent` — outbound-connected machine companion
-- `packages/protocol` — shared messages and domain types
+- `@cloudagentfleet/hub` (`apps/control-plane`) — API, scheduler, persistence, Codeman proxy
+- `@cloudagentfleet/ui` (`apps/dashboard`) — fleet launcher and host context overlay
+- `@cloudagentfleet/worker` (`apps/node-agent` + CLI) — machine companion and operator CLI
+- `apps/cli` — private CLI sources packaged into the worker release
+- `packages/protocol` — private shared messages and domain types
 
 ## Contributing
 

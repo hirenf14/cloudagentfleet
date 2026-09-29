@@ -21,7 +21,7 @@ credentials to the Controller.
 ## Configure and start with the CLI
 
 Install or link the CLI (`npm install --global cloudagentfleet`, or
-`pnpm --filter @hosted-agents/cli link --global` from a clone), then run:
+`pnpm --filter @cloudagentfleet/cli link --global` from a clone), then run:
 
 ```bash
 cloudagentfleet setup --run

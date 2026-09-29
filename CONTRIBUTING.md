@@ -20,15 +20,16 @@ cd cloudagentfleet
 pnpm install
 ```
 
-Link the CLI onto your PATH so every documented command works the same way as a
-global install:
+Link the public package CLIs onto your PATH:
 
 ```bash
-pnpm --filter @hosted-agents/cli link --global
+pnpm --filter @cloudagentfleet/worker link --global
+pnpm --filter @cloudagentfleet/hub link --global
 cloudagentfleet --help
+cloudagentfleet-hub --help
 ```
 
-`hosted-agents` is a compatibility alias for the same binary.
+`hosted-agents` is a compatibility alias for the worker CLI.
 
 ## Everyday commands
 
@@ -37,8 +38,8 @@ cloudagentfleet --help
 | Build all packages | `pnpm build` |
 | Typecheck | `pnpm typecheck` |
 | Unit / package tests | `pnpm test` |
-| Start Hub (Controller) | `pnpm --filter @hosted-agents/control-plane dev` |
-| Start dashboard assets | `pnpm --filter @hosted-agents/dashboard dev` |
+| Start Hub | `pnpm --filter @cloudagentfleet/hub dev` |
+| Start UI asset checks | `pnpm --filter @cloudagentfleet/ui dev` |
 | Guided machine setup | `cloudagentfleet setup` |
 | Environment check | `cloudagentfleet doctor` |
 | Enroll a host | `cloudagentfleet enroll …` |
@@ -65,30 +66,61 @@ pnpm test:multihost:live
 See [`docs/MULTIHOST-E2E.md`](docs/MULTIHOST-E2E.md) for environment variables
 and expected evidence output.
 
-## Release artifacts (maintainers)
+## Releases
+
+Public packages (linked versions via Changesets):
+
+- `@cloudagentfleet/hub`
+- `@cloudagentfleet/ui`
+- `@cloudagentfleet/worker`
+
+### Draft a changelog entry
+
+On every user-facing PR:
 
 ```bash
-pnpm build:release
-pnpm package:standalone
+pnpm changeset
 ```
 
-`build:release` produces the npm package contents under `dist/release`.
-`package:standalone` wraps that tree with a platform Node runtime and a
-`cloudagentfleet` launcher. After unpacking a standalone archive, run
-`cloudagentfleet …` — do not rely on install shell scripts.
+Commit the new file under `.changeset/` with your PR.
+
+### Automated publish
+
+1. Add repository secret `NPM_TOKEN` (Automation token with publish rights for
+   `@cloudagentfleet/*`).
+2. Ensure Actions can open PRs (read/write for Contents and Pull requests).
+3. Merge feature PRs into `master` that include changeset files.
+4. The **Release** workflow opens or updates a **Version Packages** PR
+   (bumps versions + `CHANGELOG.md`).
+5. Merge that PR to publish all three packages to npm and create GitHub Releases.
+6. Standalone platform archives build when publish succeeds.
+
+Manual maintainer commands:
+
+```bash
+pnpm changeset
+pnpm version-packages
+pnpm build:release
+pnpm release
+```
+
+`build:release` bundles Hub and Worker (protocol inlined) and stages the CLI
+into the worker package. `package:standalone` wraps the combined CLI/worker
+runtime for offline archives.
 
 ## Branch and pull request workflow
 
 1. Create a branch from `master` for one focused change.
 2. Keep commits small and descriptive (why over what).
 3. Run `pnpm typecheck` and `pnpm test` before opening a PR.
-4. Open a PR against `master` with a short summary and a test plan.
-5. Link related docs or issues when behavior or operator instructions change.
+4. Add a changeset when the change affects operators or package consumers.
+5. Open a PR against `master` with a short summary and a test plan.
+6. Link related docs or issues when behavior or operator instructions change.
 
 ## Documentation expectations
 
-- Operator-facing steps must use `cloudagentfleet …` (or the documented pnpm
-  filters for Hub/dashboard process startups).
+- Operator-facing steps must use `cloudagentfleet …` / `cloudagentfleet-hub`
+  (or the documented pnpm filters for Hub/UI process startups).
 - Do not document `node apps/cli/bin/…` paths or one-off shell install scripts
   as the supported path.
 - Update README and the relevant file under `docs/` in the same PR when you

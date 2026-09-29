@@ -4,10 +4,10 @@ The repeatable harness has two explicit modes:
 
 ```powershell
 # No Codeman install, provider login, network, or secrets required.
-pnpm --filter @hosted-agents/control-plane test:multihost:mock
+pnpm --filter @cloudagentfleet/hub test:multihost:mock
 
 # Uses two already-running, real Codeman HTTP endpoints.
-pnpm --filter @hosted-agents/control-plane test:multihost:live
+pnpm --filter @cloudagentfleet/hub test:multihost:live
 ```
 
 The mock mode starts two isolated local Codeman-shaped HTTP/SSE servers and an
@@ -58,7 +58,7 @@ $env:CODEMAN_WORKSPACE_B = "/home/operator/workspaces/project-b"
 # $env:CODEMAN_PASSWORD_A = "<machine-A-password>"
 # $env:CODEMAN_USERNAME_B = "operator"
 # $env:CODEMAN_PASSWORD_B = "<machine-B-password>"
-pnpm --filter @hosted-agents/control-plane test:multihost:live
+pnpm --filter @cloudagentfleet/hub test:multihost:live
 ```
 
 The workspace paths must be valid on their respective Codeman hosts. The
@@ -97,7 +97,7 @@ For the supported interactive CLI flow, start the Controller first:
 ```powershell
 $env:HOSTED_AGENTS_HOST = "127.0.0.1"
 $env:HOSTED_AGENTS_PORT = "8787"
-pnpm --filter @hosted-agents/control-plane dev
+pnpm --filter @cloudagentfleet/hub dev
 ```
 
 Then use either:

@@ -127,7 +127,7 @@ proxies loopback (for example `127.0.0.1:8787`); the Controller does not bind
 ### Start Serve (deferred)
 
 ```bash
-pnpm --filter @hosted-agents/control-plane dev
+pnpm --filter @cloudagentfleet/hub dev
 cloudagentfleet hub serve
 ```
 
@@ -141,7 +141,7 @@ Custom Controller port:
 
 ```bash
 HOSTED_AGENTS_HOST=127.0.0.1 HOSTED_AGENTS_PORT=9000 \
-  pnpm --filter @hosted-agents/control-plane dev
+  pnpm --filter @cloudagentfleet/hub dev
 cloudagentfleet hub serve --port 9000
 ```
 
