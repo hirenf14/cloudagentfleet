@@ -45,6 +45,12 @@ jobs:
       - name: Test
         run: pnpm test
 
+      - name: Build release packages
+        run: pnpm build:release
+
+      - name: Verify npm packs ship build output only
+        run: pnpm verify:packs
+
       - name: Create Release Pull Request or publish to npm
         id: changesets
         uses: changesets/action@v1

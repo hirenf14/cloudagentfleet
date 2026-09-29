@@ -104,9 +104,16 @@ pnpm build:release
 pnpm release
 ```
 
-`build:release` bundles Hub and Worker into ignored `dist/` CLI binaries
-(protocol inlined) and stages a flat `dist/cli-bundle` for standalone archives.
-`package:standalone` wraps that CLI bundle with a private Node runtime.
+`build:release` writes ignored build outputs only:
+
+- Hub/Worker → single CLI binaries under each package `dist/`
+- UI → production assets under `apps/dashboard/dist/public/` (drafts excluded)
+- Flat `dist/cli-bundle/` for offline archives
+
+`pnpm verify:packs` fails the pipeline if an npm tarball would include `src/`,
+`bin/`, TypeScript, or draft UI files.
+
+`package:standalone` wraps `dist/cli-bundle` with a private Node runtime.
 
 ## Branch and pull request workflow
 
