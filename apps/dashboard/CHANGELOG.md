@@ -1,5 +1,11 @@
 # @cloudagentfleet/ui
 
+## 0.1.8
+
+### Patch Changes
+
+- [`895eaa1`](https://github.com/hirenf14/cloudagentfleet/commit/895eaa1cb81a75bc617020cc984c3b4f10ed66bb) Thanks [@hirenf14](https://github.com/hirenf14)! - Republish packages after ui@0.1.7 registry tarball was missing.
+
 ## 0.1.7
 
 ### Patch Changes
