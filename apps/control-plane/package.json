@@ -1,6 +1,6 @@
 {
   "name": "@cloudagentfleet/hub",
-  "version": "0.1.4",
+  "version": "0.1.7",
   "private": false,
   "description": "Cloud Agent Fleet Hub — control plane, routing, and Codeman proxy.",
   "type": "module",
