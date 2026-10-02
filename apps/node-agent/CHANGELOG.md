@@ -1,5 +1,13 @@
 # @cloudagentfleet/worker
 
+## 0.1.7
+
+### Patch Changes
+
+- [`e8300b3`](https://github.com/hirenf14/cloudagentfleet/commit/e8300b3321289b1544c1cd8026c01fb363ab666e) Thanks [@hirenf14](https://github.com/hirenf14)! - Keep Shell (raw CLI) in the agent list and clarify provider CLI labels in Start session.
+
+- [`e8300b3`](https://github.com/hirenf14/cloudagentfleet/commit/e8300b3321289b1544c1cd8026c01fb363ab666e) Thanks [@hirenf14](https://github.com/hirenf14)! - Use cloudagentfleet consistently in CLI help and Hub branding (hosted-agents remains a compatibility alias).
+
 ## 0.1.6
 
 ### Patch Changes
