@@ -21,7 +21,7 @@
     "font:13px system-ui,sans-serif",
   ].join(";");
   const label = document.createElement("strong");
-  label.textContent = "Hosted Agents";
+  label.textContent = "Cloud Agent Fleet";
   const select = document.createElement("select");
   select.setAttribute("aria-label", "Codeman host");
   select.style.cssText = [

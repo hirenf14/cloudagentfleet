@@ -511,7 +511,7 @@ function defaultAgents(): CodemanAgentProfile[] {
   ];
   return modes.map((mode) => ({
     id: mode,
-    name: mode === "claude" ? "Claude Code" : mode,
+    name: mode === "claude" ? "Claude Code" : mode === "shell" ? "Shell (raw CLI)" : mode,
     mode,
     ready: true,
   }));

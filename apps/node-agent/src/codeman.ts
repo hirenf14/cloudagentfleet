@@ -438,24 +438,11 @@ export class CodemanWorkerRuntime {
         return this.client.status();
       case "capabilities": {
         const status = await this.client.status();
-        const codemanAgents = [
-          {
-            id: this.mode,
-            name: this.mode === "claude" ? "Claude Code" : this.mode,
-            mode: this.mode,
-            ready: true,
-          },
-          ...(status.agents ?? []),
-          ...(status.capabilities ?? []),
-        ];
-        return [
-          ...codemanAgents,
-          ...this.agentProfiles.filter(
-            (agent) => !codemanAgents.some((candidate) =>
-              (typeof candidate === "string" ? candidate : candidate.id) === agent.id,
-            ),
-          ),
-        ];
+        return mergeLaunchAgents({
+          mode: this.mode,
+          statusAgents: [...(status.agents ?? []), ...(status.capabilities ?? [])],
+          localProfiles: this.agentProfiles,
+        });
       }
       case "workspaces":
         return this.workspaces;
@@ -724,6 +711,88 @@ function isAgentProfile(value: unknown): value is { mode: CodemanMode; name: str
     "claude", "shell", "opencode", "codex", "gemini", "antigravity", "pi", "grok", "deepseek",
   ];
   return typeof value.name === "string" && modes.includes(value.mode as CodemanMode);
+}
+
+/** Stable launch list: raw Shell CLI first, configured Codeman mode, then status/local profiles. */
+export function mergeLaunchAgents(input: {
+  mode: CodemanMode;
+  statusAgents?: unknown[];
+  localProfiles?: CodemanAgentProfile[];
+}): CodemanAgentProfile[] {
+  const ordered: CodemanAgentProfile[] = [
+    {
+      id: "shell",
+      name: "Shell (raw CLI)",
+      mode: "shell",
+      ready: true,
+    },
+  ];
+  if (input.mode !== "shell") {
+    ordered.push({
+      id: input.mode,
+      name: agentDisplayName(input.mode, input.mode),
+      mode: input.mode,
+      ready: true,
+    });
+  }
+  for (const raw of input.statusAgents ?? []) {
+    const agent = normalizeStatusAgent(raw);
+    if (agent) ordered.push(agent);
+  }
+  for (const profile of input.localProfiles ?? []) {
+    ordered.push(profile);
+  }
+  return dedupeAgentsById(ordered);
+}
+
+function agentDisplayName(id: string, mode: string): string {
+  if (id === "shell" || mode === "shell" && id === "shell") return "Shell (raw CLI)";
+  if (id === "claude" && mode === "claude") return "Claude Code";
+  if (id === "claude-code") return "Claude Code CLI";
+  if (id === "cursor-agent") return "Cursor Agent CLI";
+  if (id === mode) {
+    return mode === "claude" ? "Claude Code" : mode;
+  }
+  return id;
+}
+
+function normalizeStatusAgent(raw: unknown): CodemanAgentProfile | undefined {
+  const modes: CodemanMode[] = [
+    "claude", "shell", "opencode", "codex", "gemini", "antigravity", "pi", "grok", "deepseek",
+  ];
+  if (typeof raw === "string") {
+    if (!modes.includes(raw as CodemanMode)) return undefined;
+    const mode = raw as CodemanMode;
+    return {
+      id: mode,
+      name: agentDisplayName(mode, mode),
+      mode,
+      ready: true,
+    };
+  }
+  if (!isRecord(raw)) return undefined;
+  const modeRaw = String(raw.mode ?? raw.id ?? "shell");
+  const mode = (modes.includes(modeRaw as CodemanMode) ? modeRaw : "shell") as CodemanMode;
+  const id = String(raw.id ?? mode);
+  // Skip opaque Codeman capability strings that collapsed into duplicate shell entries.
+  if (mode === "shell" && id !== "shell" && !String(raw.name ?? "").trim()) return undefined;
+  return {
+    id,
+    name: String(raw.name ?? agentDisplayName(id, mode)),
+    mode,
+    ready: raw.ready !== false && raw.available !== false,
+  };
+}
+
+function dedupeAgentsById(agents: CodemanAgentProfile[]): CodemanAgentProfile[] {
+  const seen = new Set<string>();
+  const result: CodemanAgentProfile[] = [];
+  for (const agent of agents) {
+    if (seen.has(agent.id)) continue;
+    seen.add(agent.id);
+    result.push(agent);
+  }
+  return result;
 }
 
 function isAllowedPath(path: string, policy: WorkspacePolicy): boolean {

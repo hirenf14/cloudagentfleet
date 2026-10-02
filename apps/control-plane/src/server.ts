@@ -70,7 +70,7 @@ export function startControllerServer(
 ): ControllerServer {
   const controller = createControllerServer(options);
   controller.server.listen(controller.port, controller.host, () => {
-    console.log(`Hosted Agents Controller listening on ${controller.host}:${controller.port}`);
+    console.log(`Cloud Agent Fleet Hub listening on ${controller.host}:${controller.port}`);
     if (controller.revealPassword) {
       console.log(`Hub UI password: ${controller.revealPassword}`);
       console.log(
@@ -876,7 +876,7 @@ function sendLoginPage(response: ServerResponse, authEnabled: boolean): void {
   response.end(`<!doctype html>
 <html lang="en">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Hosted Agents — Sign in</title>
+<title>Cloud Agent Fleet — Sign in</title>
 <style>
 body{margin:0;min-height:100vh;display:grid;place-items:center;background:#090c10;color:#d7dee7;font:16px system-ui,sans-serif}
 main{width:min(360px,calc(100vw - 48px));padding:28px;border:1px solid #253044;border-radius:14px;background:#111722;box-shadow:0 20px 60px #0008}
@@ -885,7 +885,7 @@ label{display:grid;gap:8px;color:#b9c5d6}input{padding:12px;border:1px solid #3a
 button{width:100%;margin-top:16px;padding:12px;border:0;border-radius:8px;background:#77e0af;color:#07110d;font:600 15px system-ui;cursor:pointer}
 #error{min-height:20px;margin-top:12px;color:#ff8585}
 </style></head>
-<body><main><h1>Hosted Agents</h1><p>Sign in to the private fleet Hub.</p>
+<body><main><h1>Cloud Agent Fleet</h1><p>Sign in to the private fleet Hub.</p>
 <form id="login"><label>Password<input id="password" type="password" autocomplete="current-password" required autofocus></label>
 <button type="submit">Sign in</button><div id="error" role="alert"></div></form></main>
 <script>

@@ -141,7 +141,7 @@ export async function serveHub(args = [], dependencies = {}) {
   await checkLocalHub(config.port, env.HOSTED_AGENTS_AUTH_TOKEN, dependencies.fetchImpl ?? fetch);
   const target = `http://127.0.0.1:${config.port}`;
   runTailscale(["serve", "--bg", target], runner);
-  console.log(`Serving the single Hosted Agents Hub privately at ${target} through Tailscale.`);
+  console.log(`Serving the single Cloud Agent Fleet Hub privately at ${target} through Tailscale.`);
   console.log("Codeman instances remain private; no per-instance public domains were created.");
   return config;
 }
@@ -164,7 +164,7 @@ export function stopHub(args = [], dependencies = {}) {
   const runner = dependencies.runner ?? command;
   runTailscale(["version"], runner);
   runTailscale(["serve", "reset"], runner);
-  console.log("Tailscale Serve routes reset; the Hosted Agents Hub is no longer served.");
+  console.log("Tailscale Serve routes reset; the Cloud Agent Fleet Hub is no longer served.");
   return config;
 }
 
@@ -405,7 +405,7 @@ function runWorker(config) {
 
 async function setup() {
   const environment = detectEnvironment();
-  console.log("Hosted Agents setup\n===================\n");
+  console.log("Cloud Agent Fleet setup\n=======================\n");
   printEnvironment(environment);
   if (!environment.node || !environment.git) throw new Error("Node.js and Git are required");
 
@@ -458,7 +458,7 @@ async function setup() {
     if (!environment.codeman) throw new Error("Cannot run Worker without Codeman");
     runWorker(config);
   } else {
-    console.log("Run `hosted-agents run` to start the real Worker.");
+    console.log("Run `cloudagentfleet run` to start the Worker.");
   }
 }
 
@@ -809,7 +809,7 @@ function printEnrollmentHelp() {
     "Register a Codeman instance with the Controller.",
     "",
     "Usage:",
-    "  hosted-agents enroll [connector|tailscale-url] [options]",
+    "  cloudagentfleet enroll [connector|tailscale-url] [options]",
     "",
     "Options:",
     "  --mode <connector|tailscale-url>",
@@ -830,12 +830,12 @@ function printEnrollmentHelp() {
 
 function printHubHelp() {
   console.log([
-    "Serve the single Hosted Agents Hub privately through Tailscale Serve.",
+    "Serve the single Cloud Agent Fleet Hub privately through Tailscale Serve.",
     "",
     "Usage:",
-    "  hosted-agents hub serve [--port <1-65535>]",
-    "  hosted-agents hub status [--port <1-65535>]",
-    "  hosted-agents hub stop  [--port <1-65535>]",
+    "  cloudagentfleet hub serve [--port <1-65535>]",
+    "  cloudagentfleet hub status [--port <1-65535>]",
+    "  cloudagentfleet hub stop  [--port <1-65535>]",
     "",
     "The Controller must already be running on 127.0.0.1 (default port 8787).",
     "Serve uses one tailnet origin for the Hub and never publishes Codeman instances.",
@@ -883,7 +883,7 @@ function workerServicePaths() {
       name: "com.hosted-agents.worker",
     };
   }
-  return { kind: "schtasks", path: null, name: "Hosted Agents Worker" };
+  return { kind: "schtasks", path: null, name: "Cloud Agent Fleet Worker" };
 }
 
 function workerServiceCommand() {
@@ -898,7 +898,7 @@ function installWorkerService() {
     mkdirSync(dirname(service.path), { recursive: true });
     writeFileSync(service.path, [
       "[Unit]",
-      "Description=Hosted Agents Worker",
+      "Description=Cloud Agent Fleet Worker",
       "After=network-online.target",
       "",
       "[Service]",

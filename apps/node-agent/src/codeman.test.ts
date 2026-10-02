@@ -172,8 +172,43 @@ test("CodemanWorkerRuntime reports configured and locally detected profiles", as
   });
 
   assert.deepEqual(profiles, [
-    { id: "shell", name: "shell", mode: "shell", ready: true },
+    { id: "shell", name: "Shell (raw CLI)", mode: "shell", ready: true },
     { id: "cursor-agent", name: "Cursor Agent", mode: "shell", ready: false },
+  ]);
+});
+
+test("CodemanWorkerRuntime always keeps Shell when mode is claude", async () => {
+  const fake = fakeCodemanFetch();
+  const runtime = new CodemanWorkerRuntime({
+    client: new CodemanClient({
+      baseUrl: "http://127.0.0.1:3000",
+      fetchImpl: fake.fetchImpl,
+    }),
+    nodeId: "worker-1",
+    workspaces: [workspace],
+    workspacePolicy: { mode: "folders", roots: ["C:/workspaces"] },
+    send: async () => undefined,
+    mode: "claude",
+    agentProfiles: [{
+      id: "claude-code",
+      name: "Claude Code CLI",
+      mode: "shell",
+      ready: true,
+    }],
+  });
+
+  const profiles = await runtime.handleConnectorRequest({
+    type: "codeman.request",
+    requestId: "request-shell-kept",
+    instanceId: "worker-1",
+    operation: "capabilities",
+    payload: {},
+  });
+
+  assert.deepEqual(profiles, [
+    { id: "shell", name: "Shell (raw CLI)", mode: "shell", ready: true },
+    { id: "claude", name: "Claude Code", mode: "claude", ready: true },
+    { id: "claude-code", name: "Claude Code CLI", mode: "shell", ready: true },
   ]);
 });
 

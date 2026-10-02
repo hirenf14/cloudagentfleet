@@ -723,7 +723,15 @@ export class CodemanConnectorAdapter implements CodemanInstanceAdapter {
     const data = await this.request("capabilities");
     const agents = isRecord(data) && Array.isArray(data.agents) ? data.agents : data;
     if (!Array.isArray(agents)) return this.instance.agents.map((agent) => ({ ...agent }));
-    return agents.map((agent) => toConnectorAgent(agent));
+    const mapped = agents
+      .map((agent) => toConnectorAgent(agent))
+      .filter((agent): agent is CodemanAgentProfile => agent !== undefined);
+    const seen = new Set<string>();
+    return mapped.filter((agent) => {
+      if (seen.has(agent.id)) return false;
+      seen.add(agent.id);
+      return true;
+    });
   }
 
   async listWorkspaces(): Promise<WorkspaceDescriptor[]> {
@@ -793,7 +801,14 @@ export class CodemanConnectorAdapter implements CodemanInstanceAdapter {
     if (!id) throw new Error("Connector returned a session without an ID");
     const resolvedWorkspaceId = workspaceId
       ?? String(raw.workspaceId ?? raw.workingDir ?? "unknown");
-    const resolvedAgent = agent ?? toConnectorAgent(raw.mode);
+    const resolvedAgent = agent
+      ?? toConnectorAgent(raw.mode)
+      ?? {
+        id: "shell",
+        name: "Shell (raw CLI)",
+        mode: "shell" as CodemanAgentMode,
+        ready: true,
+      };
     const createdAt = connectorTimestamp(raw.createdAt ?? raw.created_at);
     return {
       id,
@@ -812,14 +827,39 @@ export class CodemanConnectorAdapter implements CodemanInstanceAdapter {
   }
 }
 
-function toConnectorAgent(raw: unknown): CodemanAgentProfile {
+function toConnectorAgent(raw: unknown): CodemanAgentProfile | undefined {
+  if (typeof raw === "string") {
+    const known = ["claude", "shell", "opencode", "codex", "gemini", "antigravity", "pi", "grok", "deepseek"];
+    if (!known.includes(raw)) return undefined;
+    return {
+      id: raw,
+      name: raw === "claude" ? "Claude Code" : raw === "shell" ? "Shell (raw CLI)" : raw,
+      mode: raw as CodemanAgentMode,
+      ready: true,
+    };
+  }
   const value = isRecord(raw) ? raw : {};
-  const mode = String(value.mode ?? value.id ?? (typeof raw === "string" ? raw : "shell"));
+  const mode = String(value.mode ?? value.id ?? "shell");
   const known = ["claude", "shell", "opencode", "codex", "gemini", "antigravity", "pi", "grok", "deepseek"];
   const selected = known.includes(mode) ? mode : "shell";
+  const id = String(value.id ?? selected);
+  if (selected === "shell" && id !== "shell" && !String(value.name ?? "").trim()) {
+    return undefined;
+  }
   return {
-    id: String(value.id ?? selected),
-    name: String(value.name ?? (selected === "claude" ? "Claude Code" : selected)),
+    id,
+    name: String(
+      value.name
+        ?? (id === "claude-code"
+          ? "Claude Code CLI"
+          : id === "cursor-agent"
+            ? "Cursor Agent CLI"
+            : selected === "claude"
+              ? "Claude Code"
+              : selected === "shell"
+                ? "Shell (raw CLI)"
+                : selected)
+    ),
     mode: selected as CodemanAgentMode,
     ready: value.ready !== false && value.available !== false,
   };

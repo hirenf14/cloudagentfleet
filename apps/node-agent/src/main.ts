@@ -78,13 +78,13 @@ function detectAgentProfiles(providers: {
   return [
     ...(providers.cursor ? [{
       id: "cursor-agent",
-      name: "Cursor Agent",
+      name: "Cursor Agent CLI",
       mode: "shell" as const,
       ready: providers.cursor.ready,
     }] : []),
     ...(providers.claude ? [{
       id: "claude-code",
-      name: "Claude Code",
+      name: "Claude Code CLI",
       mode: "shell" as const,
       ready: providers.claude.ready,
     }] : []),

@@ -753,28 +753,39 @@
     const readyWorkspaces = (instance?.workspaces || []).filter((workspace) => workspace.health === "ready");
     const allAgents = instance?.agents || [];
     const readyAgents = allAgents.filter((agent) => agent.ready);
-    const [workspaceSource, setWorkspaceSource] = useState("workspace");
+    const [workspaceSource, setWorkspaceSource] = useState(
+      readyWorkspaces.length ? "workspace" : (instance?.workspacePolicy ? "path" : "workspace"),
+    );
     const [workspaceId, setWorkspaceId] = useState(readyWorkspaces[0]?.id || "");
     const [workspacePath, setWorkspacePath] = useState("");
     const [pathSuggestions, setPathSuggestions] = useState([]);
     const [activeSuggestion, setActiveSuggestion] = useState(-1);
     const [suggesting, setSuggesting] = useState(false);
     const [suggestionError, setSuggestionError] = useState("");
-    const [agentId, setAgentId] = useState(readyAgents[0]?.id || "");
+    const [agentId, setAgentId] = useState(preferredAgentId(readyAgents, allAgents));
     const [title, setTitle] = useState("");
     const [creating, setCreating] = useState(false);
 
     useEffect(() => {
       const nextWorkspaces = (instance?.workspaces || []).filter((workspace) => workspace.health === "ready");
-      const nextAgents = (instance?.agents || []).filter((agent) => agent.ready);
-      setWorkspaceSource("workspace");
+      const nextAgents = instance?.agents || [];
+      const nextReady = nextAgents.filter((agent) => agent.ready);
+      setWorkspaceSource(nextWorkspaces.length ? "workspace" : (instance?.workspacePolicy ? "path" : "workspace"));
       setWorkspaceId(nextWorkspaces[0]?.id || "");
       setWorkspacePath("");
       setPathSuggestions([]);
       setActiveSuggestion(-1);
       setSuggestionError("");
-      setAgentId(nextAgents[0]?.id || "");
+      setAgentId(preferredAgentId(nextReady, nextAgents));
     }, [instanceId]);
+
+    useEffect(() => {
+      const nextAgents = instance?.agents || [];
+      const nextReady = nextAgents.filter((agent) => agent.ready);
+      if (!nextAgents.some((agent) => agent.id === agentId)) {
+        setAgentId(preferredAgentId(nextReady, nextAgents));
+      }
+    }, [instance?.agents, agentId]);
 
     useEffect(() => {
       if (workspaceSource !== "path" || !instance?.workspacePolicy) {
@@ -834,7 +845,14 @@
     async function createSession(event) {
       event.preventDefault();
       const path = workspacePath.trim();
-      if (!instance || (!workspaceId && workspaceSource === "workspace") || (!path && workspaceSource === "path") || !agentId) return;
+      const selectedAgent = allAgents.find((agent) => agent.id === agentId);
+      if (
+        !instance
+        || (!workspaceId && workspaceSource === "workspace")
+        || (!path && workspaceSource === "path")
+        || !selectedAgent
+        || !selectedAgent.ready
+      ) return;
       setCreating(true);
       try {
         const result = await api(`/api/instances/${encodeURIComponent(instance.id)}/sessions`, {
@@ -886,7 +904,7 @@
             h(
               "select",
               { value: workspaceSource, onChange: (event) => setWorkspaceSource(event.target.value), required: true },
-              h("option", { value: "workspace" }, "Known workspace"),
+              h("option", { value: "workspace", disabled: readyWorkspaces.length === 0 }, "Known workspace"),
               h("option", { value: "path", disabled: !instance?.workspacePolicy }, "Enter a path (policy required)"),
             ),
           ),
@@ -956,18 +974,30 @@
             h("span", null, "Agent"),
             h(
               "select",
-              { value: agentId, onChange: (event) => setAgentId(event.target.value), required: true, disabled: readyAgents.length === 0 },
-              readyAgents.length
+              {
+                value: agentId,
+                onChange: (event) => setAgentId(event.target.value),
+                required: true,
+                disabled: allAgents.length === 0,
+              },
+              allAgents.length
                 ? allAgents.map((agent) => h(
                   "option",
                   { value: agent.id, key: agent.id, disabled: !agent.ready },
-                  agent.ready ? agent.name : `${agent.name} (not ready)`,
+                  formatAgentOption(agent),
                 ))
-                : h("option", { value: "" }, "No ready agents"),
+                : h("option", { value: "" }, "No agents advertised yet"),
+            ),
+            allAgents.length > 0 && h(
+              "small",
+              null,
+              "Shell (raw CLI) is a bare Codeman terminal. CLI options launch a provider inside that shell.",
             ),
           ),
           !readyAgents.length && allAgents.length > 0
-            && h("small", null, "Install and authenticate a provider CLI on this Worker before starting a session."),
+            && h("small", null, "No ready agents yet — check Worker Codeman mode, or install/authenticate a provider CLI."),
+          !allAgents.length
+            && h("small", null, "Run Check health on the instance after the Worker is online."),
           h(
             "label",
             { className: "field" },
@@ -985,12 +1015,28 @@
                 || !instance
                 || instance.status !== "online"
                 || (workspaceSource === "workspace" ? !workspaceId : !workspacePath.trim())
-                || !agentId,
+                || !readyAgents.some((agent) => agent.id === agentId),
             }, creating ? "Starting…" : "Start session"),
           ),
         ),
       ),
     );
+  }
+
+  function preferredAgentId(readyAgents, allAgents = readyAgents) {
+    const preferred = readyAgents.find((agent) => agent.id === "shell")
+      || readyAgents.find((agent) => agent.mode === "shell")
+      || readyAgents[0]
+      || allAgents[0];
+    return preferred?.id || "";
+  }
+
+  function formatAgentOption(agent) {
+    const base = agent.name || agent.id;
+    const modeNote = agent.mode && agent.mode !== agent.id && !String(base).toLowerCase().includes(agent.mode)
+      ? ` · ${agent.mode}`
+      : "";
+    return agent.ready ? `${base}${modeNote}` : `${base}${modeNote} (not ready)`;
   }
 
   ReactDOM.createRoot(document.getElementById("root")).render(h(App));
