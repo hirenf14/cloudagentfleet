@@ -362,6 +362,8 @@ function workerEnvironment(config) {
   const roots = config.execution === "wsl"
     ? config.workspacePolicy.roots.map(toWslPath)
     : config.workspacePolicy.roots;
+  const manageCodeman = config.manageCodeman !== false;
+  const installCodeman = config.installCodeman !== false;
   return {
     HOSTED_AGENTS_NODE_ID: config.nodeId,
     HOSTED_AGENTS_NODE_NAME: config.name,
@@ -371,6 +373,8 @@ function workerEnvironment(config) {
     HOSTED_AGENTS_WORKSPACE_ROOTS: roots.join(";"),
     HOSTED_AGENTS_WORKSPACES: JSON.stringify(workspaces),
     HOSTED_AGENTS_CODEMAN_MODE: config.codemanMode,
+    HOSTED_AGENTS_MANAGE_CODEMAN: manageCodeman ? "true" : "false",
+    HOSTED_AGENTS_CODEMAN_INSTALL: installCodeman ? "true" : "false",
     CODEMAN_INSTANCE_ID: config.codemanInstanceId ?? config.nodeId,
     CODEMAN_URL: config.codemanUrl,
   };
@@ -414,7 +418,10 @@ async function setup() {
     if (installed) environment.codeman = true;
   }
   if (!environment.codeman) {
-    console.log("Codeman is not ready. Install it before starting the Worker.");
+    console.log(
+      "Codeman is not on PATH yet. The Worker will install/start it on run "
+      + "(set manageCodeman/installCodeman false in worker.json to opt out).",
+    );
   }
   if (!environment.cursorCli) {
     const installed = await installCursorCli(environment);
@@ -429,6 +436,8 @@ async function setup() {
   if (!modes.includes(codemanMode)) throw new Error(`Unsupported Codeman mode: ${codemanMode}`);
   const codemanUrl = await ask("Codeman URL", "http://127.0.0.1:3000");
   const authToken = process.env.HOSTED_AGENTS_AUTH_TOKEN;
+  const manageCodeman = true;
+  const installCodemanFlag = true;
   const config = {
     nodeId,
     name,
@@ -444,6 +453,8 @@ async function setup() {
     ),
     codemanMode,
     codemanUrl,
+    manageCodeman,
+    installCodeman: installCodemanFlag,
   };
 
   mkdirSync(dirname(configPath), { recursive: true });
@@ -452,10 +463,17 @@ async function setup() {
   console.log(`Discovered ${config.workspaces.length} workspace(s).`);
 
   if (environment.codeman && await confirm("Start Codeman now?", true)) {
-    if (!startCodeman(environment)) console.log("Codeman did not start; run `codeman web` manually.");
+    if (!startCodeman(environment)) {
+      console.log("Codeman did not start; Worker will start it on run when manageCodeman is on.");
+    }
   }
   if (process.argv.includes("--run")) {
-    if (!environment.codeman) throw new Error("Cannot run Worker without Codeman");
+    if (!environment.codeman && !manageCodeman) {
+      throw new Error("Cannot run Worker without Codeman (manageCodeman is disabled)");
+    }
+    if (!environment.codeman && manageCodeman) {
+      console.log("Worker will install/start Codeman under the hood …");
+    }
     runWorker(config);
   } else {
     console.log("Run `cloudagentfleet run` to start the Worker.");

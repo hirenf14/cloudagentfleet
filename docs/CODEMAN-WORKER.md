@@ -7,14 +7,25 @@ HTTP.
 
 ## Prerequisites
 
-Codeman must be installed and running on the Worker machine:
+By default the Worker **manages Codeman under the hood**:
+
+- `HOSTED_AGENTS_MANAGE_CODEMAN` defaults to `true` — install (if missing) and
+  start Codeman when `/api/v1/status` is down; stop it on Worker shutdown only
+  if this Worker process started it.
+- `HOSTED_AGENTS_CODEMAN_INSTALL` defaults to `true` when manage is on — run the
+  official installer once when `codeman` is not on PATH.
+- Set either flag to `false` to attach to an existing Codeman only (no
+  install/start/stop).
+
+Manual install (optional when manage/install are on):
 
 ```bash
 curl -fsSL https://getcodeman.com/install | bash
 codeman web
 ```
 
-On Windows, run those commands inside WSL. Keep Codeman's authentication and
+On Windows, install and manage run inside WSL (same as setup). Native Windows
+without WSL remains unsupported for Codeman. Keep Codeman's authentication and
 provider login local to that machine. Cloud Agent Fleet does not copy those
 credentials to the Controller.
 
@@ -27,11 +38,14 @@ Install or link the CLI (`npm install --global cloudagentfleet`, or
 cloudagentfleet setup --run
 ```
 
-The guided flow detects WSL/Codeman, asks before installing Codeman, lets you
-choose approved folders or whole-system access, discovers workspaces beneath
-those roots, selects the Codeman mode, writes a machine-local configuration,
-starts Codeman, and launches the Worker. To configure without launching, omit
-`--run`; later use `cloudagentfleet run`.
+The guided flow detects WSL/Codeman, asks before installing Codeman on first
+setup, lets you choose approved folders or whole-system access, discovers
+workspaces beneath those roots, selects the Codeman mode, and writes
+`~/.hosted-agents/worker.json` (including `manageCodeman` / `installCodeman`,
+default `true`). On `cloudagentfleet run` (or `setup --run`), those flags become
+`HOSTED_AGENTS_MANAGE_CODEMAN` and `HOSTED_AGENTS_CODEMAN_INSTALL` so the Worker
+can install/start Codeman without a separate `codeman web -d` on each host.
+To configure without launching, omit `--run`; later use `cloudagentfleet run`.
 
 Once a Worker is online, run this Controller-side selection flow:
 
@@ -87,6 +101,9 @@ export HOSTED_AGENTS_WORKSPACES='[
   }
 ]'
 export CODEMAN_URL=http://127.0.0.1:3000
+# Optional opt-outs (both default true):
+# export HOSTED_AGENTS_MANAGE_CODEMAN=false
+# export HOSTED_AGENTS_CODEMAN_INSTALL=false
 
 node --experimental-strip-types apps/node-agent/src/main.ts
 ```
@@ -124,5 +141,7 @@ provide a documented remote filesystem listing endpoint.
 - Cursor Agent availability depends on the official `agent` CLI (or the
   legacy `cursor-agent` command) being installed and authenticated on each
   machine. Claude Code remains owned by Codeman.
-- Codeman installation remains confirmation-based; install the Worker service
+- Codeman is auto-installed only when missing (not upgraded on every start).
+  Setup may still ask before the first interactive install; the Worker remains
+  the long-term supervisor on every `run`. Install the Worker service
   explicitly with `cloudagentfleet worker install`.

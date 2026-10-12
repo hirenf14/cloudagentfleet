@@ -6,7 +6,6 @@ import test from "node:test";
 import { HubStateStore } from "./persistence.ts";
 import {
   isCodemanInstance,
-  namespaceSession,
   validateCodemanInstance,
 } from "./index.ts";
 import type { CodemanInstance, CodemanSession } from "./index.ts";
@@ -67,7 +66,7 @@ test("HubStateStore reloads instances, sessions, and audit events", () => {
 });
 
 test("Codeman contracts require safe endpoints and preserve instance-scoped sessions", () => {
-  assert.equal(namespaceSession("pc-a", "session-1").instanceId, "pc-a");
+  assert.equal(session.instanceId, "pc-a");
   assert.equal(isCodemanInstance(instance), true);
   assert.throws(
     () => validateCodemanInstance({ ...instance, endpoint: "http://remote.example" }),

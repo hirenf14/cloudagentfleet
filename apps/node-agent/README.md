@@ -2,7 +2,10 @@
 
 Cloud Agent Fleet Worker — machine companion and operator CLI.
 
-Requires Node.js **22.6+**. Codeman should be installed and running on the machine (`codeman web`) when you want live sessions.
+Requires Node.js **22.6+**. By default the Worker installs Codeman if missing and
+starts/stops a Codeman instance it owns (`HOSTED_AGENTS_MANAGE_CODEMAN` /
+`HOSTED_AGENTS_CODEMAN_INSTALL`, both default `true`). Set them to `false` to
+attach to an existing `codeman web` only.
 
 ## Install
 
@@ -22,7 +25,8 @@ npx cloudagentfleet --help
 ## Quick start
 
 **Same `HOSTED_AGENTS_AUTH_TOKEN` as the Hub** is required (Hub UI auth rejects
-Worker enroll without it). Codeman should already be running (`codeman web`).
+Worker enroll without it). Codeman is managed by the Worker by default (install
+if missing, start if down).
 
 ```bash
 export HOSTED_AGENTS_AUTH_TOKEN="replace-with-a-long-shared-secret"

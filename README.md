@@ -64,11 +64,14 @@ To configure and start the Worker in one pass:
 cloudagentfleet setup --run
 ```
 
-The flow detects prerequisites, asks before installing Codeman, lets you select
-approved folders or whole-system access, discovers workspaces, and can start
-the Worker. The Worker enrolls over outbound SSE/HTTP and executes fallback
-jobs through Codeman's `/api/v1/sessions` API. Direct Tailscale mode does not
-require the Worker for browser terminal traffic.
+The flow detects prerequisites, asks before installing Codeman on first setup,
+lets you select approved folders or whole-system access, discovers workspaces,
+and can start the Worker. The Worker manages Codeman under the hood by default
+(install if missing, start if down; opt out with `manageCodeman: false` in
+`~/.hosted-agents/worker.json` or `HOSTED_AGENTS_MANAGE_CODEMAN=false`). The
+Worker enrolls over outbound SSE/HTTP and executes fallback jobs through
+Codeman's `/api/v1/sessions` API. Direct Tailscale mode does not require the
+Worker for browser terminal traffic.
 
 ## Enroll a Codeman host
 
@@ -154,16 +157,15 @@ see [`docs/MULTIHOST-E2E.md`](docs/MULTIHOST-E2E.md).
 
 ## Run a Codeman Worker locally
 
-Install Codeman with its official installer, start `codeman web`, then use:
-
 ```bash
 cloudagentfleet setup --run
 cloudagentfleet doctor
 ```
 
-Details are in [`docs/CODEMAN-WORKER.md`](docs/CODEMAN-WORKER.md). Codeman owns
-tmux, PTYs, CLI credentials, terminal streaming, and durable sessions; this
-project owns enrollment, workspace policy, routing, and job lifecycle.
+The Worker installs/starts Codeman when manage is on (default). Details are in
+[`docs/CODEMAN-WORKER.md`](docs/CODEMAN-WORKER.md). Codeman owns tmux, PTYs, CLI
+credentials, terminal streaming, and durable sessions; this project owns
+enrollment, workspace policy, routing, and job lifecycle.
 
 ## Install without the source tree
 

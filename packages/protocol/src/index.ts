@@ -13,7 +13,6 @@ export type CodemanAgentMode =
   | "deepseek";
 
 export type NodeStatus = "online" | "offline" | "revoked";
-export type WorkerStatus = NodeStatus;
 
 export const PROTOCOL_VERSION = 1;
 export const DEFAULT_HEARTBEAT_TIMEOUT_MS = 45_000;
@@ -26,7 +25,6 @@ export type NodeCapability =
   | "preview-relay"
   | "remote-browser"
   | "docker";
-export type WorkerCapability = NodeCapability;
 
 export interface HostedNode {
   id: string;
@@ -39,7 +37,6 @@ export interface HostedNode {
   workspaces: WorkspaceDescriptor[];
   lastSeenAt: string | null;
 }
-export type HostedWorker = HostedNode;
 
 export type WorkspaceAccessMode = "folders" | "system";
 
@@ -160,31 +157,6 @@ export function validateCodemanSession(value: unknown): CodemanSession {
   return value;
 }
 
-export interface NamespacedSessionRef {
-  instanceId: string;
-  sessionId: string;
-}
-
-export function namespaceSession(instanceId: string, sessionId: string): NamespacedSessionRef {
-  return {
-    instanceId: requireNonEmpty(instanceId, "instanceId"),
-    sessionId: requireNonEmpty(sessionId, "sessionId"),
-  };
-}
-
-export function isNamespacedSessionRef(value: unknown): value is NamespacedSessionRef {
-  return isRecord(value)
-    && isNonEmptyString(value.instanceId)
-    && isNonEmptyString(value.sessionId);
-}
-
-export function validateNamespacedSessionRef(value: unknown): NamespacedSessionRef {
-  if (!isNamespacedSessionRef(value)) {
-    throw new TypeError("Invalid namespaced Codeman session reference");
-  }
-  return value;
-}
-
 export interface CodemanSessionEvent {
   instanceId: string;
   sessionId: string;
@@ -290,14 +262,12 @@ export interface NodeRegistration {
   workspacePolicy?: WorkspacePolicy;
   workspaces?: WorkspaceDescriptor[];
 }
-export type WorkerRegistration = NodeRegistration;
 
 export interface NodeHeartbeat {
   nodeId: string;
   sentAt: string;
   capabilities: NodeCapability[];
 }
-export type WorkerHeartbeat = NodeHeartbeat;
 
 export interface AgentJob {
   id: string;
@@ -462,7 +432,6 @@ export type NodeMessage =
     }
   | CodemanConnectorResponse
   | CodemanConnectorSessionEvent;
-export type WorkerMessage = NodeMessage;
 
 export type ControlMessage =
   | {
@@ -564,11 +533,6 @@ function isCodemanConnectorOperation(
     || value === "sessions.input"
     || value === "sessions.resize"
     || value === "sessions.stop";
-}
-
-function requireNonEmpty(value: string, field: string): string {
-  if (!isNonEmptyString(value)) throw new TypeError(`${field} must not be empty`);
-  return value;
 }
 
 function isSafeCodemanEndpoint(value: string): boolean {

@@ -4,6 +4,11 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
 import { CodemanClient, CodemanWorkerRuntime, type CodemanMode } from "./codeman.ts";
+import {
+  ensureCodeman,
+  manageCodemanEnabled,
+  type CodemanSupervisorHandle,
+} from "./codeman-supervisor.ts";
 import { validateConfig, type NodeAgentConfig } from "./index.ts";
 import { ControllerTransport } from "./transport.ts";
 import type {
@@ -141,13 +146,18 @@ export async function runWorker(): Promise<void> {
     authToken: process.env.HOSTED_AGENTS_AUTH_TOKEN,
   });
   const instanceId = process.env.CODEMAN_INSTANCE_ID ?? config.nodeId;
+  const codemanBaseUrl = process.env.CODEMAN_URL ?? "http://127.0.0.1:3000";
+  let supervisor: CodemanSupervisorHandle | undefined;
+  if (manageCodemanEnabled()) {
+    supervisor = await ensureCodeman({ baseUrl: codemanBaseUrl });
+  }
   const transport = new ControllerTransport({
     ...config,
     connectorInstanceId: instanceId,
     reconnect: true,
   });
   const codeman = new CodemanClient({
-    baseUrl: process.env.CODEMAN_URL ?? "http://127.0.0.1:3000",
+    baseUrl: codemanBaseUrl,
     username: process.env.CODEMAN_USERNAME,
     password: process.env.CODEMAN_PASSWORD,
   });
@@ -165,8 +175,12 @@ export async function runWorker(): Promise<void> {
   });
   const stopEventForwarding = runtime.startEventForwarding();
 
-  process.once("SIGINT", () => transport.stop());
-  process.once("SIGTERM", () => transport.stop());
+  const shutdown = () => {
+    transport.stop();
+    supervisor?.stopIfOwned();
+  };
+  process.once("SIGINT", shutdown);
+  process.once("SIGTERM", shutdown);
   try {
     await transport.start(
       (message) => runtime.handle(message),
@@ -174,6 +188,7 @@ export async function runWorker(): Promise<void> {
     );
   } finally {
     stopEventForwarding();
+    supervisor?.stopIfOwned();
   }
 }
 
