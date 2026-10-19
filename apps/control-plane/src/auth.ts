@@ -16,8 +16,8 @@ import { join } from "node:path";
 import type { IncomingMessage } from "node:http";
 
 const DEFAULT_SESSION_TTL_MS = 8 * 60 * 60 * 1_000;
-const DEFAULT_COOKIE_NAME = "hosted_agents_session";
-const DEFAULT_CSRF_COOKIE_NAME = "hosted_agents_csrf";
+const DEFAULT_COOKIE_NAME = "cloudagentfleet_session";
+const DEFAULT_CSRF_COOKIE_NAME = "cloudagentfleet_csrf";
 const SCRYPT_COST = 16_384;
 const SCRYPT_BLOCK_SIZE = 8;
 const SCRYPT_PARALLELIZATION = 1;
@@ -56,7 +56,7 @@ export interface UiAuthRequest {
  * The plaintext password is accepted only as a bootstrap input so deployments
  * can use an environment secret. It is immediately converted to an scrypt
  * verifier and is never retained. Production deployments may provide the
- * encoded verifier directly through HOSTED_AGENTS_UI_PASSWORD_HASH.
+ * encoded verifier directly through CLOUDAGENTFLEET_UI_PASSWORD_HASH.
  */
 export class UiAuth {
   readonly enabled: boolean;
@@ -70,8 +70,8 @@ export class UiAuth {
 
   constructor(options: UiAuthOptions = {}) {
     const passwordHash = options.passwordHash
-      ?? process.env.HOSTED_AGENTS_UI_PASSWORD_HASH;
-    const password = options.password ?? process.env.HOSTED_AGENTS_UI_PASSWORD;
+      ?? process.env.CLOUDAGENTFLEET_UI_PASSWORD_HASH;
+    const password = options.password ?? process.env.CLOUDAGENTFLEET_UI_PASSWORD;
     this.verifier = passwordHash
       ? parsePasswordVerifier(passwordHash)
       : password
@@ -79,11 +79,11 @@ export class UiAuth {
         : undefined;
     this.enabled = this.verifier !== undefined;
     this.sessionTtlMs = options.sessionTtlMs
-      ?? Number(process.env.HOSTED_AGENTS_UI_SESSION_TTL_MS ?? DEFAULT_SESSION_TTL_MS);
+      ?? Number(process.env.CLOUDAGENTFLEET_UI_SESSION_TTL_MS ?? DEFAULT_SESSION_TTL_MS);
     this.cookieName = options.cookieName ?? DEFAULT_COOKIE_NAME;
     this.csrfCookieName = options.csrfCookieName ?? DEFAULT_CSRF_COOKIE_NAME;
     this.secureCookies = options.secureCookies
-      ?? process.env.HOSTED_AGENTS_COOKIE_SECURE === "true";
+      ?? process.env.CLOUDAGENTFLEET_COOKIE_SECURE === "true";
   }
 
   authenticate(request: IncomingMessage, bearerToken?: string): UiAuthRequest {
@@ -265,12 +265,12 @@ function parsePasswordVerifier(encoded: string): PasswordVerifier {
     || !saltText
     || !hashText
   ) {
-    throw new Error("HOSTED_AGENTS_UI_PASSWORD_HASH must use scrypt$N$r$p$salt$hash format");
+    throw new Error("CLOUDAGENTFLEET_UI_PASSWORD_HASH must use scrypt$N$r$p$salt$hash format");
   }
   const salt = Buffer.from(saltText, "base64url");
   const hash = Buffer.from(hashText, "base64url");
   if (salt.length < 16 || hash.length !== SCRYPT_KEY_LENGTH) {
-    throw new Error("HOSTED_AGENTS_UI_PASSWORD_HASH has invalid salt or hash");
+    throw new Error("CLOUDAGENTFLEET_UI_PASSWORD_HASH has invalid salt or hash");
   }
   return {
     salt,
@@ -335,8 +335,8 @@ const BOOTSTRAP_AUTH_FILE = "hub-ui-auth.json";
  */
 export function resolveUiAuth(options: ResolveUiAuthOptions = {}): ResolvedUiAuth {
   const passwordHash = options.passwordHash
-    ?? process.env.HOSTED_AGENTS_UI_PASSWORD_HASH;
-  const password = options.password ?? process.env.HOSTED_AGENTS_UI_PASSWORD;
+    ?? process.env.CLOUDAGENTFLEET_UI_PASSWORD_HASH;
+  const password = options.password ?? process.env.CLOUDAGENTFLEET_UI_PASSWORD;
   const common = {
     sessionTtlMs: options.sessionTtlMs,
     secureCookies: options.secureCookies,

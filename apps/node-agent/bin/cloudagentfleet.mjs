@@ -18,6 +18,6 @@ if (existsSync(bundled)) {
     process.exit(code ?? 1);
   });
 } else {
-  const monorepoCli = join(root, "..", "..", "cli", "bin", "hosted-agents.mjs");
+  const monorepoCli = join(root, "..", "..", "cli", "bin", "cloudagentfleet.mjs");
   await import(pathToFileURL(monorepoCli).href);
 }

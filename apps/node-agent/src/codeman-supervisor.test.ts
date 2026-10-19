@@ -35,13 +35,13 @@ function failSpawn(stderr = "fail"): SpawnSyncReturns<string> {
 
 test("manageCodemanEnabled defaults to true", () => {
   assert.equal(manageCodemanEnabled({}), true);
-  assert.equal(manageCodemanEnabled({ HOSTED_AGENTS_MANAGE_CODEMAN: "false" }), false);
-  assert.equal(manageCodemanEnabled({ HOSTED_AGENTS_MANAGE_CODEMAN: "1" }), true);
+  assert.equal(manageCodemanEnabled({ CLOUDAGENTFLEET_MANAGE_CODEMAN: "false" }), false);
+  assert.equal(manageCodemanEnabled({ CLOUDAGENTFLEET_MANAGE_CODEMAN: "1" }), true);
 });
 
 test("codemanInstallEnabled defaults to true", () => {
   assert.equal(codemanInstallEnabled({}), true);
-  assert.equal(codemanInstallEnabled({ HOSTED_AGENTS_CODEMAN_INSTALL: "off" }), false);
+  assert.equal(codemanInstallEnabled({ CLOUDAGENTFLEET_CODEMAN_INSTALL: "off" }), false);
 });
 
 test("detectCodemanBinary finds PATH hit on native platforms", () => {
@@ -165,6 +165,6 @@ test("ensureCodeman fails clearly when install is disabled and binary missing", 
         runCommand: () => failSpawn("missing"),
         pathExists: () => false,
       }),
-    /HOSTED_AGENTS_CODEMAN_INSTALL=false|not installed/i,
+    /CLOUDAGENTFLEET_CODEMAN_INSTALL=false|not installed/i,
   );
 });

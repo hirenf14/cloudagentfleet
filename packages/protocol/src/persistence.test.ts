@@ -39,7 +39,7 @@ const session: CodemanSession = {
 };
 
 test("HubStateStore reloads instances, sessions, and audit events", () => {
-  const directory = mkdtempSync(join(tmpdir(), "hosted-agents-"));
+  const directory = mkdtempSync(join(tmpdir(), "cloudagentfleet-"));
   const path = join(directory, "hub.json");
   try {
     const first = new HubStateStore(path);

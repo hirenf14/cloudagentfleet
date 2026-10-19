@@ -17,13 +17,13 @@ import { fileURLToPath } from "node:url";
 
 const thisFile = fileURLToPath(import.meta.url);
 const thisDir = dirname(thisFile);
-const configPath = join(homedir(), ".hosted-agents", "worker.json");
-const instancesConfigPath = join(homedir(), ".hosted-agents", "instances.json");
+const configPath = join(homedir(), ".cloudagentfleet", "worker.json");
+const instancesConfigPath = join(homedir(), ".cloudagentfleet", "instances.json");
 const modes = ["claude", "shell", "opencode", "codex", "gemini", "antigravity", "pi", "grok", "deepseek"];
 const defaultAgentNames = { claude: "Claude Code" };
 const tailscaleCommand = process.platform === "win32" ? "tailscale.exe" : "tailscale";
 const loopbackHosts = new Set(["localhost", "127.0.0.1", "::1", "[::1]"]);
-const wslDistro = process.env.HOSTED_AGENTS_WSL_DISTRO?.trim() || "Ubuntu";
+const wslDistro = process.env.CLOUDAGENTFLEET_WSL_DISTRO?.trim() || "Ubuntu";
 
 function resolveWorkerScript() {
   const candidates = [
@@ -60,8 +60,8 @@ export function parseHubOptions(args = [], env = process.env) {
   if (parsed.positionals.length > 0) {
     throw new Error(`Unexpected Hub option: ${parsed.positionals[0]}`);
   }
-  const host = optionValue(parsed, "host") ?? env.HOSTED_AGENTS_HOST ?? "127.0.0.1";
-  const rawPort = optionValue(parsed, "port") ?? env.HOSTED_AGENTS_PORT ?? "8787";
+  const host = optionValue(parsed, "host") ?? env.CLOUDAGENTFLEET_HOST ?? "127.0.0.1";
+  const rawPort = optionValue(parsed, "port") ?? env.CLOUDAGENTFLEET_PORT ?? "8787";
   if (!/^\d+$/.test(rawPort)) throw new Error("Hub port must be a number between 1 and 65535");
   const port = Number(rawPort);
   if (!Number.isSafeInteger(port) || port < 1 || port > 65535) {
@@ -70,7 +70,7 @@ export function parseHubOptions(args = [], env = process.env) {
   if (!loopbackHosts.has(host.toLowerCase())) {
     throw new Error(
       `Hub private serving requires a loopback bind address; got "${host}". `
-      + "Set HOSTED_AGENTS_HOST=127.0.0.1 and restart the Controller.",
+      + "Set CLOUDAGENTFLEET_HOST=127.0.0.1 and restart the Controller.",
     );
   }
   return { host, port };
@@ -132,7 +132,7 @@ export async function serveHub(args = [], dependencies = {}) {
   const runner = dependencies.runner ?? command;
   runTailscale(["version"], runner);
   runTailscale(["status"], runner);
-  await checkLocalHub(config.port, env.HOSTED_AGENTS_AUTH_TOKEN, dependencies.fetchImpl ?? fetch);
+  await checkLocalHub(config.port, env.CLOUDAGENTFLEET_AUTH_TOKEN, dependencies.fetchImpl ?? fetch);
   const target = `http://127.0.0.1:${config.port}`;
   runTailscale(["serve", "--bg", target], runner);
   console.log(`Serving the single Cloud Agent Fleet Hub privately at ${target} through Tailscale.`);
@@ -164,14 +164,14 @@ export function stopHub(args = [], dependencies = {}) {
 
 function wslCanRun(args = ["-e", "true"]) {
   const probe = args.length === 2 && args[0] === "-e" && args[1] === "true"
-    ? ["-e", "bash", "-lc", "printf hosted-agents-wsl-ready"]
+    ? ["-e", "bash", "-lc", "printf cloudagentfleet-wsl-ready"]
     : args;
   const result = process.platform === "win32"
     ? command("wsl.exe", ["-d", wslDistro, ...probe], { timeout: 5000, shell: false })
     : undefined;
   return result?.status === 0 && (
     args.length === 2
-      ? result.stdout?.includes("hosted-agents-wsl-ready") === true
+      ? result.stdout?.includes("cloudagentfleet-wsl-ready") === true
       : Boolean(result.stdout?.trim())
   );
 }
@@ -359,18 +359,18 @@ function workerEnvironment(config) {
   const manageCodeman = config.manageCodeman !== false;
   const installCodeman = config.installCodeman !== false;
   return {
-    HOSTED_AGENTS_NODE_ID: config.nodeId,
-    HOSTED_AGENTS_NODE_NAME: config.name,
-    HOSTED_AGENTS_CONTROLLER_URL: config.controllerUrl,
-    HOSTED_AGENTS_AUTH_TOKEN: config.authToken ?? "",
-    HOSTED_AGENTS_WORKSPACE_MODE: config.workspacePolicy.mode,
-    HOSTED_AGENTS_WORKSPACE_ROOTS: roots.join(";"),
-    HOSTED_AGENTS_WORKSPACES: JSON.stringify(workspaces),
-    HOSTED_AGENTS_CODEMAN_MODE: config.codemanMode,
-    HOSTED_AGENTS_MANAGE_CODEMAN: manageCodeman ? "true" : "false",
-    HOSTED_AGENTS_CODEMAN_INSTALL: installCodeman ? "true" : "false",
-    CODEMAN_INSTANCE_ID: config.codemanInstanceId ?? config.nodeId,
-    CODEMAN_URL: config.codemanUrl,
+    CLOUDAGENTFLEET_NODE_ID: config.nodeId,
+    CLOUDAGENTFLEET_NODE_NAME: config.name,
+    CLOUDAGENTFLEET_CONTROLLER_URL: config.controllerUrl,
+    CLOUDAGENTFLEET_AUTH_TOKEN: config.authToken ?? "",
+    CLOUDAGENTFLEET_WORKSPACE_MODE: config.workspacePolicy.mode,
+    CLOUDAGENTFLEET_WORKSPACE_ROOTS: roots.join(";"),
+    CLOUDAGENTFLEET_WORKSPACES: JSON.stringify(workspaces),
+    CLOUDAGENTFLEET_CODEMAN_MODE: config.codemanMode,
+    CLOUDAGENTFLEET_MANAGE_CODEMAN: manageCodeman ? "true" : "false",
+    CLOUDAGENTFLEET_CODEMAN_INSTALL: installCodeman ? "true" : "false",
+    CLOUDAGENTFLEET_CODEMAN_INSTANCE_ID: config.codemanInstanceId ?? config.nodeId,
+    CLOUDAGENTFLEET_CODEMAN_URL: config.codemanUrl,
   };
 }
 
@@ -429,7 +429,7 @@ async function setup() {
   const codemanMode = await ask(`Codeman mode (${modes.join(", ")})`, "claude");
   if (!modes.includes(codemanMode)) throw new Error(`Unsupported Codeman mode: ${codemanMode}`);
   const codemanUrl = await ask("Codeman URL", "http://127.0.0.1:3000");
-  const authToken = process.env.HOSTED_AGENTS_AUTH_TOKEN;
+  const authToken = process.env.CLOUDAGENTFLEET_AUTH_TOKEN;
   const config = {
     nodeId,
     name,
@@ -630,7 +630,7 @@ async function jsonRequest(url, options, label) {
 }
 
 function authHeaders() {
-  const token = process.env.HOSTED_AGENTS_AUTH_TOKEN?.trim();
+  const token = process.env.CLOUDAGENTFLEET_AUTH_TOKEN?.trim();
   return token ? { authorization: `Bearer ${token}` } : {};
 }
 
@@ -697,7 +697,7 @@ export async function enrollInstance(argv = process.argv.slice(3)) {
 
   const controllerUrl = safeEndpoint(
     optionValue(parsed, "controller-url", "controller")
-      ?? process.env.HOSTED_AGENTS_CONTROLLER_URL
+      ?? process.env.CLOUDAGENTFLEET_CONTROLLER_URL
       ?? await ask("Controller URL", "http://127.0.0.1:8787"),
     "Controller URL",
   );
@@ -710,9 +710,9 @@ export async function enrollInstance(argv = process.argv.slice(3)) {
     "Instance name",
   );
   const codemanUsername = optionValue(parsed, "username")
-    ?? process.env.HOSTED_AGENTS_CODEMAN_USERNAME;
+    ?? process.env.CLOUDAGENTFLEET_CODEMAN_USERNAME;
   const codemanPassword = optionValue(parsed, "password")
-    ?? process.env.HOSTED_AGENTS_CODEMAN_PASSWORD;
+    ?? process.env.CLOUDAGENTFLEET_CODEMAN_PASSWORD;
   if (
     selectedMode !== "tailscale-url"
     && (codemanUsername !== undefined || codemanPassword !== undefined)
@@ -740,7 +740,7 @@ export async function enrollInstance(argv = process.argv.slice(3)) {
       ? {
           nodeId: assertNonEmpty(
             optionValue(parsed, "node-id", "worker-id")
-              ?? process.env.HOSTED_AGENTS_NODE_ID
+              ?? process.env.CLOUDAGENTFLEET_NODE_ID
               ?? await ask("Enrolled Worker node ID"),
             "Worker node ID",
           ),
@@ -786,7 +786,7 @@ export async function enrollInstance(argv = process.argv.slice(3)) {
   const linked = selectedMode === "connector" ? linkWorkerInstance(registration.nodeId, registration.id) : false;
   console.log(`Registered Codeman instance ${registration.label} (${registration.id}) in ${selectedMode} mode.`);
   if (linked) {
-    console.log(`Updated Worker configuration with CODEMAN_INSTANCE_ID=${registration.id}. Restart the Worker to apply it.`);
+    console.log(`Updated Worker configuration with CLOUDAGENTFLEET_CODEMAN_INSTANCE_ID=${registration.id}. Restart the Worker to apply it.`);
   }
   if (parsed.values.has("no-health")) {
     console.log("Health verification skipped by --no-health.");
@@ -800,7 +800,7 @@ export async function enrollInstance(argv = process.argv.slice(3)) {
   );
   if (!health.response.ok) {
     const hint = selectedMode === "connector"
-      ? "The Worker must be online and configured with the same CODEMAN_INSTANCE_ID."
+      ? "The Worker must be online and configured with the same CLOUDAGENTFLEET_CODEMAN_INSTANCE_ID."
       : "The Tailscale URL must be reachable and expose Codeman's /api/v1/status endpoint.";
     throw new Error(
       `Instance registered, but health verification failed: ${controllerError(health.body, health.response)}. ${hint}`,
@@ -831,7 +831,7 @@ function printEnrollmentHelp() {
     "  --capability <name[,name...]>              repeatable",
     "  --no-health                                register without verification",
     "",
-    "Credentials are read from HOSTED_AGENTS_AUTH_TOKEN and are never saved in the instance file.",
+    "Credentials are read from CLOUDAGENTFLEET_AUTH_TOKEN and are never saved in the instance file.",
   ].join("\n"));
 }
 
@@ -879,18 +879,55 @@ function workerServicePaths() {
   if (process.platform === "linux") {
     return {
       kind: "systemd",
-      path: join(homedir(), ".config", "systemd", "user", "hosted-agents-worker.service"),
-      name: "hosted-agents-worker.service",
+      path: join(homedir(), ".config", "systemd", "user", "cloudagentfleet-worker.service"),
+      name: "cloudagentfleet-worker.service",
     };
   }
   if (process.platform === "darwin") {
     return {
       kind: "launchd",
-      path: join(homedir(), "Library", "LaunchAgents", "com.hosted-agents.worker.plist"),
-      name: "com.hosted-agents.worker",
+      path: join(homedir(), "Library", "LaunchAgents", "com.cloudagentfleet.worker.plist"),
+      name: "com.cloudagentfleet.worker",
     };
   }
   return { kind: "schtasks", path: null, name: "Cloud Agent Fleet Worker" };
+}
+
+/**
+ * One-time move from the pre-rename install layout (~/.hosted-agents and the
+ * hosted-agents user service). Safe to remove once no pre-0.2 installs remain.
+ */
+function migrateLegacyInstall() {
+  const legacyDir = join(homedir(), ".hosted-agents");
+  const currentDir = dirname(configPath);
+  if (existsSync(legacyDir) && !existsSync(currentDir)) {
+    renameSync(legacyDir, currentDir);
+    console.log(`Moved configuration from ${legacyDir} to ${currentDir}`);
+  }
+  const legacyService = process.platform === "linux"
+    ? {
+        kind: "systemd",
+        path: join(homedir(), ".config", "systemd", "user", "hosted-agents-worker.service"),
+        name: "hosted-agents-worker.service",
+      }
+    : process.platform === "darwin"
+      ? {
+          kind: "launchd",
+          path: join(homedir(), "Library", "LaunchAgents", "com.hosted-agents.worker.plist"),
+          name: "com.hosted-agents.worker",
+        }
+      : undefined;
+  if (!legacyService || !existsSync(legacyService.path)) return;
+  if (legacyService.kind === "systemd") {
+    command("systemctl", ["--user", "disable", "--now", legacyService.name], { capture: true });
+  } else {
+    command("launchctl", ["unload", legacyService.path], { capture: true });
+  }
+  unlinkSync(legacyService.path);
+  if (legacyService.kind === "systemd") {
+    command("systemctl", ["--user", "daemon-reload"], { capture: true });
+  }
+  console.log(`Removed legacy Worker service ${legacyService.name}; run \`cloudagentfleet worker install\` to reinstall it.`);
 }
 
 function workerServiceCommand() {
@@ -917,9 +954,8 @@ function installWorkerService() {
       "WantedBy=default.target",
       "",
     ].join("\n"), { mode: 0o600 });
-    command("systemctl", ["--user", "daemon-reload"], { capture: false });
-    runServiceCommand(service, "enable");
-    runServiceCommand(service, "start");
+    serviceCommand("systemctl", ["--user", "daemon-reload"]);
+    serviceCommand("systemctl", ["--user", "enable", "--now", service.name]);
   } else if (service.kind === "launchd") {
     mkdirSync(dirname(service.path), { recursive: true });
     const xml = (value) => String(value)
@@ -931,60 +967,65 @@ function installWorkerService() {
       "<?xml version=\"1.0\" encoding=\"UTF-8\"?>",
       "<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">",
       "<plist version=\"1.0\"><dict>",
-      "<key>Label</key><string>com.hosted-agents.worker</string>",
+      `<key>Label</key><string>${service.name}</string>`,
       `<key>ProgramArguments</key><array><string>${xml(executable)}</string><string>${xml(script)}</string><string>${action}</string></array>`,
       "<key>RunAtLoad</key><true/><key>KeepAlive</key><true/>",
       "</dict></plist>",
       "",
     ].join("\n"), { mode: 0o600 });
-    runServiceCommand(service, "load");
+    serviceCommand("launchctl", ["load", "-w", service.path]);
   } else {
     const taskCommand = `"${executable.replaceAll('"', '""')}" "${script.replaceAll('"', '""')}" ${action}`;
-    runServiceCommand(service, "create", taskCommand);
+    serviceCommand("schtasks.exe", [
+      "/Create", "/TN", service.name, "/TR", taskCommand, "/SC", "ONLOGON", "/RL", "LIMITED", "/F",
+    ]);
   }
   console.log(`Installed user-level Worker service: ${service.name}`);
 }
 
-function runServiceCommand(service, action, extra) {
+/**
+ * Native command for each service action. `status` reports instead of
+ * failing, because an inactive service is a valid answer.
+ */
+function workerServiceArgs(service, action) {
   if (service.kind === "systemd") {
-    const result = command("systemctl", ["--user", action, service.name], { capture: false });
-    if (result.status !== 0) throw new Error(`systemd ${action} failed`);
-    return;
+    const verb = { start: "start", stop: "stop", status: "status", remove: "disable" }[action];
+    return ["systemctl", ["--user", verb, ...(action === "remove" ? ["--now"] : []), service.name]];
   }
   if (service.kind === "launchd") {
-    const result = command("launchctl", [action, service.path], { capture: false });
-    if (result.status !== 0) throw new Error(`launchd ${action} failed`);
-    return;
+    if (action === "status") return ["launchctl", ["list", service.name]];
+    return ["launchctl", [action === "start" ? "load" : "unload", "-w", service.path]];
   }
-  const args = action === "create"
-    ? ["/Create", "/TN", service.name, "/TR", extra, "/SC", "ONLOGON", "/RL", "LIMITED", "/F"]
-    : action === "delete"
-      ? ["/Delete", "/TN", service.name, "/F"]
-      : ["/" + action[0].toUpperCase() + action.slice(1), "/TN", service.name];
-  const result = command("schtasks.exe", args, { capture: false });
-  if (result.status !== 0) throw new Error(`Task Scheduler ${action} failed`);
+  const verb = { start: "/Run", stop: "/End", status: "/Query", remove: "/Delete" }[action];
+  return ["schtasks.exe", [verb, "/TN", service.name, ...(action === "remove" ? ["/F"] : [])]];
 }
 
 function workerServiceAction(action) {
-  const service = workerServicePaths();
   if (action === "install") {
     installWorkerService();
     return;
   }
-  if (service.kind === "systemd") {
-    runServiceCommand(service, action);
-  } else if (service.kind === "launchd") {
-    if (action === "stop") runServiceCommand(service, "unload");
-    else if (action === "start") runServiceCommand(service, "load");
-    else if (action === "remove") runServiceCommand(service, "unload");
-    else runServiceCommand(service, "list");
-  } else if (action === "remove") {
-    runServiceCommand(service, "delete");
-  } else {
-    runServiceCommand(service, action);
+  if (!["start", "stop", "status", "remove"].includes(action)) {
+    throw new Error(`Unknown worker command: ${action} (use install, start, stop, status, or remove)`);
   }
-  if (action === "remove" && service.path && existsSync(service.path)) unlinkSync(service.path);
+  const service = workerServicePaths();
+  const [executable, args] = workerServiceArgs(service, action);
+  if (action === "status") {
+    const result = command(executable, args, { capture: false });
+    if (result.status !== 0) console.log(`Worker service ${service.name} is not running or not installed.`);
+    return;
+  }
+  serviceCommand(executable, args);
+  if (action === "remove" && service.path && existsSync(service.path)) {
+    unlinkSync(service.path);
+    if (service.kind === "systemd") serviceCommand("systemctl", ["--user", "daemon-reload"]);
+  }
   console.log(`Worker service ${action} complete.`);
+}
+
+function serviceCommand(executable, args) {
+  const result = command(executable, args, { capture: false });
+  if (result.status !== 0) throw new Error(`${executable} ${args.join(" ")} failed`);
 }
 
 async function startJob() {
@@ -994,8 +1035,8 @@ async function startJob() {
     "content-type": "application/json",
     ...(config.authToken
       ? { authorization: `Bearer ${config.authToken}` }
-      : process.env.HOSTED_AGENTS_AUTH_TOKEN
-        ? { authorization: `Bearer ${process.env.HOSTED_AGENTS_AUTH_TOKEN}` }
+      : process.env.CLOUDAGENTFLEET_AUTH_TOKEN
+        ? { authorization: `Bearer ${process.env.CLOUDAGENTFLEET_AUTH_TOKEN}` }
         : {}),
   };
   const baseUrl = config.controllerUrl.replace(/\/+$/, "");
@@ -1051,7 +1092,6 @@ function help() {
     "  cloudagentfleet hub <serve|status|stop>  Manage private Tailscale Hub serving",
     "  cloudagentfleet doctor           Print local prerequisites",
     "",
-    "Compatibility alias: hosted-agents",
     "The setup flow asks before installing Codeman and never performs provider login.",
   ].join("\n"));
 }
@@ -1061,8 +1101,7 @@ function isDirectCliEntrypoint() {
   if (!entry) return false;
   const normalized = entry.replaceAll("\\", "/");
   return (
-    normalized.endsWith("/hosted-agents.mjs")
-    || normalized.endsWith("/cloudagentfleet.mjs")
+    normalized.endsWith("/cloudagentfleet.mjs")
     || resolve(entry) === resolve(fileURLToPath(import.meta.url))
   );
 }
@@ -1070,12 +1109,13 @@ function isDirectCliEntrypoint() {
 if (isDirectCliEntrypoint()) {
   try {
     const commandName = process.argv[2] ?? "help";
+    migrateLegacyInstall();
     if (commandName === "setup") await setup();
     else if (commandName === "run") runSavedWorker();
     else if (commandName === "worker") workerServiceAction(process.argv[3] ?? "status");
-    else if (commandName === "doctor" || commandName === "check") printEnvironment(detectEnvironment());
+    else if (commandName === "doctor") printEnvironment(detectEnvironment());
     else if (commandName === "start") await startJob();
-    else if (commandName === "enroll" || commandName === "register") await enrollInstance();
+    else if (commandName === "enroll") await enrollInstance();
     else if (commandName === "hub") await hubCommand(process.argv.slice(3));
     else help();
   } catch (error) {

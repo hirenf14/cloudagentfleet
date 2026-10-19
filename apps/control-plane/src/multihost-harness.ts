@@ -273,8 +273,8 @@ async function runLive(): Promise<void> {
     try {
       const sessionA = await createSession(controllerUrl, "codeman-a", workspaceA);
       const sessionB = await createSession(controllerUrl, "codeman-b", workspaceB);
-      await sendInput(controllerUrl, "codeman-a", sessionA.id, "hosted-agents-live-a");
-      await sendInput(controllerUrl, "codeman-b", sessionB.id, "hosted-agents-live-b");
+      await sendInput(controllerUrl, "codeman-a", sessionA.id, "cloudagentfleet-live-a");
+      await sendInput(controllerUrl, "codeman-b", sessionB.id, "cloudagentfleet-live-b");
       await waitFor(() =>
         observed.some((event) => event.instanceId === "codeman-a" && event.event === "output")
         && observed.some((event) => event.instanceId === "codeman-b" && event.event === "output"),

@@ -138,7 +138,7 @@ test("CodemanWorkerRuntime launches Cursor Agent inside a persistent Codeman ses
   assert.deepEqual(JSON.parse(String(inputCalls[0]?.init?.body)), {
     input: "agent\r",
     useMux: false,
-    clientId: "hosted-agents-connector",
+    clientId: "cloudagentfleet-connector",
     seq: JSON.parse(String(inputCalls[0]?.init?.body)).seq,
   });
 });
@@ -237,7 +237,7 @@ test("CodemanWorkerRuntime forwards Enter and whitespace-only terminal input", a
   assert.deepEqual(JSON.parse(String(inputCall?.init?.body)), {
     input: "\r",
     useMux: true,
-    clientId: "hosted-agents-connector",
+    clientId: "cloudagentfleet-connector",
     seq: JSON.parse(String(inputCall?.init?.body)).seq,
   });
 });
@@ -317,7 +317,7 @@ test("CodemanWorkerRuntime rejects workspaces outside the approved roots", async
 });
 
 test("CodemanWorkerRuntime suggests only policy-approved real directories", async () => {
-  const root = await mkdtemp(join(tmpdir(), "hosted-agents-suggest-"));
+  const root = await mkdtemp(join(tmpdir(), "cloudagentfleet-suggest-"));
   try {
     await mkdir(join(root, "alpha"));
     await mkdir(join(root, "beta"));

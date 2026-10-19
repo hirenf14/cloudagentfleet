@@ -46,16 +46,16 @@ function envFlagFrom(env: NodeJS.ProcessEnv, name: string, defaultValue: boolean
 
 /** Manage Codeman under the Worker by default. */
 export function manageCodemanEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
-  return envFlagFrom(env, "HOSTED_AGENTS_MANAGE_CODEMAN", true);
+  return envFlagFrom(env, "CLOUDAGENTFLEET_MANAGE_CODEMAN", true);
 }
 
 /** Auto-install when manage is on (default true). */
 export function codemanInstallEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
-  return envFlagFrom(env, "HOSTED_AGENTS_CODEMAN_INSTALL", true);
+  return envFlagFrom(env, "CLOUDAGENTFLEET_CODEMAN_INSTALL", true);
 }
 
 function resolveWslDistro(explicit?: string): string {
-  return explicit ?? (process.env.HOSTED_AGENTS_WSL_DISTRO?.trim() || "Ubuntu");
+  return explicit ?? (process.env.CLOUDAGENTFLEET_WSL_DISTRO?.trim() || "Ubuntu");
 }
 
 function defaultRunCommand(
@@ -158,7 +158,7 @@ export function installCodeman(options: CodemanSupervisorOptions = {}): void {
     if (wslOk.status !== 0) {
       throw new Error(
         `WSL distro "${wslDistro}" is required to install Codeman on Windows. `
-        + "Install WSL (`wsl --install`) or set HOSTED_AGENTS_WSL_DISTRO.",
+        + "Install WSL (`wsl --install`) or set CLOUDAGENTFLEET_WSL_DISTRO.",
       );
     }
   }
@@ -208,7 +208,7 @@ export async function ensureCodeman(
   options: CodemanSupervisorOptions = {},
 ): Promise<CodemanSupervisorHandle> {
   const baseUrl = normalizeBaseUrl(
-    options.baseUrl ?? process.env.CODEMAN_URL ?? "http://127.0.0.1:3000",
+    options.baseUrl ?? process.env.CLOUDAGENTFLEET_CODEMAN_URL ?? "http://127.0.0.1:3000",
   );
   const installIfMissing = options.installIfMissing ?? codemanInstallEnabled();
   const fetchImpl = options.fetchImpl ?? fetch;
@@ -235,7 +235,7 @@ export async function ensureCodeman(
   if (!binary) {
     if (!installIfMissing) {
       throw new Error(
-        "Codeman is not installed and HOSTED_AGENTS_CODEMAN_INSTALL=false. "
+        "Codeman is not installed and CLOUDAGENTFLEET_CODEMAN_INSTALL=false. "
         + "Install Codeman or enable auto-install.",
       );
     }

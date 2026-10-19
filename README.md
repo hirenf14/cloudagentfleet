@@ -7,8 +7,12 @@ execution plane for persistent terminal and CLI sessions; this project adds one
 Hub URL, fleet enrollment, host context, and routing.
 
 One local server runs the Controller and web router. Direct Codeman hosts are
-reached over Tailscale. A persistent Worker is only needed as a fallback for
-machines that cannot accept Controller-to-Codeman connections.
+reached over Tailscale. On each machine, the Worker installs and supervises
+Codeman; its outbound connector is the fallback path for machines that cannot
+accept Controller-to-Codeman connections.
+
+Configuration lives in `~/.cloudagentfleet/`, and every environment variable
+uses the `CLOUDAGENTFLEET_` prefix (see [`.env.example`](.env.example)).
 
 ## Requirements
 
@@ -50,8 +54,6 @@ cloudagentfleet --help
 cloudagentfleet-hub   # starts the Hub on 127.0.0.1:8787
 ```
 
-`hosted-agents` remains a compatibility alias for the worker CLI.
-
 ## Machine setup
 
 ```bash
@@ -68,7 +70,7 @@ The flow detects prerequisites, asks before installing Codeman on first setup,
 lets you select approved folders or whole-system access, discovers workspaces,
 and can start the Worker. The Worker manages Codeman under the hood by default
 (install if missing, start if down; opt out with `manageCodeman: false` in
-`~/.hosted-agents/worker.json` or `HOSTED_AGENTS_MANAGE_CODEMAN=false`). The
+`~/.cloudagentfleet/worker.json` or `CLOUDAGENTFLEET_MANAGE_CODEMAN=false`). The
 Worker enrolls over outbound SSE/HTTP and executes fallback jobs through
 Codeman's `/api/v1/sessions` API. Direct Tailscale mode does not require the
 Worker for browser terminal traffic.
@@ -96,7 +98,7 @@ cloudagentfleet enroll tailscale-url \
 The Controller keeps the endpoint and optional Codeman credentials server-side,
 then proxies Codeman's native UI, REST, SSE, and terminal WebSocket through the
 Hub. Enrollment verifies Hub health, reads the optional Controller token from
-`HOSTED_AGENTS_AUTH_TOKEN`, and does not automate Tailscale Serve.
+`CLOUDAGENTFLEET_AUTH_TOKEN`, and does not automate Tailscale Serve.
 
 To link another machine, repeat setup on that host with a unique Worker and
 instance ID:

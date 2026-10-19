@@ -9,10 +9,10 @@ HTTP.
 
 By default the Worker **manages Codeman under the hood**:
 
-- `HOSTED_AGENTS_MANAGE_CODEMAN` defaults to `true` — install (if missing) and
+- `CLOUDAGENTFLEET_MANAGE_CODEMAN` defaults to `true` — install (if missing) and
   start Codeman when `/api/v1/status` is down; stop it on Worker shutdown only
   if this Worker process started it.
-- `HOSTED_AGENTS_CODEMAN_INSTALL` defaults to `true` when manage is on — run the
+- `CLOUDAGENTFLEET_CODEMAN_INSTALL` defaults to `true` when manage is on — run the
   official installer once when `codeman` is not on PATH.
 - Set either flag to `false` to attach to an existing Codeman only (no
   install/start/stop).
@@ -41,9 +41,9 @@ cloudagentfleet setup --run
 The guided flow detects WSL/Codeman, asks before installing Codeman on first
 setup, lets you choose approved folders or whole-system access, discovers
 workspaces beneath those roots, selects the Codeman mode, and writes
-`~/.hosted-agents/worker.json` (including `manageCodeman` / `installCodeman`,
+`~/.cloudagentfleet/worker.json` (including `manageCodeman` / `installCodeman`,
 default `true`). On `cloudagentfleet run` (or `setup --run`), those flags become
-`HOSTED_AGENTS_MANAGE_CODEMAN` and `HOSTED_AGENTS_CODEMAN_INSTALL` so the Worker
+`CLOUDAGENTFLEET_MANAGE_CODEMAN` and `CLOUDAGENTFLEET_CODEMAN_INSTALL` so the Worker
 can install/start Codeman without a separate `codeman web -d` on each host.
 To configure without launching, omit `--run`; later use `cloudagentfleet run`.
 
@@ -77,7 +77,7 @@ terminal input does not pass through the request-per-keystroke Worker path.
 The connector remains available for machines that cannot accept Controller
 connections. To serve the single private Hub, use the `hub serve` command
 described in [`TAILSCALE-SERVE.md`](TAILSCALE-SERVE.md).
-`HOSTED_AGENTS_AUTH_TOKEN` is read from the environment when the Controller
+`CLOUDAGENTFLEET_AUTH_TOKEN` is read from the environment when the Controller
 requires authentication.
 
 ## Start the Worker manually
@@ -85,13 +85,13 @@ requires authentication.
 The current runtime accepts configuration through environment variables:
 
 ```bash
-export HOSTED_AGENTS_NODE_ID=worker-linux-1
-export HOSTED_AGENTS_NODE_NAME="Linux build machine"
-export HOSTED_AGENTS_CONTROLLER_URL=https://controller.example.test
-export HOSTED_AGENTS_AUTH_TOKEN="controller-worker-token"
-export HOSTED_AGENTS_WORKSPACE_MODE=folders
-export HOSTED_AGENTS_WORKSPACE_ROOTS="$HOME/workspaces"
-export HOSTED_AGENTS_WORKSPACES='[
+export CLOUDAGENTFLEET_NODE_ID=worker-linux-1
+export CLOUDAGENTFLEET_NODE_NAME="Linux build machine"
+export CLOUDAGENTFLEET_CONTROLLER_URL=https://controller.example.test
+export CLOUDAGENTFLEET_AUTH_TOKEN="controller-worker-token"
+export CLOUDAGENTFLEET_WORKSPACE_MODE=folders
+export CLOUDAGENTFLEET_WORKSPACE_ROOTS="$HOME/workspaces"
+export CLOUDAGENTFLEET_WORKSPACES='[
   {
     "id": "payments",
     "name": "payments",
@@ -100,15 +100,15 @@ export HOSTED_AGENTS_WORKSPACES='[
     "providers": { "codeman": "ready" }
   }
 ]'
-export CODEMAN_URL=http://127.0.0.1:3000
+export CLOUDAGENTFLEET_CODEMAN_URL=http://127.0.0.1:3000
 # Optional opt-outs (both default true):
-# export HOSTED_AGENTS_MANAGE_CODEMAN=false
-# export HOSTED_AGENTS_CODEMAN_INSTALL=false
+# export CLOUDAGENTFLEET_MANAGE_CODEMAN=false
+# export CLOUDAGENTFLEET_CODEMAN_INSTALL=false
 
 node --experimental-strip-types apps/node-agent/src/main.ts
 ```
 
-`CODEMAN_USERNAME` and `CODEMAN_PASSWORD` may be set when Codeman Basic
+`CLOUDAGENTFLEET_CODEMAN_USERNAME` and `CLOUDAGENTFLEET_CODEMAN_PASSWORD` may be set when Codeman Basic
 authentication is enabled. They are used only for direct Worker-to-Codeman
 requests.
 

@@ -209,7 +209,7 @@ export class CodemanClient {
       body: {
         input: deliveredInput,
         useMux: !raw,
-        clientId: "hosted-agents-connector",
+        clientId: "cloudagentfleet-connector",
         seq: ++this.inputSequence,
       },
     });
@@ -496,7 +496,7 @@ export class CodemanWorkerRuntime {
       const input = await this.client.sendPrompt(
         session.id,
         job.prompt,
-        `hosted-agents-${this.nodeId}`,
+        `cloudagentfleet-${this.nodeId}`,
         1,
         abortController.signal,
       );

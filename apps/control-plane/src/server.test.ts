@@ -443,11 +443,11 @@ test("protects the Hub UI with a password session and same-origin state changes"
     });
     assert.equal(login.status, 200);
     const setCookie = login.headers.get("set-cookie") ?? "";
-    const sessionCookie = cookieValue(setCookie, "hosted_agents_session");
-    const csrfCookie = cookieValue(setCookie, "hosted_agents_csrf");
+    const sessionCookie = cookieValue(setCookie, "cloudagentfleet_session");
+    const csrfCookie = cookieValue(setCookie, "cloudagentfleet_csrf");
     assert.ok(sessionCookie);
     assert.ok(csrfCookie);
-    const cookie = `hosted_agents_session=${sessionCookie}; hosted_agents_csrf=${csrfCookie}`;
+    const cookie = `cloudagentfleet_session=${sessionCookie}; cloudagentfleet_csrf=${csrfCookie}`;
 
     const page = await fetch(`${baseUrl}/`, {
       headers: { cookie },
@@ -492,7 +492,7 @@ test("clears the selected Codeman host and returns to the Hub dashboard", async 
     assert.match(cleared.headers.get("location") ?? "", /\/$/);
     assert.match(
       cleared.headers.get("set-cookie") ?? "",
-      /hosted_agents_codeman_instance=;/,
+      /cloudagentfleet_instance=;/,
     );
   } finally {
     await new Promise<void>((resolve, reject) => {
@@ -526,7 +526,7 @@ test("selects a Tailscale Codeman host for the native UI proxy", async () => {
     assert.match(selected.headers.get("location") ?? "", /\/$/);
     assert.match(
       selected.headers.get("set-cookie") ?? "",
-      /hosted_agents_codeman_instance=codeman-tailnet/,
+      /cloudagentfleet_instance=codeman-tailnet/,
     );
   } finally {
     await new Promise<void>((resolve, reject) => {
@@ -565,10 +565,10 @@ test("proxies the selected host's native HTML through the single Hub origin", as
     });
     const cookie = cookieValue(
       selected.headers.get("set-cookie") ?? "",
-      "hosted_agents_codeman_instance",
+      "cloudagentfleet_instance",
     );
     const page = await fetch(`${baseUrl}/`, {
-      headers: { cookie: `hosted_agents_codeman_instance=${cookie}` },
+      headers: { cookie: `cloudagentfleet_instance=${cookie}` },
     });
     assert.equal(page.status, 200);
     assert.match(await page.text(), /fleet-host-switcher\.js/);

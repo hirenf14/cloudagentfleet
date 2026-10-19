@@ -29,8 +29,6 @@ cloudagentfleet --help
 cloudagentfleet-hub --help
 ```
 
-`hosted-agents` is a compatibility alias for the worker CLI.
-
 ## Everyday commands
 
 | Goal | Command |

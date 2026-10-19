@@ -18,7 +18,7 @@ import type {
 } from "../../../packages/protocol/src/index.ts";
 
 const MAX_BODY_BYTES = 1_048_576;
-const CODEMAN_INSTANCE_COOKIE = "hosted_agents_codeman_instance";
+const CODEMAN_INSTANCE_COOKIE = "cloudagentfleet_instance";
 
 function resolveDashboardRoot(): string {
   const here = dirname(fileURLToPath(import.meta.url));
@@ -75,7 +75,7 @@ export function startControllerServer(
     if (controller.revealPassword) {
       console.log(`Hub UI password: ${controller.revealPassword}`);
       console.log(
-        "Shown on every start until you set HOSTED_AGENTS_UI_PASSWORD or HOSTED_AGENTS_UI_PASSWORD_HASH.",
+        "Shown on every start until you set CLOUDAGENTFLEET_UI_PASSWORD or CLOUDAGENTFLEET_UI_PASSWORD_HASH.",
       );
     }
   });
@@ -85,10 +85,10 @@ export function startControllerServer(
 export function createControllerServer(
   options: ControllerServerOptions = {},
 ): ControllerServer {
-  const host = options.host ?? process.env.HOSTED_AGENTS_HOST ?? "127.0.0.1";
-  const port = options.port ?? Number(process.env.HOSTED_AGENTS_PORT ?? 8787);
-  const authToken = options.authToken ?? process.env.HOSTED_AGENTS_AUTH_TOKEN;
-  const statePath = options.statePath ?? process.env.HOSTED_AGENTS_DATA_PATH ?? "data/hub.json";
+  const host = options.host ?? process.env.CLOUDAGENTFLEET_HOST ?? "127.0.0.1";
+  const port = options.port ?? Number(process.env.CLOUDAGENTFLEET_PORT ?? 8787);
+  const authToken = options.authToken ?? process.env.CLOUDAGENTFLEET_AUTH_TOKEN;
+  const statePath = options.statePath ?? process.env.CLOUDAGENTFLEET_DATA_PATH ?? "data/hub.json";
   const dataDir = statePath ? dirname(resolve(statePath)) : undefined;
   const resolvedAuth = resolveUiAuth({
     dataDir,
@@ -744,16 +744,16 @@ function isCodemanProxiedApiPath(pathname: string): boolean {
 }
 
 function readCodemanCredentials(): Record<string, { username: string; password: string }> {
-  const encoded = process.env.HOSTED_AGENTS_CODEMAN_CREDENTIALS;
+  const encoded = process.env.CLOUDAGENTFLEET_CODEMAN_CREDENTIALS;
   if (!encoded) return {};
   let parsed: unknown;
   try {
     parsed = JSON.parse(encoded);
   } catch {
-    throw new Error("HOSTED_AGENTS_CODEMAN_CREDENTIALS must be valid JSON");
+    throw new Error("CLOUDAGENTFLEET_CODEMAN_CREDENTIALS must be valid JSON");
   }
   if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-    throw new Error("HOSTED_AGENTS_CODEMAN_CREDENTIALS must be an object");
+    throw new Error("CLOUDAGENTFLEET_CODEMAN_CREDENTIALS must be an object");
   }
   const credentials: Record<string, { username: string; password: string }> = {};
   for (const [instanceId, value] of Object.entries(parsed)) {

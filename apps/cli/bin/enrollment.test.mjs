@@ -73,7 +73,7 @@ test("workspace discovery assigns distinct stable IDs to nested folders", () => 
 
 test("Hub serving accepts only loopback configuration and numeric ports", () => {
   assert.deepEqual(parseHubOptions(["--port", "9443"], {
-    HOSTED_AGENTS_HOST: "127.0.0.1",
+    CLOUDAGENTFLEET_HOST: "127.0.0.1",
   }), {
     host: "127.0.0.1",
     port: 9443,
@@ -83,7 +83,7 @@ test("Hub serving accepts only loopback configuration and numeric ports", () => 
     /port must be a number/,
   );
   assert.throws(
-    () => parseHubOptions([], { HOSTED_AGENTS_HOST: "0.0.0.0" }),
+    () => parseHubOptions([], { CLOUDAGENTFLEET_HOST: "0.0.0.0" }),
     /requires a loopback bind address/,
   );
 });
@@ -94,7 +94,7 @@ test("Hub lifecycle invokes Tailscale with argument arrays and one loopback orig
     calls.push({ command, args, options });
     return { status: 0, stdout: "Serve status", stderr: "" };
   };
-  const env = { HOSTED_AGENTS_HOST: "127.0.0.1", HOSTED_AGENTS_PORT: "8787" };
+  const env = { CLOUDAGENTFLEET_HOST: "127.0.0.1", CLOUDAGENTFLEET_PORT: "8787" };
   const fetchImpl = async (url, options) => {
     assert.equal(url, "http://127.0.0.1:8787/healthz");
     assert.deepEqual(options.headers, {});
@@ -127,7 +127,7 @@ test("Hub serving reports missing Tailscale and refuses an unhealthy Hub", async
   const calls = [];
   await assert.rejects(
     serveHub([], {
-      env: { HOSTED_AGENTS_HOST: "127.0.0.1", HOSTED_AGENTS_PORT: "8787" },
+      env: { CLOUDAGENTFLEET_HOST: "127.0.0.1", CLOUDAGENTFLEET_PORT: "8787" },
       runner: (_command, args, options) => {
         calls.push({ args, options });
         return { status: 0, stdout: "", stderr: "" };

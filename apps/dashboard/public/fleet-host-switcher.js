@@ -2,7 +2,7 @@
   "use strict";
 
   const bar = document.createElement("div");
-  bar.id = "hosted-agents-fleet-bar";
+  bar.id = "cloudagentfleet-fleet-bar";
   bar.style.cssText = [
     "position:fixed",
     "top:0",

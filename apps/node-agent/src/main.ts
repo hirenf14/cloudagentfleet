@@ -26,9 +26,9 @@ function required(name: string): string {
 }
 
 function parseWorkspaces(): WorkspaceDescriptor[] {
-  const raw = process.env.HOSTED_AGENTS_WORKSPACES ?? "[]";
+  const raw = process.env.CLOUDAGENTFLEET_WORKSPACES ?? "[]";
   const value = JSON.parse(raw) as unknown;
-  if (!Array.isArray(value)) throw new Error("HOSTED_AGENTS_WORKSPACES must be a JSON array");
+  if (!Array.isArray(value)) throw new Error("CLOUDAGENTFLEET_WORKSPACES must be a JSON array");
   return (value as WorkspaceDescriptor[]).map((workspace) => ({
     ...workspace,
     id: `ws_${createHash("sha256").update(workspace.canonicalPath).digest("hex").slice(0, 20)}`,
@@ -36,8 +36,8 @@ function parseWorkspaces(): WorkspaceDescriptor[] {
 }
 
 function parsePolicy(): WorkspacePolicy {
-  const mode = process.env.HOSTED_AGENTS_WORKSPACE_MODE === "system" ? "system" : "folders";
-  const roots = (process.env.HOSTED_AGENTS_WORKSPACE_ROOTS ?? "")
+  const mode = process.env.CLOUDAGENTFLEET_WORKSPACE_MODE === "system" ? "system" : "folders";
+  const roots = (process.env.CLOUDAGENTFLEET_WORKSPACE_ROOTS ?? "")
     .split(";")
     .map((root) => root.trim())
     .filter(Boolean);
@@ -99,9 +99,9 @@ function detectAgentProfiles(providers: {
 }
 
 function mode(): CodemanAgentMode {
-  const selected = process.env.HOSTED_AGENTS_CODEMAN_MODE ?? "claude";
+  const selected = process.env.CLOUDAGENTFLEET_CODEMAN_MODE ?? "claude";
   if (!isCodemanAgentMode(selected)) {
-    throw new Error(`Unsupported HOSTED_AGENTS_CODEMAN_MODE: ${selected}`);
+    throw new Error(`Unsupported CLOUDAGENTFLEET_CODEMAN_MODE: ${selected}`);
   }
   return selected;
 }
@@ -127,17 +127,17 @@ export async function runWorker(): Promise<void> {
     },
   }));
   const config = validateConfig({
-    nodeId: required("HOSTED_AGENTS_NODE_ID"),
-    name: process.env.HOSTED_AGENTS_NODE_NAME ?? "Cloud Agent Fleet Worker",
+    nodeId: required("CLOUDAGENTFLEET_NODE_ID"),
+    name: process.env.CLOUDAGENTFLEET_NODE_NAME ?? "Cloud Agent Fleet Worker",
     platform: platform(),
     capabilities: ["codeman", ...(agentProfiles.length > 0 ? ["cursor-worker" as const] : [])],
     workspacePolicy: parsePolicy(),
     workspaces,
-    controlPlaneUrl: required("HOSTED_AGENTS_CONTROLLER_URL"),
-    authToken: process.env.HOSTED_AGENTS_AUTH_TOKEN,
+    controlPlaneUrl: required("CLOUDAGENTFLEET_CONTROLLER_URL"),
+    authToken: process.env.CLOUDAGENTFLEET_AUTH_TOKEN,
   });
-  const instanceId = process.env.CODEMAN_INSTANCE_ID ?? config.nodeId;
-  const codemanBaseUrl = process.env.CODEMAN_URL ?? "http://127.0.0.1:3000";
+  const instanceId = process.env.CLOUDAGENTFLEET_CODEMAN_INSTANCE_ID ?? config.nodeId;
+  const codemanBaseUrl = process.env.CLOUDAGENTFLEET_CODEMAN_URL ?? "http://127.0.0.1:3000";
   let supervisor: CodemanSupervisorHandle | undefined;
   if (manageCodemanEnabled()) {
     supervisor = await ensureCodeman({ baseUrl: codemanBaseUrl });
@@ -149,8 +149,8 @@ export async function runWorker(): Promise<void> {
   });
   const codeman = new CodemanClient({
     baseUrl: codemanBaseUrl,
-    username: process.env.CODEMAN_USERNAME,
-    password: process.env.CODEMAN_PASSWORD,
+    username: process.env.CLOUDAGENTFLEET_CODEMAN_USERNAME,
+    password: process.env.CLOUDAGENTFLEET_CODEMAN_PASSWORD,
   });
   const runtime = new CodemanWorkerRuntime({
     client: codeman,

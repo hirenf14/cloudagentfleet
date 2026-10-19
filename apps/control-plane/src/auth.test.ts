@@ -10,11 +10,11 @@ import {
 } from "./auth.ts";
 
 test("generates a bootstrap Hub password and reveals it until changed", () => {
-  const dataDir = mkdtempSync(join(tmpdir(), "hosted-agents-auth-"));
-  const previousHash = process.env.HOSTED_AGENTS_UI_PASSWORD_HASH;
-  const previousPassword = process.env.HOSTED_AGENTS_UI_PASSWORD;
-  delete process.env.HOSTED_AGENTS_UI_PASSWORD_HASH;
-  delete process.env.HOSTED_AGENTS_UI_PASSWORD;
+  const dataDir = mkdtempSync(join(tmpdir(), "cloudagentfleet-auth-"));
+  const previousHash = process.env.CLOUDAGENTFLEET_UI_PASSWORD_HASH;
+  const previousPassword = process.env.CLOUDAGENTFLEET_UI_PASSWORD;
+  delete process.env.CLOUDAGENTFLEET_UI_PASSWORD_HASH;
+  delete process.env.CLOUDAGENTFLEET_UI_PASSWORD;
   try {
     const first = resolveUiAuth({ dataDir });
     assert.equal(first.auth.enabled, true);
@@ -38,20 +38,20 @@ test("generates a bootstrap Hub password and reveals it until changed", () => {
     assert.equal(afterChange.auth.enabled, true);
     assert.equal(afterChange.auth.verifyPassword("test", "operator-chosen-password"), true);
   } finally {
-    if (previousHash === undefined) delete process.env.HOSTED_AGENTS_UI_PASSWORD_HASH;
-    else process.env.HOSTED_AGENTS_UI_PASSWORD_HASH = previousHash;
-    if (previousPassword === undefined) delete process.env.HOSTED_AGENTS_UI_PASSWORD;
-    else process.env.HOSTED_AGENTS_UI_PASSWORD = previousPassword;
+    if (previousHash === undefined) delete process.env.CLOUDAGENTFLEET_UI_PASSWORD_HASH;
+    else process.env.CLOUDAGENTFLEET_UI_PASSWORD_HASH = previousHash;
+    if (previousPassword === undefined) delete process.env.CLOUDAGENTFLEET_UI_PASSWORD;
+    else process.env.CLOUDAGENTFLEET_UI_PASSWORD = previousPassword;
     rmSync(dataDir, { recursive: true, force: true });
   }
 });
 
 test("env password stops revealing the bootstrap plaintext", () => {
-  const dataDir = mkdtempSync(join(tmpdir(), "hosted-agents-auth-"));
-  const previousHash = process.env.HOSTED_AGENTS_UI_PASSWORD_HASH;
-  const previousPassword = process.env.HOSTED_AGENTS_UI_PASSWORD;
-  delete process.env.HOSTED_AGENTS_UI_PASSWORD_HASH;
-  delete process.env.HOSTED_AGENTS_UI_PASSWORD;
+  const dataDir = mkdtempSync(join(tmpdir(), "cloudagentfleet-auth-"));
+  const previousHash = process.env.CLOUDAGENTFLEET_UI_PASSWORD_HASH;
+  const previousPassword = process.env.CLOUDAGENTFLEET_UI_PASSWORD;
+  delete process.env.CLOUDAGENTFLEET_UI_PASSWORD_HASH;
+  delete process.env.CLOUDAGENTFLEET_UI_PASSWORD;
   try {
     const bootstrap = resolveUiAuth({ dataDir });
     assert.ok(bootstrap.revealPassword);
@@ -63,27 +63,27 @@ test("env password stops revealing the bootstrap plaintext", () => {
     assert.equal(withEnv.auth.verifyPassword("test", "from-environment"), true);
     clearBootstrapPlaintext(dataDir);
   } finally {
-    if (previousHash === undefined) delete process.env.HOSTED_AGENTS_UI_PASSWORD_HASH;
-    else process.env.HOSTED_AGENTS_UI_PASSWORD_HASH = previousHash;
-    if (previousPassword === undefined) delete process.env.HOSTED_AGENTS_UI_PASSWORD;
-    else process.env.HOSTED_AGENTS_UI_PASSWORD = previousPassword;
+    if (previousHash === undefined) delete process.env.CLOUDAGENTFLEET_UI_PASSWORD_HASH;
+    else process.env.CLOUDAGENTFLEET_UI_PASSWORD_HASH = previousHash;
+    if (previousPassword === undefined) delete process.env.CLOUDAGENTFLEET_UI_PASSWORD;
+    else process.env.CLOUDAGENTFLEET_UI_PASSWORD = previousPassword;
     rmSync(dataDir, { recursive: true, force: true });
   }
 });
 
 test("ephemeral mode without dataDir leaves auth disabled", () => {
-  const previousHash = process.env.HOSTED_AGENTS_UI_PASSWORD_HASH;
-  const previousPassword = process.env.HOSTED_AGENTS_UI_PASSWORD;
-  delete process.env.HOSTED_AGENTS_UI_PASSWORD_HASH;
-  delete process.env.HOSTED_AGENTS_UI_PASSWORD;
+  const previousHash = process.env.CLOUDAGENTFLEET_UI_PASSWORD_HASH;
+  const previousPassword = process.env.CLOUDAGENTFLEET_UI_PASSWORD;
+  delete process.env.CLOUDAGENTFLEET_UI_PASSWORD_HASH;
+  delete process.env.CLOUDAGENTFLEET_UI_PASSWORD;
   try {
     const resolved = resolveUiAuth({});
     assert.equal(resolved.auth.enabled, false);
     assert.equal(resolved.revealPassword, undefined);
   } finally {
-    if (previousHash === undefined) delete process.env.HOSTED_AGENTS_UI_PASSWORD_HASH;
-    else process.env.HOSTED_AGENTS_UI_PASSWORD_HASH = previousHash;
-    if (previousPassword === undefined) delete process.env.HOSTED_AGENTS_UI_PASSWORD;
-    else process.env.HOSTED_AGENTS_UI_PASSWORD = previousPassword;
+    if (previousHash === undefined) delete process.env.CLOUDAGENTFLEET_UI_PASSWORD_HASH;
+    else process.env.CLOUDAGENTFLEET_UI_PASSWORD_HASH = previousHash;
+    if (previousPassword === undefined) delete process.env.CLOUDAGENTFLEET_UI_PASSWORD;
+    else process.env.CLOUDAGENTFLEET_UI_PASSWORD = previousPassword;
   }
 });

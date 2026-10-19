@@ -46,7 +46,7 @@
   };
 
   function csrfToken() {
-    const match = document.cookie.match(/(?:^|;\s*)hosted_agents_csrf=([^;]+)/);
+    const match = document.cookie.match(/(?:^|;\s*)cloudagentfleet_csrf=([^;]+)/);
     return match ? decodeURIComponent(match[1]) : "";
   }
 

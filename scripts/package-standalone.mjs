@@ -27,13 +27,6 @@ const launcher = platform === "win32"
 await writeFile(join(artifactRoot, launcherName), launcher);
 if (platform !== "win32") await chmod(join(artifactRoot, launcherName), 0o755);
 
-const compatibilityName = platform === "win32" ? "hosted-agents.cmd" : "hosted-agents";
-const compatibilityLauncher = platform === "win32"
-  ? `@echo off\r\n"%~dp0${launcherName}" %*\r\n`
-  : `#!/usr/bin/env sh\nset -eu\nROOT="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"\nexec "$ROOT/${launcherName}" "$@"\n`;
-await writeFile(join(artifactRoot, compatibilityName), compatibilityLauncher);
-if (platform !== "win32") await chmod(join(artifactRoot, compatibilityName), 0o755);
-
 const hubLauncher = platform === "win32" ? "cloudagentfleet-hub.cmd" : "cloudagentfleet-hub";
 const hubEntry = "cloudagentfleet-hub.mjs";
 const hubScript = platform === "win32"
@@ -44,12 +37,12 @@ if (platform !== "win32") await chmod(join(artifactRoot, hubLauncher), 0o755);
 
 const manifest = {
   name: "cloudagentfleet",
-  version: process.env.HOSTED_AGENTS_VERSION ?? "0.1.0",
+  version: JSON.parse(await readFile(join(root, "apps", "node-agent", "package.json"), "utf8")).version,
   platform,
   architecture,
   node: nodeName,
   entrypoint: launcherName,
-  binaries: ["cloudagentfleet", "cloudagentfleet-worker", "cloudagentfleet-hub"],
+  binaries: ["cloudagentfleet", "cloudagentfleet-hub"],
   providerSetup: "Run cloudagentfleet setup; Codeman and provider login remain user-owned.",
 };
 await writeFile(join(artifactRoot, "release-manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);

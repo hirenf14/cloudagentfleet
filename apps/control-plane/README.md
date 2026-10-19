@@ -25,10 +25,10 @@ bearer token (without it they get `401 Authentication required`):
 
 ```bash
 mkdir -p data
-export HOSTED_AGENTS_HOST=127.0.0.1
-export HOSTED_AGENTS_PORT=8787
-export HOSTED_AGENTS_DATA_PATH="$PWD/data/hub.json"
-export HOSTED_AGENTS_AUTH_TOKEN="replace-with-a-long-shared-secret"
+export CLOUDAGENTFLEET_HOST=127.0.0.1
+export CLOUDAGENTFLEET_PORT=8787
+export CLOUDAGENTFLEET_DATA_PATH="$PWD/data/hub.json"
+export CLOUDAGENTFLEET_AUTH_TOKEN="replace-with-a-long-shared-secret"
 
 npx cloudagentfleet-hub
 ```
@@ -49,7 +49,7 @@ online, enroll an instance:
 
 ```bash
 # Same token as Hub. Use the Worker ID from setup.
-export HOSTED_AGENTS_AUTH_TOKEN="replace-with-a-long-shared-secret"
+export CLOUDAGENTFLEET_AUTH_TOKEN="replace-with-a-long-shared-secret"
 
 cloudagentfleet enroll connector \
   --controller-url http://127.0.0.1:8787 \
@@ -60,24 +60,24 @@ cloudagentfleet enroll connector \
   --workspace-root "$HOME/workspaces"
 ```
 
-Then **restart the Worker** so it picks up `CODEMAN_INSTANCE_ID=codeman-1`.
+Then **restart the Worker** so it picks up `CLOUDAGENTFLEET_CODEMAN_INSTANCE_ID=codeman-1`.
 Refresh the Hub UI — the instance should appear.
 
 Check registration:
 
 ```bash
-curl -H "Authorization: Bearer $HOSTED_AGENTS_AUTH_TOKEN" http://127.0.0.1:8787/api/workers
-curl -H "Authorization: Bearer $HOSTED_AGENTS_AUTH_TOKEN" http://127.0.0.1:8787/api/instances
+curl -H "Authorization: Bearer $CLOUDAGENTFLEET_AUTH_TOKEN" http://127.0.0.1:8787/api/workers
+curl -H "Authorization: Bearer $CLOUDAGENTFLEET_AUTH_TOKEN" http://127.0.0.1:8787/api/instances
 ```
 
 ### Environment
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `HOSTED_AGENTS_HOST` | `127.0.0.1` | Bind address (`0.0.0.0` for LAN; token then required) |
-| `HOSTED_AGENTS_PORT` | `8787` | HTTP port |
-| `HOSTED_AGENTS_DATA_PATH` | `data/hub.json` | Fleet state file |
-| `HOSTED_AGENTS_UI_PASSWORD` | (generated) | Hub UI password (stops printing bootstrap password) |
-| `HOSTED_AGENTS_AUTH_TOKEN` | unset | **Required** for Workers and CLI enroll when UI auth is on |
+| `CLOUDAGENTFLEET_HOST` | `127.0.0.1` | Bind address (`0.0.0.0` for LAN; token then required) |
+| `CLOUDAGENTFLEET_PORT` | `8787` | HTTP port |
+| `CLOUDAGENTFLEET_DATA_PATH` | `data/hub.json` | Fleet state file |
+| `CLOUDAGENTFLEET_UI_PASSWORD` | (generated) | Hub UI password (stops printing bootstrap password) |
+| `CLOUDAGENTFLEET_AUTH_TOKEN` | unset | **Required** for Workers and CLI enroll when UI auth is on |
 
 Source: [hirenf14/cloudagentfleet](https://github.com/hirenf14/cloudagentfleet)

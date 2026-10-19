@@ -229,7 +229,7 @@ export class CodemanHttpAdapter implements CodemanInstanceAdapter {
       body: {
         input: raw ? input : `${input.replaceAll(/\r?\n/g, " ")}${input.endsWith("\r") ? "" : "\r"}`,
         useMux: !raw,
-        clientId: `hosted-agents-${this.instance.id}`,
+        clientId: `cloudagentfleet-${this.instance.id}`,
         seq: ++this.inputSequence,
       },
     });
