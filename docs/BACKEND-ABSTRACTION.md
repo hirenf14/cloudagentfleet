@@ -110,9 +110,43 @@ These are intentional and stay until a second backend needs them:
 - `WorkspaceDescriptor.providers` and job `Provider` still use `codeman` as a
   provider key.
 
-## Spike S — cptr feasibility (next; gate for Phases D–E, about half a day)
+## Spike S — results (2026-10-19, cptr v0.9.21)
 
-Answer these and record the answers in this file:
+Read from the cptr source (`LICENSE`, `cptr/app.py`, `cli.py`, `routers/*`,
+`socket/main.py`, `utils/browser/proxy.py`, `frontend/svelte.config.js`) and
+docs.openwebui.com. This is not legal advice.
+
+1. **License:** the "Open Use License" is Elastic License 2.0 plus an
+   attribution clause (no removing, modifying, obscuring, replacing, or
+   supplementing cptr's name, logos, or about/version screens). openwebui.com/terms
+   says it is free for work and commercial use. Linking to, proxying, and
+   `pip install`-ing a user's own instance appear fine. **Don't bundle or
+   redistribute it**, don't offer it as a hosted service to third parties, and
+   keep the fleet switcher away from cptr's branding.
+2. **API:** only `GET /api/health` (no auth) and the `/v1` gateway (bearer API
+   key) are documented. Everything else (`/api/state/workspaces`,
+   `/api/chats`, `/api/terminal`, `/api/admin/agents`, `/api/browser/*`,
+   Socket.IO) is internal and uses a `cptr_session` JWT cookie, not bearer
+   tokens. `sessions` support is therefore out of scope for now.
+3. **Proxyability:** cptr must be served at `/` (no base path), and port
+   previews are same-origin under `/api/browser/frame/...`. CORS defaults to
+   `*`, and cookies have no Domain. **Collision:** cptr uses `/api/auth*`,
+   which the Hub reserves, so root proxying (Phase D) requires moving the Hub's
+   own routes off `/api/auth`. Recommendation: put every Hub-owned route under
+   one reserved prefix (for example `/_fleet/`) so no backend can collide.
+4. **Auth handoff:** a `trusted_header` mode exists but doesn't cover Socket.IO,
+   terminals, or admin routes. The workable path is for the Hub to log in
+   server-side and inject `Cookie: cptr_session=…` upstream, capturing refreshed
+   cookies. Login is rate-limited to 5 per minute.
+5. **Runtime:** `cptr run` defaults to `127.0.0.1:8000`. Reaching it from the
+   Hub needs `--host 0.0.0.0` (or the Tailscale IP), or Tailscale Serve in
+   front. The first-run setup URL carries a one-time token printed on stdout.
+
+**Verdict:** Phase C (link) is feasible now. Phase D is feasible after the Hub
+route prefix move and cookie injection. Phase E is feasible without bundling,
+but the supervisor must handle the first-run setup token.
+
+## Spike S — questions (answered above)
 
 1. **License:** do the cptr "Open Use" terms allow a third party to link to,
    reverse-proxy, and install (`pip install cptr`) it on a user's behalf?
