@@ -3,7 +3,7 @@ import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
-import { CodemanClient, CodemanWorkerRuntime, type CodemanMode } from "./codeman.ts";
+import { CodemanClient, CodemanWorkerRuntime } from "./codeman.ts";
 import {
   ensureCodeman,
   manageCodemanEnabled,
@@ -12,10 +12,12 @@ import {
 import { validateConfig, type NodeAgentConfig } from "./index.ts";
 import { ControllerTransport } from "./transport.ts";
 import type {
+  CodemanAgentMode,
   CodemanAgentProfile,
   WorkspaceDescriptor,
   WorkspacePolicy,
 } from "../../../packages/protocol/src/index.ts";
+import { isCodemanAgentMode } from "../../../packages/protocol/src/index.ts";
 
 function required(name: string): string {
   const value = process.env[name]?.trim();
@@ -96,23 +98,12 @@ function detectAgentProfiles(providers: {
   ];
 }
 
-function mode(): CodemanMode {
+function mode(): CodemanAgentMode {
   const selected = process.env.HOSTED_AGENTS_CODEMAN_MODE ?? "claude";
-  const modes: CodemanMode[] = [
-    "claude",
-    "shell",
-    "opencode",
-    "codex",
-    "gemini",
-    "antigravity",
-    "pi",
-    "grok",
-    "deepseek",
-  ];
-  if (!modes.includes(selected as CodemanMode)) {
+  if (!isCodemanAgentMode(selected)) {
     throw new Error(`Unsupported HOSTED_AGENTS_CODEMAN_MODE: ${selected}`);
   }
-  return selected as CodemanMode;
+  return selected;
 }
 
 export async function runWorker(): Promise<void> {
@@ -137,7 +128,7 @@ export async function runWorker(): Promise<void> {
   }));
   const config = validateConfig({
     nodeId: required("HOSTED_AGENTS_NODE_ID"),
-    name: process.env.HOSTED_AGENTS_NODE_NAME ?? "Hosted Agents Worker",
+    name: process.env.HOSTED_AGENTS_NODE_NAME ?? "Cloud Agent Fleet Worker",
     platform: platform(),
     capabilities: ["codeman", ...(agentProfiles.length > 0 ? ["cursor-worker" as const] : [])],
     workspacePolicy: parsePolicy(),

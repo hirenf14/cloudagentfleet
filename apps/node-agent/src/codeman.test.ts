@@ -253,7 +253,7 @@ test("CodemanWorkerRuntime executes an assigned job and reports lifecycle events
     nodeId: "worker-1",
     workspaces: [workspace],
     workspacePolicy: { mode: "folders", roots: ["C:/workspaces"] },
-    send: async (message) => messages.push(message),
+    send: async (message) => { messages.push(message); },
   });
 
   const assignment: ControlMessage = {
@@ -386,7 +386,7 @@ test("ControllerTransport enrolls and consumes outbound Controller assignments",
     fetchImpl,
   });
 
-  await transport.start(async (message) => received.push(message));
+  await transport.start(async (message) => { received.push(message); });
 
   assert.deepEqual(received, [assignment]);
   assert.deepEqual(requests.slice(0, 2).map((request) => request.split(" ")[0]), ["POST", "GET"]);

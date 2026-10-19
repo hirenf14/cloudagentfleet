@@ -64,11 +64,11 @@ starting.
    - systemd user service on Linux
    - launch agent on macOS
    - Task Scheduler or an equivalent user service on Windows
-7. Install and start the Hosted Agents worker as a user-level background
+7. Install and start the Cloud Agent Fleet worker as a user-level background
    service, verify the outbound connection, and print the machine's
    capabilities and dashboard URL.
 
-## Hosted Agents worker
+## Cloud Agent Fleet worker
 
 The persistent worker is our own background service. It owns the outbound
 connection, heartbeats, job delivery, preview relay, browser relay, reconnect

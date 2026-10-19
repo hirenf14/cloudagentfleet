@@ -60,7 +60,7 @@ function listPackFiles(packageDir) {
       if (match) files.push(match[1].replaceAll("\\", "/"));
     }
   }
-  return [...new Set(files)].filter((file) => file !== "package.json" || true);
+  return [...new Set(files)];
 }
 
 let failed = false;

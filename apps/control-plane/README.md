@@ -36,7 +36,7 @@ npx cloudagentfleet-hub
 You should see:
 
 ```text
-Hosted Agents Controller listening on 127.0.0.1:8787
+Cloud Agent Fleet Controller listening on 127.0.0.1:8787
 Hub UI password: <generated>
 ```
 

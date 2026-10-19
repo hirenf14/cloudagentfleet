@@ -1001,7 +1001,7 @@
           h(
             "label",
             { className: "field" },
-            h("span", null, "Session name <em>optional</em>"),
+            h("span", null, "Session name ", h("em", null, "optional")),
             h("input", { value: title, onChange: (event) => setTitle(event.target.value), placeholder: "e.g. Fix the auth flow", maxLength: 120 }),
           ),
           h(

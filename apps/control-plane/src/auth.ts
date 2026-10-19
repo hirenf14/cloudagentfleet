@@ -209,7 +209,7 @@ export class UiAuth {
     const forwardedProto = request.headers["x-forwarded-proto"];
     const isHttps = this.secureCookies
       || forwardedProto === "https"
-      || request.socket.encrypted === true;
+      || ("encrypted" in request.socket && request.socket.encrypted === true);
     return {
       httpOnly,
       secure: isHttps,

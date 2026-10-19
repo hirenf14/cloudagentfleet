@@ -4,9 +4,9 @@ import {
   type CodemanInstanceAdapter,
 } from "../../../packages/codeman-bridge/src/index.ts";
 import { HubStateStore } from "../../../packages/protocol/src/persistence.ts";
+import { NotFoundError, UnavailableError } from "./errors.ts";
 import type {
   AuditEvent,
-  CodemanAgentMode,
   CodemanAgentProfile,
   CodemanInstance,
   CodemanInstanceRegistration,
@@ -17,6 +17,9 @@ import type {
   WorkspacePathSuggestion,
 } from "../../../packages/protocol/src/index.ts";
 import {
+  CODEMAN_AGENT_MODES,
+  codemanAgentName,
+  isPathAllowed,
   validateCodemanInstanceRegistration,
   validateCodemanInstance,
 } from "../../../packages/protocol/src/index.ts";
@@ -109,13 +112,13 @@ export class CodemanHub {
 
   getInstance(instanceId: string): CodemanInstance {
     const instance = this.listInstances().find((candidate) => candidate.id === instanceId);
-    if (!instance) throw new Error(`Unknown Codeman instance: ${instanceId}`);
+    if (!instance) throw new NotFoundError(`Unknown Codeman instance: ${instanceId}`);
     return instance;
   }
 
   getAdapter(instanceId: string): CodemanInstanceAdapter {
     const adapter = this.adapters.get(instanceId);
-    if (!adapter) throw new Error(`Codeman instance is not connected: ${instanceId}`);
+    if (!adapter) throw new UnavailableError(`Codeman instance is not connected: ${instanceId}`);
     return adapter;
   }
 
@@ -123,7 +126,7 @@ export class CodemanHub {
     const session = this.listSessions().find(
       (candidate) => candidate.instanceId === instanceId && candidate.id === sessionId,
     );
-    if (!session) throw new Error(`Unknown session: ${instanceId}/${sessionId}`);
+    if (!session) throw new NotFoundError(`Unknown session: ${instanceId}/${sessionId}`);
     return session;
   }
 
@@ -284,7 +287,7 @@ export class CodemanHub {
     )) {
       const remoteSession = (await adapter.listSessions())
         .find((session) => session.id === sessionId);
-      if (!remoteSession) throw new Error(`Unknown session: ${instanceId}/${sessionId}`);
+      if (!remoteSession) throw new NotFoundError(`Unknown session: ${instanceId}/${sessionId}`);
       this.state.upsertSession(remoteSession);
     }
     const proxyTerminal = adapter.proxyTerminal;
@@ -401,7 +404,7 @@ export class CodemanHub {
     const exists = this.state.snapshot().sessions.some(
       (session) => session.instanceId === instanceId && session.id === sessionId,
     );
-    if (!exists) throw new Error(`Unknown session: ${instanceId}/${sessionId}`);
+    if (!exists) throw new NotFoundError(`Unknown session: ${instanceId}/${sessionId}`);
   }
 
   private resolveWorkspacePath(
@@ -414,10 +417,7 @@ export class CodemanHub {
     if (known) return requireWorkspace(instance.workspaces, known.id);
     const policy = instance.workspacePolicy;
     if (!policy) throw new Error("This instance does not allow arbitrary workspace paths");
-    if (
-      policy.mode !== "system"
-      && !policy.roots.some((root) => isWithinPath(path, root))
-    ) {
+    if (!isPathAllowed(path, policy)) {
       throw new Error("Workspace path is outside the instance policy");
     }
     return {
@@ -476,42 +476,10 @@ function requireWorkspace(workspaces: WorkspaceDescriptor[], workspaceId: string
   return workspace;
 }
 
-function isWithinPath(path: string, root: string): boolean {
-  const normalizedPath = normalizePath(path);
-  const normalizedRoot = normalizePath(root);
-  return !normalizedRoot
-    || normalizedPath === normalizedRoot
-    || normalizedPath.startsWith(`${normalizedRoot}/`);
-}
-
-function normalizePath(value: string): string {
-  const segments: string[] = [];
-  for (const segment of value.replaceAll("\\", "/").split("/")) {
-    if (!segment || segment === ".") continue;
-    if (segment === "..") {
-      segments.pop();
-    } else {
-      segments.push(segment);
-    }
-  }
-  return segments.join("/").toLowerCase();
-}
-
 function defaultAgents(): CodemanAgentProfile[] {
-  const modes: CodemanAgentMode[] = [
-    "claude",
-    "shell",
-    "opencode",
-    "codex",
-    "gemini",
-    "antigravity",
-    "pi",
-    "grok",
-    "deepseek",
-  ];
-  return modes.map((mode) => ({
+  return CODEMAN_AGENT_MODES.map((mode) => ({
     id: mode,
-    name: mode === "claude" ? "Claude Code" : mode === "shell" ? "Shell (raw CLI)" : mode,
+    name: codemanAgentName(mode, mode),
     mode,
     ready: true,
   }));

@@ -137,7 +137,6 @@ h1, h2, p { margin: 0; }
 .button--quiet { border-color: var(--line); color: var(--muted); background: transparent; }
 .button--quiet:hover:not(:disabled) { color: var(--text); background: var(--panel-raised); }
 .button--danger { border-color: #713b46; color: var(--danger); background: #301a21; }
-.button--terminal { padding: 7px 10px; border-color: #32634d; color: var(--accent); background: #153126; }
 .icon-button { border: 0; color: var(--muted); background: transparent; font-size: 25px; line-height: 1; }
 .icon-button:hover { color: var(--text); }
 

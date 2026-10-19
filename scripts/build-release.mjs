@@ -46,7 +46,6 @@ async function stageUiPackage() {
 await rm(join(root, "dist"), { recursive: true, force: true });
 await rm(join(root, "apps", "control-plane", "dist"), { recursive: true, force: true });
 await rm(join(root, "apps", "node-agent", "dist"), { recursive: true, force: true });
-await rm(join(root, "apps", "node-agent", "cli"), { recursive: true, force: true });
 await rm(join(root, "apps", "dashboard", "dist"), { recursive: true, force: true });
 
 const hubDist = join(root, "apps", "control-plane", "dist");

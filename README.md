@@ -47,7 +47,7 @@ pnpm build:release
 pnpm --filter @cloudagentfleet/worker link --global
 pnpm --filter @cloudagentfleet/hub link --global
 cloudagentfleet --help
-cloudagentfleet-hub --help
+cloudagentfleet-hub   # starts the Hub on 127.0.0.1:8787
 ```
 
 `hosted-agents` remains a compatibility alias for the worker CLI.
@@ -198,7 +198,8 @@ Tailscale identity.
 - `@cloudagentfleet/ui` (`apps/dashboard`) — fleet launcher and host context overlay
 - `@cloudagentfleet/worker` (`apps/node-agent` + CLI) — machine companion and operator CLI
 - `apps/cli` — private CLI sources packaged into the worker release
-- `packages/protocol` — private shared messages and domain types
+- `packages/protocol` — private shared messages, domain types, and workspace policy
+- `packages/codeman-bridge` — private Codeman adapters (HTTP and Worker connector) and wire-format helpers
 
 ## Contributing
 

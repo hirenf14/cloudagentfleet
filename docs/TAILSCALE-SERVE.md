@@ -1,8 +1,8 @@
 # Private Tailscale access (SSH first, Serve later)
 
-Hosted Agents uses Tailscale for private machine reachability. The current
+Cloud Agent Fleet uses Tailscale for private machine reachability. The current
 setup phase is **SSH over a dedicated port only**. Ports **80 and 443 stay
-untouched**: do not run `tailscale serve`, Funnel, or any Hosted Agents
+untouched**: do not run `tailscale serve`, Funnel, or any Cloud Agent Fleet
 listener on them.
 
 The Hub web UI and `cloudagentfleet hub serve` are optional and deferred until
@@ -30,7 +30,7 @@ Tailscale ACLs apply only to **tailnet** traffic. They do not close LAN or
 loopback ports. Once you replace the default allow-all policy, unlisted
 tailnet ports are deny-by-default — so list only the SSH port you intend.
 
-Do **not** grant `tcp:80` or `tcp:443` for Hosted Agents in this phase.
+Do **not** grant `tcp:80` or `tcp:443` for Cloud Agent Fleet in this phase.
 
 ```json
 {
@@ -93,7 +93,7 @@ keeping this off until the SSH fleet path is stable.
 ### Example grants when enabling Serve later
 
 Add Hub/Codeman tags and grants **without removing** the SSH grant, and
-**without** putting Hosted Agents on host-local 80/443 listeners. Serve
+**without** putting Cloud Agent Fleet on host-local 80/443 listeners. Serve
 proxies loopback (for example `127.0.0.1:8787`); the Controller does not bind
 `:80` or `:443`.
 
@@ -170,5 +170,5 @@ cloudagentfleet hub stop
 ```
 
 `hub stop` runs `tailscale serve reset` on this node. Use it only when this
-node’s Serve routes are dedicated to Hosted Agents. It does not stop SSH,
+node’s Serve routes are dedicated to Cloud Agent Fleet. It does not stop SSH,
 the Controller process, or Codeman.

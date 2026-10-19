@@ -9,7 +9,7 @@ Codeman, a Cursor worker, a Claude runner, or a local project environment.
 
 ### 1. Pair a machine
 
-The developer installs the Hosted Agents companion beside Codeman, chooses
+The developer installs the Cloud Agent Fleet companion beside Codeman, chooses
 approved folders or explicitly grants whole-system access, names the machine,
 and approves a one-time pairing code. The machine appears online with its
 platform, capabilities, provider readiness, workspaces, and last-seen time.
@@ -26,12 +26,12 @@ workspace must remain inside the Worker's local access policy.
 - Cursor for an official Cursor worker
 - Claude for an official Claude runner
 
-Hosted Agents shows only agents ready for the selected workspace. It validates
+Cloud Agent Fleet shows only agents ready for the selected workspace. It validates
 the workspace, machine, isolation mode, and provider configuration before launch.
 
 ### 4. Launch a task
 
-The developer enters a prompt and starts the task. Hosted Agents creates an
+The developer enters a prompt and starts the task. Cloud Agent Fleet creates an
 idempotent job containing the selected machine, workspace ID, and agent
 provider, then assigns it once to the selected Worker.
 
@@ -55,7 +55,7 @@ scoped to the job and recorded in the audit log.
 
 ### 7. Finish safely
 
-The developer reviews the result and artifacts. Hosted Agents closes or expires
+The developer reviews the result and artifacts. Cloud Agent Fleet closes or expires
 preview leases, removes disposable browser profiles, transitions the job to a
 terminal state, and leaves the machine ready for another task.
 

@@ -29,9 +29,6 @@ function resolveWorkerScript() {
   const candidates = [
     // npm / built package: sibling CLI bundle next to cloudagentfleet.mjs
     join(thisDir, "cloudagentfleet-worker.mjs"),
-    // legacy standalone layout
-    join(thisDir, "runtime", "worker.mjs"),
-    join(thisDir, "..", "runtime", "worker.mjs"),
     // monorepo checkout without a release build
     join(thisDir, "..", "..", "node-agent", "src", "main.ts"),
   ];
@@ -44,9 +41,6 @@ function resolveWorkerScript() {
   );
 }
 
-function resolveRuntimeRoot(workerScript) {
-  return dirname(workerScript);
-}
 
 function command(commandName, args = [], options = {}) {
   return spawnSync(commandName, args, {
@@ -383,7 +377,7 @@ function workerEnvironment(config) {
 function runWorker(config) {
   const env = workerEnvironment(config);
   const workerScript = resolveWorkerScript();
-  const runtimeRoot = resolveRuntimeRoot(workerScript);
+  const runtimeRoot = dirname(workerScript);
   if (config.execution !== "wsl") {
     return spawn(
       process.execPath,
@@ -436,8 +430,6 @@ async function setup() {
   if (!modes.includes(codemanMode)) throw new Error(`Unsupported Codeman mode: ${codemanMode}`);
   const codemanUrl = await ask("Codeman URL", "http://127.0.0.1:3000");
   const authToken = process.env.HOSTED_AGENTS_AUTH_TOKEN;
-  const manageCodeman = true;
-  const installCodemanFlag = true;
   const config = {
     nodeId,
     name,
@@ -453,8 +445,8 @@ async function setup() {
     ),
     codemanMode,
     codemanUrl,
-    manageCodeman,
-    installCodeman: installCodemanFlag,
+    manageCodeman: true,
+    installCodeman: true,
   };
 
   mkdirSync(dirname(configPath), { recursive: true });
@@ -468,10 +460,7 @@ async function setup() {
     }
   }
   if (process.argv.includes("--run")) {
-    if (!environment.codeman && !manageCodeman) {
-      throw new Error("Cannot run Worker without Codeman (manageCodeman is disabled)");
-    }
-    if (!environment.codeman && manageCodeman) {
+    if (!environment.codeman) {
       console.log("Worker will install/start Codeman under the hood …");
     }
     runWorker(config);
@@ -550,7 +539,7 @@ export function safeEndpoint(value, field, tailscale = false) {
   if (parsed.username || parsed.password) {
     throw new Error(`${field} must not contain embedded credentials`);
   }
-  const loopback = ["localhost", "127.0.0.1", "::1", "[::1]"].includes(parsed.hostname);
+  const loopback = loopbackHosts.has(parsed.hostname);
   if (parsed.protocol !== "https:" && !(parsed.protocol === "http:" && loopback)) {
     throw new Error(`${field} must use HTTPS, or HTTP on loopback for local development`);
   }

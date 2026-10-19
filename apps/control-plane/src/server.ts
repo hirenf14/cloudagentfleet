@@ -4,10 +4,11 @@ import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { resolve, dirname, join, sep } from "node:path";
-import type { Socket } from "node:net";
+import type { Duplex } from "node:stream";
 import { ControlPlane, type NodeConnection } from "./index.ts";
 import { CodemanHub } from "./hub.ts";
 import { resolveUiAuth, type UiAuth, type UiAuthRequest } from "./auth.ts";
+import { HttpError } from "./errors.ts";
 import type {
   CodemanInstanceRegistration,
   CreateJobRequest,
@@ -162,13 +163,7 @@ export function createControllerServer(
       await route(request, response, controlPlane, hub, uiAuth, auth);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Request failed";
-      const status = error instanceof HttpError
-        ? error.status
-        : message.startsWith("Unknown Codeman instance") || message.startsWith("Unknown session")
-          ? 404
-          : message.startsWith("Codeman instance is not connected")
-            ? 503
-            : 400;
+      const status = error instanceof HttpError ? error.status : 400;
       sendJson(response, status, { error: message });
     }
   });
@@ -181,7 +176,7 @@ export function createControllerServer(
 
 async function handleTerminalUpgrade(
   request: IncomingMessage,
-  socket: Socket,
+  socket: Duplex,
   head: Buffer,
   hub: CodemanHub,
   uiAuth: UiAuth,
@@ -720,11 +715,6 @@ function contentType(filePath: string): string {
   return "application/octet-stream";
 }
 
-function authorize(request: IncomingMessage, authToken?: string): boolean {
-  if (!authToken) return true;
-  return request.headers.authorization === `Bearer ${authToken}`;
-}
-
 function isWorkerOrJobRoute(pathname: string): boolean {
   return pathname === "/api/workers"
     || pathname.startsWith("/api/workers/")
@@ -808,7 +798,8 @@ function selectedInstance(request: IncomingMessage): string | undefined {
 }
 
 function isSecureRequest(request: IncomingMessage): boolean {
-  return request.headers["x-forwarded-proto"] === "https" || request.socket.encrypted === true;
+  return request.headers["x-forwarded-proto"] === "https"
+    || ("encrypted" in request.socket && request.socket.encrypted === true);
 }
 
 function isTailnetEndpoint(value: string): boolean {
@@ -842,7 +833,8 @@ function isLoopbackEndpoint(value: string): boolean {
 function isTailscaleIpv4(hostname: string): boolean {
   const parts = hostname.split(".");
   if (parts.length !== 4 || parts.some((part) => !/^\d+$/.test(part))) return false;
-  const [first, second] = parts.map(Number);
+  const first = Number(parts[0]);
+  const second = Number(parts[1]);
   return first === 100 && second >= 64 && second <= 127;
 }
 
@@ -899,7 +891,7 @@ location.assign("/");}catch(cause){error.textContent=cause.message||"Sign in fai
 }
 
 function rejectUpgrade(
-  socket: Socket,
+  socket: Duplex,
   status: number,
   message: string,
 ): void {
@@ -912,19 +904,6 @@ function rejectUpgrade(
     + message,
   );
   socket.destroy();
-}
-
-class HttpError extends Error {
-  readonly status: number;
-
-  constructor(
-    status: number,
-    message: string,
-  ) {
-    super(message);
-    this.name = "HttpError";
-    this.status = status;
-  }
 }
 
 async function readJson<T>(request: IncomingMessage): Promise<T> {

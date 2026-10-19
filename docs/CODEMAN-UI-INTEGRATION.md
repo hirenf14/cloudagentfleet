@@ -1,6 +1,6 @@
 # Codeman UI integration
 
-Hosted Agents uses Codeman's own web UI and terminal transport rather than
+Cloud Agent Fleet uses Codeman's own web UI and terminal transport rather than
 maintaining a second terminal implementation.
 
 ## Browser flow
@@ -8,7 +8,7 @@ maintaining a second terminal implementation.
 1. Open the Hub through Tailscale Serve.
 2. Authenticate with the Hub UI password.
 3. Select a registered Tailscale Codeman host.
-4. Hosted Agents stores the selected instance in a short-lived, HttpOnly
+4. Cloud Agent Fleet stores the selected instance in a short-lived, HttpOnly
    cookie.
 5. The Hub proxies that host's Codeman HTML, REST, SSE, and WebSocket traffic.
 6. The upstream Codeman page loads its own xterm.js, local-echo overlay,
@@ -53,9 +53,9 @@ terminal WebSocket. Codeman should be updated independently:
 
 1. Update Codeman using its official installer or release process.
 2. Verify `/api/v1/status` and the terminal WebSocket on the host.
-3. Run the Hosted Agents adapter and two-host browser tests.
+3. Run the Cloud Agent Fleet adapter and two-host browser tests.
 4. Roll back the Codeman host if compatibility checks fail.
 
-Hosted Agents must not modify Codeman's PTY, tmux, provider, or terminal
+Cloud Agent Fleet must not modify Codeman's PTY, tmux, provider, or terminal
 modules. A Codeman fork should only be introduced when an upstream-supported
 hook is proven insufficient.

@@ -127,7 +127,7 @@ test("enrolls, assigns, cancels, audits, and revokes a Worker", async () => {
     const created = await json(jobResponse);
     assert.equal(created.job.workspaceId, "workspace-app");
     assert.equal(created.job.status, "queued");
-    assert.equal(messages[0].type, "job.assign");
+    assert.equal(messages[0]?.type, "job.assign");
 
     const duplicateResponse = await fetch(`${baseUrl}/api/jobs`, {
       method: "POST",
@@ -150,7 +150,7 @@ test("enrolls, assigns, cancels, audits, and revokes a Worker", async () => {
     assert.equal(cancelResponse.status, 202);
     const cancelled = await json(cancelResponse);
     assert.equal(cancelled.job.status, "cancelled");
-    assert.equal(messages[1].type, "job.cancel");
+    assert.equal(messages[1]?.type, "job.cancel");
 
     const completedJobResponse = await fetch(`${baseUrl}/api/jobs`, {
       method: "POST",

@@ -1,6 +1,5 @@
 import type {
   CodemanAgentProfile,
-  CodemanAgentMode,
   CodemanInstance,
   CodemanSession,
   CodemanSessionEvent,
@@ -15,8 +14,19 @@ import { createHash, randomBytes } from "node:crypto";
 import { request as httpRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
 import {
+  isRecord,
   validateCodemanInstance,
 } from "../../../packages/protocol/src/index.ts";
+import {
+  type CodemanEnvelope,
+  codemanEventKind,
+  codemanEventSessionId,
+  codemanSessionStatus,
+  codemanTimestamp,
+  dedupeAgents,
+  normalizeCodemanAgent,
+  readSseStream,
+} from "./wire.ts";
 
 export interface CodemanInstanceAdapter {
   readonly instance: CodemanInstance;
@@ -67,13 +77,6 @@ export interface CodemanConnectorAdapterOptions {
   subscribeEvents: (
     onEvent: (event: CodemanSessionEvent) => void,
   ) => () => void;
-}
-
-interface Envelope<T> {
-  success: boolean;
-  data?: T;
-  error?: string;
-  errorCode?: string;
 }
 
 interface SessionListData {
@@ -163,19 +166,15 @@ export class CodemanHttpAdapter implements CodemanInstanceAdapter {
         (capability): capability is string => typeof capability === "string",
       );
     }
-    if (Array.isArray(data.agents)) {
-      status.agents = data.agents.map((agent) => this.toAgent(agent));
-    }
+    if (Array.isArray(data.agents)) status.agents = normalizeAgents(data.agents);
     return status;
   }
 
   async listCapabilities(): Promise<CodemanAgentProfile[]> {
     const status = await this.getStatus();
     if (status.agents && status.agents.length > 0) return status.agents;
-    if (status.capabilities && status.capabilities.length > 0) {
-      return status.capabilities.map((capability) => this.toAgent(capability));
-    }
-
+    const fromCapabilities = normalizeAgents(status.capabilities ?? []);
+    if (fromCapabilities.length > 0) return fromCapabilities;
     return this.instance.agents.map((agent) => ({ ...agent }));
   }
 
@@ -190,7 +189,7 @@ export class CodemanHttpAdapter implements CodemanInstanceAdapter {
       return terminal
         ? {
             ...normalized,
-            status: this.statusFromCodeman(terminal.status ?? String(session.status ?? "")),
+            status: codemanSessionStatus(terminal.status ?? String(session.status ?? "")),
             terminalBuffer: terminal.terminalBuffer === undefined
               ? normalized.terminalBuffer
               : terminal.terminalBuffer,
@@ -451,56 +450,23 @@ export class CodemanHttpAdapter implements CodemanInstanceAdapter {
       headers: { ...this.headers, accept: "text/event-stream" },
       signal: abort.signal,
     }).catch(() => undefined);
-    if (!response?.ok || !response.body) {
-      if (this.eventAbort === abort) this.eventAbort = undefined;
-      return;
-    }
-
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-    try {
-      while (!abort.signal.aborted) {
-        const result = await reader.read();
-        if (result.done) break;
-        buffer += decoder.decode(result.value, { stream: true });
-        let boundary = sseBoundary(buffer);
-        while (boundary) {
-          const raw = buffer.slice(0, boundary.index);
-          buffer = buffer.slice(boundary.index + boundary.length);
-          boundary = sseBoundary(buffer);
-          const data = raw.split(/\r?\n/)
-            .filter((line) => line.startsWith("data:"))
-            .map((line) => line.slice(5).trimStart())
-            .join("\n");
-          if (!data) continue;
-          const eventName = raw.split(/\r?\n/)
-            .find((line) => line.startsWith("event:"))
-            ?.slice("event:".length)
-            .trim();
-          let event: CodemanSessionEvent | undefined;
-          try {
-            const parsed = JSON.parse(data) as unknown;
-            const payload: Record<string, unknown> = isRecord(parsed) ? parsed : { data: parsed };
-            if (eventName && payload.type === undefined && payload.event === undefined) {
-              payload.type = eventName;
-            }
-            event = this.toEvent(payload);
-          } catch {
-            // Ignore malformed provider events; the HTTP control path remains usable.
-            event = undefined;
+    if (response?.ok && response.body) {
+      await readSseStream(response.body, abort.signal, (frame) => {
+        let event: CodemanSessionEvent | undefined;
+        try {
+          const parsed = JSON.parse(frame.data) as unknown;
+          const payload: Record<string, unknown> = isRecord(parsed) ? parsed : { data: parsed };
+          if (frame.event && payload.type === undefined && payload.event === undefined) {
+            payload.type = frame.event;
           }
-          if (event) this.emit(event);
+          event = this.toEvent(payload);
+        } catch {
+          // Ignore malformed provider events; the HTTP control path remains usable.
         }
-      }
-    } catch {
-      if (!abort.signal.aborted) {
-        // The HTTP control surface remains usable if the event stream closes.
-      }
-    } finally {
-      reader.releaseLock();
-      if (this.eventAbort === abort) this.eventAbort = undefined;
+        if (event) this.emit(event);
+      });
     }
+    if (this.eventAbort === abort) this.eventAbort = undefined;
   }
 
   private async readTerminal(
@@ -524,89 +490,35 @@ export class CodemanHttpAdapter implements CodemanInstanceAdapter {
     if (!id) throw new Error("Codeman returned a session without an ID");
     const resolvedWorkspaceId = workspaceId
       ?? this.workspaceIdForPath(String(raw.workspaceId ?? raw.workingDir ?? ""));
-    const resolvedAgent = agent ?? this.agentFromMode(String(raw.mode ?? "shell"));
-    const createdAt = this.timestamp(raw.createdAt ?? raw.created_at);
+    const resolvedAgent = agent ?? normalizeCodemanAgent(String(raw.mode ?? "")) ?? shellAgent();
+    const createdAt = codemanTimestamp(raw.createdAt ?? raw.created_at);
     return {
       id,
       instanceId: this.instance.id,
       workspaceId: resolvedWorkspaceId,
       agent: resolvedAgent,
       title: String(raw.name ?? id),
-      status: this.statusFromCodeman(String(raw.status ?? "idle")),
+      status: codemanSessionStatus(String(raw.status ?? "idle")),
       terminalBuffer: String(raw.terminalBuffer ?? ""),
       needsInput: false,
       previewAvailable: false,
       browserAvailable: false,
       createdAt,
-      lastEventAt: this.timestamp(raw.lastEventAt ?? raw.last_event_at ?? createdAt),
+      lastEventAt: codemanTimestamp(raw.lastEventAt ?? raw.last_event_at ?? createdAt),
     };
   }
 
   private toEvent(raw: Record<string, unknown>): CodemanSessionEvent | undefined {
-    const type = String(raw.type ?? raw.event ?? "").toLowerCase();
-    const nestedSession = isRecord(raw.session) ? raw.session : undefined;
-    const nestedData = isRecord(raw.data) ? raw.data : undefined;
-    const sessionId = String(
-      raw.sessionId
-      ?? raw.session_id
-      ?? nestedSession?.id
-      ?? nestedData?.sessionId
-      ?? nestedData?.session_id
-      ?? "",
-    );
+    const sessionId = codemanEventSessionId(raw);
     if (!sessionId) return undefined;
-    const createdAt = this.timestamp(raw.createdAt ?? raw.created_at);
-    const data = raw.data ?? raw.output ?? raw.text;
-    if (type === "session:terminal" || type.includes("terminal") || type.includes("output")) {
-      return this.event(sessionId, "output", data, createdAt);
-    }
-    if (type === "hook:idle_prompt" || type.includes("permission") || type.includes("wait")) {
-      return this.event(sessionId, "waiting", data, createdAt);
-    }
-    if (type === "session:idle") return this.event(sessionId, "idle", data, createdAt);
-    if (type.includes("fail") || type.includes("error")) {
-      return this.event(sessionId, "failed", data, createdAt);
-    }
-    if (type.includes("complete") || type.includes("completion")) {
-      return this.event(sessionId, "completed", data, createdAt);
-    }
-    if (type.includes("exit") || type.includes("delet")) {
-      return this.event(sessionId, "stopped", data, createdAt);
-    }
-    if (type.includes("start") || type.includes("run")) {
-      return this.event(sessionId, "started", data, createdAt);
-    }
-    if (type.includes("stop")) {
-      return this.event(sessionId, "stopped", data, createdAt);
-    }
-    if (type.includes("create")) {
-      return this.event(sessionId, "created", data, createdAt);
-    }
-    return undefined;
-  }
-
-  private agentFromMode(mode: string): CodemanAgentProfile {
-    const known = ["claude", "shell", "opencode", "codex", "gemini", "antigravity", "pi", "grok", "deepseek"];
-    const selected = known.includes(mode) ? mode : "shell";
-    return {
-      id: selected,
-      name: selected === "claude" ? "Claude Code" : selected,
-      mode: selected as CodemanAgentMode,
-      ready: true,
-    };
-  }
-
-  private toAgent(raw: unknown): CodemanAgentProfile {
-    if (typeof raw === "string") return this.agentFromMode(raw);
-    const value = isRecord(raw) ? raw : {};
-    const mode = String(value.mode ?? value.id ?? "shell");
-    const agent = this.agentFromMode(mode);
-    return {
-      ...agent,
-      id: String(value.id ?? agent.id),
-      name: String(value.name ?? agent.name),
-      ready: value.ready !== false && value.available !== false,
-    };
+    const kind = codemanEventKind(String(raw.type ?? raw.event ?? ""));
+    if (!kind) return undefined;
+    return this.event(
+      sessionId,
+      kind,
+      raw.data ?? raw.output ?? raw.text,
+      codemanTimestamp(raw.createdAt ?? raw.created_at),
+    );
   }
 
   private workspaceIdForPath(path: string): string {
@@ -614,12 +526,6 @@ export class CodemanHttpAdapter implements CodemanInstanceAdapter {
       (candidate) => candidate.id === path || candidate.canonicalPath === path,
     );
     return workspace?.id ?? (path || "unknown");
-  }
-
-  private timestamp(value: unknown): string {
-    if (typeof value === "string" && !Number.isNaN(Date.parse(value))) return value;
-    if (typeof value === "number" && Number.isFinite(value)) return new Date(value).toISOString();
-    return new Date().toISOString();
   }
 
   private event(
@@ -637,16 +543,6 @@ export class CodemanHttpAdapter implements CodemanInstanceAdapter {
         : { data: typeof data === "string" ? data : JSON.stringify(data) }),
       createdAt,
     };
-  }
-
-  private statusFromCodeman(status: string): CodemanSession["status"] {
-    if (status === "running" || status === "working" || status === "busy") return "working";
-    if (status === "starting" || status === "created") return "starting";
-    if (status === "completed") return "completed";
-    if (status === "failed") return "failed";
-    if (status === "stopped" || status === "deleted" || status === "exited") return "stopped";
-    if (status === "waiting" || status === "blocked") return "waiting";
-    return "idle";
   }
 
   private emit(event: CodemanSessionEvent): void {
@@ -667,7 +563,7 @@ export class CodemanHttpAdapter implements CodemanInstanceAdapter {
     return envelope.data;
   }
 
-  private async request<T>(path: string, options: RequestOptions = {}): Promise<Envelope<T>> {
+  private async request<T>(path: string, options: RequestOptions = {}): Promise<CodemanEnvelope<T>> {
     const response = await this.fetchImpl(`${this.baseUrl()}${path}`, {
       method: options.method ?? "GET",
       headers: {
@@ -680,12 +576,12 @@ export class CodemanHttpAdapter implements CodemanInstanceAdapter {
     const text = await response.text();
     if (response.status === 401) throw new Error("Codeman request unauthorized");
     if (!text) {
-      if (response.ok) return { success: true } as Envelope<T>;
+      if (response.ok) return { success: true } as CodemanEnvelope<T>;
       throw new Error(`Codeman request failed with HTTP ${response.status}`);
     }
-    let envelope: Envelope<T>;
+    let envelope: CodemanEnvelope<T>;
     try {
-      envelope = JSON.parse(text) as Envelope<T>;
+      envelope = JSON.parse(text) as CodemanEnvelope<T>;
     } catch {
       throw new Error(`Codeman returned invalid JSON with HTTP ${response.status}`);
     }
@@ -723,15 +619,7 @@ export class CodemanConnectorAdapter implements CodemanInstanceAdapter {
     const data = await this.request("capabilities");
     const agents = isRecord(data) && Array.isArray(data.agents) ? data.agents : data;
     if (!Array.isArray(agents)) return this.instance.agents.map((agent) => ({ ...agent }));
-    const mapped = agents
-      .map((agent) => toConnectorAgent(agent))
-      .filter((agent): agent is CodemanAgentProfile => agent !== undefined);
-    const seen = new Set<string>();
-    return mapped.filter((agent) => {
-      if (seen.has(agent.id)) return false;
-      seen.add(agent.id);
-      return true;
-    });
+    return normalizeAgents(agents);
   }
 
   async listWorkspaces(): Promise<WorkspaceDescriptor[]> {
@@ -801,87 +689,35 @@ export class CodemanConnectorAdapter implements CodemanInstanceAdapter {
     if (!id) throw new Error("Connector returned a session without an ID");
     const resolvedWorkspaceId = workspaceId
       ?? String(raw.workspaceId ?? raw.workingDir ?? "unknown");
-    const resolvedAgent = agent
-      ?? toConnectorAgent(raw.mode)
-      ?? {
-        id: "shell",
-        name: "Shell (raw CLI)",
-        mode: "shell" as CodemanAgentMode,
-        ready: true,
-      };
-    const createdAt = connectorTimestamp(raw.createdAt ?? raw.created_at);
+    const resolvedAgent = agent ?? normalizeCodemanAgent(raw.mode) ?? shellAgent();
+    const createdAt = codemanTimestamp(raw.createdAt ?? raw.created_at);
     return {
       id,
       instanceId: this.instance.id,
       workspaceId: resolvedWorkspaceId,
       agent: resolvedAgent,
       title: String(raw.name ?? id),
-      status: connectorStatus(String(raw.status ?? "idle")),
+      status: codemanSessionStatus(String(raw.status ?? "idle")),
       terminalBuffer: String(raw.terminalBuffer ?? ""),
       needsInput: false,
       previewAvailable: false,
       browserAvailable: false,
       createdAt,
-      lastEventAt: connectorTimestamp(raw.lastEventAt ?? raw.last_event_at ?? createdAt),
+      lastEventAt: codemanTimestamp(raw.lastEventAt ?? raw.last_event_at ?? createdAt),
     };
   }
 }
 
-function toConnectorAgent(raw: unknown): CodemanAgentProfile | undefined {
-  if (typeof raw === "string") {
-    const known = ["claude", "shell", "opencode", "codex", "gemini", "antigravity", "pi", "grok", "deepseek"];
-    if (!known.includes(raw)) return undefined;
-    return {
-      id: raw,
-      name: raw === "claude" ? "Claude Code" : raw === "shell" ? "Shell (raw CLI)" : raw,
-      mode: raw as CodemanAgentMode,
-      ready: true,
-    };
-  }
-  const value = isRecord(raw) ? raw : {};
-  const mode = String(value.mode ?? value.id ?? "shell");
-  const known = ["claude", "shell", "opencode", "codex", "gemini", "antigravity", "pi", "grok", "deepseek"];
-  const selected = known.includes(mode) ? mode : "shell";
-  const id = String(value.id ?? selected);
-  if (selected === "shell" && id !== "shell" && !String(value.name ?? "").trim()) {
-    return undefined;
-  }
-  return {
-    id,
-    name: String(
-      value.name
-        ?? (id === "claude-code"
-          ? "Claude Code CLI"
-          : id === "cursor-agent"
-            ? "Cursor Agent CLI"
-            : selected === "claude"
-              ? "Claude Code"
-              : selected === "shell"
-                ? "Shell (raw CLI)"
-                : selected)
-    ),
-    mode: selected as CodemanAgentMode,
-    ready: value.ready !== false && value.available !== false,
-  };
+function normalizeAgents(raw: unknown[]): CodemanAgentProfile[] {
+  return dedupeAgents(
+    raw
+      .map((agent) => normalizeCodemanAgent(agent))
+      .filter((agent): agent is CodemanAgentProfile => agent !== undefined),
+  );
 }
 
-function connectorTimestamp(value: unknown): string {
-  if (typeof value === "string" && !Number.isNaN(Date.parse(value))) return value;
-  if (typeof value === "number" && Number.isFinite(value)) return new Date(value).toISOString();
-  return new Date().toISOString();
-}
-
-function connectorStatus(status: string): CodemanSession["status"] {
-  if (status === "running" || status === "working") return "working";
-  if (status === "completed") return "completed";
-  if (status === "failed") return "failed";
-  if (status === "stopped" || status === "deleted" || status === "exited") return "stopped";
-  if (status === "waiting" || status === "blocked") return "waiting";
-  return "idle";
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
+function shellAgent(): CodemanAgentProfile {
+  return { id: "shell", name: "Shell (raw CLI)", mode: "shell", ready: true };
 }
 
 function uniqueCaseNames(...values: Array<string | undefined>): string[] {
@@ -895,17 +731,6 @@ function uniqueCaseNames(...values: Array<string | undefined>): string[] {
     if (name && !names.includes(name)) names.push(name);
   }
   return names;
-}
-
-function sseBoundary(value: string): { index: number; length: number } | undefined {
-  const lineFeed = value.indexOf("\n\n");
-  const carriageReturn = value.indexOf("\r\n\r\n");
-  if (lineFeed < 0 && carriageReturn < 0) return undefined;
-  if (lineFeed < 0) return { index: carriageReturn, length: 4 };
-  if (carriageReturn < 0 || lineFeed < carriageReturn) {
-    return { index: lineFeed, length: 2 };
-  }
-  return { index: carriageReturn, length: 4 };
 }
 
 function relaySockets(clientSocket: Duplex, upstreamSocket: Duplex): void {

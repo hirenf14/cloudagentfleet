@@ -1,16 +1,18 @@
 export type Provider = "codeman" | "cursor" | "claude";
 export type CodemanConnectionMode = "connector" | "tailscale-url";
 export type CodemanInstanceStatus = "online" | "offline" | "unhealthy" | "revoked";
-export type CodemanAgentMode =
-  | "claude"
-  | "shell"
-  | "opencode"
-  | "codex"
-  | "gemini"
-  | "antigravity"
-  | "pi"
-  | "grok"
-  | "deepseek";
+export const CODEMAN_AGENT_MODES = [
+  "claude",
+  "shell",
+  "opencode",
+  "codex",
+  "gemini",
+  "antigravity",
+  "pi",
+  "grok",
+  "deepseek",
+] as const;
+export type CodemanAgentMode = (typeof CODEMAN_AGENT_MODES)[number];
 
 export type NodeStatus = "online" | "offline" | "revoked";
 
@@ -513,7 +515,7 @@ export function validateCodemanConnectorSessionEvent(
   return value;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
+export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
@@ -560,16 +562,47 @@ function isCodemanAgentProfile(value: unknown): value is CodemanAgentProfile {
     && typeof value.ready === "boolean";
 }
 
-function isCodemanAgentMode(value: unknown): value is CodemanAgentMode {
-  return value === "claude"
-    || value === "shell"
-    || value === "opencode"
-    || value === "codex"
-    || value === "gemini"
-    || value === "antigravity"
-    || value === "pi"
-    || value === "grok"
-    || value === "deepseek";
+export function isCodemanAgentMode(value: unknown): value is CodemanAgentMode {
+  return (CODEMAN_AGENT_MODES as readonly unknown[]).includes(value);
+}
+
+/** Display name shared by the Hub, bridge, and Worker for launch profiles. */
+export function codemanAgentName(id: string, mode: CodemanAgentMode): string {
+  if (id === "cursor-agent") return "Cursor Agent CLI";
+  if (id === "claude-code") return "Claude Code CLI";
+  if (id === "shell") return "Shell (raw CLI)";
+  if (id === "claude" && mode === "claude") return "Claude Code";
+  return id;
+}
+
+/**
+ * Whether a path falls inside a workspace policy. Comparison is
+ * case-insensitive and separator-agnostic so Windows and POSIX roots agree.
+ */
+export function isPathAllowed(path: string, policy: WorkspacePolicy): boolean {
+  if (policy.mode === "system") return true;
+  return policy.roots.some((root) => isWithinPath(path, root));
+}
+
+export function isWithinPath(path: string, root: string): boolean {
+  const normalizedPath = normalizePolicyPath(path);
+  const normalizedRoot = normalizePolicyPath(root);
+  return !normalizedRoot
+    || normalizedPath === normalizedRoot
+    || normalizedPath.startsWith(`${normalizedRoot}/`);
+}
+
+function normalizePolicyPath(value: string): string {
+  const segments: string[] = [];
+  for (const segment of value.replaceAll("\\", "/").split("/")) {
+    if (!segment || segment === ".") continue;
+    if (segment === "..") {
+      segments.pop();
+    } else {
+      segments.push(segment);
+    }
+  }
+  return segments.join("/").toLowerCase();
 }
 
 function isWorkspaceDescriptor(value: unknown): value is WorkspaceDescriptor {
