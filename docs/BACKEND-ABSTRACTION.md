@@ -29,8 +29,8 @@ dashboard per backend.
 | `packages/protocol/src/index.ts` | `CodemanInstance`, `CodemanSession`, `CodemanAgentMode`, `CodemanConnector*` messages; no backend discriminator on instances |
 | `packages/codeman-bridge` | `CodemanInstanceAdapter` is the only adapter contract; the generic HTTP proxy, WebSocket relay, and HTML switcher injection live inside `CodemanHttpAdapter` |
 | `apps/control-plane/src/hub.ts` | `CodemanHub` constructs Codeman adapters directly; `prepareNativeUi` → Codeman "cases"; Codeman-specific error text |
-| `apps/control-plane/src/server.ts` | `hosted_agents_codeman_instance` cookie; `/api/fleet/select` only for `tailscale-url`; connector enrollment requires the `codeman` node capability; `publicInstance` hides the endpoint (fine for proxying, blocks a "link" mode) |
-| `apps/node-agent` | `CodemanClient`/`CodemanWorkerRuntime`/`codeman-supervisor` are the only runtime; config assumes one backend per Worker (`CODEMAN_URL`, `HOSTED_AGENTS_CODEMAN_MODE`) |
+| `apps/control-plane/src/server.ts` | `cloudagentfleet_instance` cookie; `/api/fleet/select` only for `tailscale-url`; connector enrollment requires the `codeman` node capability; `publicInstance` hides the endpoint (fine for proxying, blocks a "link" mode) |
+| `apps/node-agent` | `CodemanClient`/`CodemanWorkerRuntime`/`codeman-supervisor` are the only runtime; config assumes one backend per Worker (`CLOUDAGENTFLEET_CODEMAN_URL`, `CLOUDAGENTFLEET_CODEMAN_MODE`) |
 | `apps/cli/bin/setup.mjs` | Codeman install/start, mode prompts, `:3000` default, registration payload has no backend field |
 | `apps/dashboard/public` | "Codeman Fleet" labels, "Open Codeman UI" tied to `tailscale-url`, session UI assumes a Codeman PTY (`terminalBuffer`, input/resize) |
 
@@ -151,8 +151,6 @@ Rules:
 - `publicInstance` keeps hiding `endpoint`, except it exposes `launchUrl` for
   `native-ui-link` instances (an authenticated tailnet URL the operator
   already owns; recorded as an accepted trade-off in THREAT-MODEL).
-- Cookie `hosted_agents_codeman_instance` → `caf_instance` (session-scoped,
-  safe to rename).
 - Connector enrollment checks the node capability for the instance's backend
   instead of hard-coding `codeman`.
 
@@ -259,31 +257,20 @@ both, and opens each correctly.
 - **Wire compatibility:** renaming protocol messages would break mixed Hub and
   Worker versions; this plan keeps them.
 
-## Open cleanup decisions
+## Cleanup decisions (resolved)
 
-These came out of the Phase A audit and need an owner decision:
-
-- **Legacy naming:** `HOSTED_AGENTS_*` env vars, `~/.hosted-agents/`, the
-  `hosted-agents` bin alias, service names, and the `hosted_agents_csrf`
-  cookie. Proposal: read `CLOUDAGENTFLEET_*` first, fall back to the old names
-  for one minor release, then drop them.
-- **Windows `worker start|stop|status`:** these map to `schtasks /Start`,
-  `/Stop` and `/Status`, which don't exist (should be `/Run`, `/End`,
-  `/Query`). launchd `status` passes a path where a label is expected. These
-  are bugs to fix and test on each OS.
-- **Node offline detection:** `NodeRegistry.markOffline()` is never called, so
-  Workers never go `offline` after a missed heartbeat.
-- **Build scripts:** every package's `build` runs the full release build
-  (root `pnpm build` runs it three times). Proposal: root `build` →
-  `build:release`, and drop the per-package `build` scripts.
-- **Test runner flags:** `node-agent` and `packages/*` run `node --test`
-  without `--experimental-strip-types`, so they need Node ≥ 22.18 while
-  `engines` says ≥ 22.6. Add the flag or raise `engines`.
-- **Toolchain:** `pnpm-workspace.yaml` `allowBuilds` is a pnpm 10 key, but CI
-  and local use pnpm 9. Add `packageManager` and align versions.
-- **Stale docs:** `TAILSCALE-SERVE.md` and `ARCHITECTURE.md` still say there is
-  no Hub UI; `CLI-ENROLLMENT.md` describes pairing codes, keypairs and
-  self-update that don't exist; `ROADMAP.md` needs done/not-done markers.
-- **`scripts/stop-local-stack.sh`** (untracked): it kills every
-  `sleep 3600`/`sleep 7200` process and hard-codes `/mnt/e/...`. Keep it local
-  or narrow it before committing.
+- Legacy `HOSTED_AGENTS_*` / `~/.hosted-agents` / `hosted-agents` names
+  were removed in favour of `CLOUDAGENTFLEET_*`, `~/.cloudagentfleet`, and the
+  `cloudagentfleet` CLI. The CLI moves an old config directory and removes the
+  old user service once; there is no env-var fallback.
+- Worker service commands use the real native verbs (systemd
+  `enable --now`/`disable --now`, launchd `load -w`/`unload -w`/`list
+  <label>`, Task Scheduler `/Run`/`/End`/`/Query`/`/Delete`), and `status`
+  no longer fails for an inactive service.
+- `NodeRegistry` applies the heartbeat timeout on every read, so Workers go
+  `offline` after missed heartbeats.
+- The root `build` is the release build; per-package `build` scripts are gone;
+  every TypeScript test runner passes `--experimental-strip-types`; CI runs
+  `pnpm typecheck`; `packageManager` pins pnpm 9.
+- Stale docs (Tailscale Serve, architecture, CLI enrollment, roadmap) were
+  rewritten to match the code.

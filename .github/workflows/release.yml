@@ -118,7 +118,7 @@ jobs:
           path: dist/standalone/*
 
       - name: Attach archives to the latest GitHub Release
-        if: runner.os != 'Windows'
+        shell: bash
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |

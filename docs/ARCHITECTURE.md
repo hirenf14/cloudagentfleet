@@ -51,11 +51,10 @@ The Controller routes and records work; it never launches shells, agents,
 browsers, or containers. A Worker owns local process execution, provider
 credentials, Codeman sessions, preview connections, and browser sessions.
 
-For private remote operator access, the current phase is Tailscale SSH on a
-dedicated port only (80 and 443 stay unused by Cloud Agent Fleet; no Hub UI yet).
-Later, the Controller can remain bound to `127.0.0.1` and optionally publish a
-single Hub origin with Tailscale Serve. The Hub password is then the browser
-application boundary. Tailnet ACLs allow operators to reach the Hub tag and
+For private remote operator access, the Controller stays bound to `127.0.0.1`
+and publishes a single Hub origin with Tailscale Serve (`cloudagentfleet hub
+serve`). Cloud Agent Fleet never binds host-local 80 or 443. The Hub password
+is the browser application boundary. Tailnet ACLs allow operators to reach the Hub tag and
 allow the Hub tag to reach only Codeman-host ports. Codeman endpoints are
 never returned to the browser or published through Funnel. See
 `docs/TAILSCALE-SERVE.md`.

@@ -18,7 +18,7 @@ importers:
         specifier: ^22
         version: 22.20.5
       esbuild:
-        specifier: latest
+        specifier: ^0.28.2
         version: 0.28.2
       typescript:
         specifier: ^7.0.2
