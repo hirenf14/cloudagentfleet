@@ -5,10 +5,10 @@ import { join } from "node:path";
 import { createHash } from "node:crypto";
 import { CodemanClient, CodemanWorkerRuntime } from "./codeman.ts";
 import {
-  ensureCodeman,
-  manageCodemanEnabled,
-  type CodemanSupervisorHandle,
-} from "./codeman-supervisor.ts";
+  backendSupervisors,
+  workerBackends,
+  type SupervisorHandle,
+} from "./supervisor.ts";
 import { validateConfig, type NodeAgentConfig } from "./index.ts";
 import { ControllerTransport } from "./transport.ts";
 import type {
@@ -126,11 +126,15 @@ export async function runWorker(): Promise<void> {
       claude: !providers.claude ? "missing" as const : "ready" as const,
     },
   }));
+  const backends = workerBackends();
   const config = validateConfig({
     nodeId: required("CLOUDAGENTFLEET_NODE_ID"),
     name: process.env.CLOUDAGENTFLEET_NODE_NAME ?? "Cloud Agent Fleet Worker",
     platform: platform(),
-    capabilities: ["codeman", ...(agentProfiles.length > 0 ? ["cursor-worker" as const] : [])],
+    capabilities: [
+      ...backends,
+      ...(backends.includes("codeman") && agentProfiles.length > 0 ? ["cursor-worker" as const] : []),
+    ],
     workspacePolicy: parsePolicy(),
     workspaces,
     controlPlaneUrl: required("CLOUDAGENTFLEET_CONTROLLER_URL"),
@@ -138,9 +142,17 @@ export async function runWorker(): Promise<void> {
   });
   const instanceId = process.env.CLOUDAGENTFLEET_CODEMAN_INSTANCE_ID ?? config.nodeId;
   const codemanBaseUrl = process.env.CLOUDAGENTFLEET_CODEMAN_URL ?? "http://127.0.0.1:3000";
-  let supervisor: CodemanSupervisorHandle | undefined;
-  if (manageCodemanEnabled()) {
-    supervisor = await ensureCodeman({ baseUrl: codemanBaseUrl });
+  const supervised: SupervisorHandle[] = [];
+  const stopSupervised = () => {
+    for (const handle of supervised.splice(0)) handle.stopIfOwned();
+  };
+  try {
+    for (const supervisor of backendSupervisors(backends, { codeman: { baseUrl: codemanBaseUrl } })) {
+      supervised.push(await supervisor.ensure());
+    }
+  } catch (error) {
+    stopSupervised();
+    throw error;
   }
   const transport = new ControllerTransport({
     ...config,
@@ -164,22 +176,28 @@ export async function runWorker(): Promise<void> {
     cursorCommand,
     claudeCommand,
   });
-  const stopEventForwarding = runtime.startEventForwarding();
+  // The connector and job runtime are Codeman-only; a cptr-only Worker just
+  // supervises cptr and keeps its node heartbeat.
+  const codemanEnabled = backends.includes("codeman");
+  const stopEventForwarding = codemanEnabled ? runtime.startEventForwarding() : () => undefined;
+  const codemanDisabled = async (): Promise<never> => {
+    throw new Error("Codeman is not enabled on this Worker");
+  };
 
   const shutdown = () => {
     transport.stop();
-    supervisor?.stopIfOwned();
+    stopSupervised();
   };
   process.once("SIGINT", shutdown);
   process.once("SIGTERM", shutdown);
   try {
     await transport.start(
-      (message) => runtime.handle(message),
-      (request) => runtime.handleConnectorRequest(request),
+      codemanEnabled ? (message) => runtime.handle(message) : codemanDisabled,
+      codemanEnabled ? (request) => runtime.handleConnectorRequest(request) : codemanDisabled,
     );
   } finally {
     stopEventForwarding();
-    supervisor?.stopIfOwned();
+    stopSupervised();
   }
 }
 

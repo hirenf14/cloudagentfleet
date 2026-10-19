@@ -47,6 +47,7 @@ export const DEFAULT_PREVIEW_LEASE_MS = 15 * 60_000;
 
 export type NodeCapability =
   | "codeman"
+  | "cptr"
   | "cursor-worker"
   | "claude-runner"
   | "preview-relay"
