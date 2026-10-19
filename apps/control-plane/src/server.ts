@@ -9,8 +9,13 @@ import { ControlPlane, type NodeConnection } from "./index.ts";
 import { FleetHub } from "./hub.ts";
 import { resolveUiAuth, type UiAuth, type UiAuthRequest } from "./auth.ts";
 import { HttpError } from "./errors.ts";
+import {
+  describeBackends,
+  rejectSocket,
+} from "../../../packages/host-adapters/src/index.ts";
 import type {
   HostInstanceRegistration,
+  NodeCapability,
   CreateJobRequest,
   NodeHeartbeat,
   NodeMessage,
@@ -137,7 +142,7 @@ export function createControllerServer(
         selectedForCsrf
         && request.method !== "GET"
         && request.method !== "HEAD"
-        && isCodemanProxiedApiPath(url.pathname),
+        && isNativeUiApiPath(url.pathname),
       );
       if (
         auth.authenticated
@@ -198,7 +203,7 @@ async function handleTerminalUpgrade(
     || typeof request.headers.upgrade !== "string"
     || request.headers.upgrade.toLowerCase() !== "websocket"
   ) {
-    rejectUpgrade(socket, 401, "Unauthorized");
+    rejectSocket(socket, 401, "Unauthorized");
     return;
   }
   const instanceId = explicitMatch
@@ -208,13 +213,13 @@ async function handleTerminalUpgrade(
     ? decodeURIComponent(explicitMatch[2]!)
     : decodeURIComponent(nativeMatch![1]!);
   if (!instanceId) {
-    rejectUpgrade(socket, 400, "A Codeman host must be selected");
+    rejectSocket(socket, 400, "A host must be selected");
     return;
   }
   try {
     await hub.proxyTerminal(instanceId, sessionId, request, socket, head);
   } catch (error) {
-    rejectUpgrade(
+    rejectSocket(
       socket,
       502,
       error instanceof Error ? error.message : "Terminal proxy unavailable",
@@ -291,8 +296,8 @@ async function route(
   if (method === "GET" && fleetSelectMatch) {
     const instanceId = decodeURIComponent(fleetSelectMatch[1]!);
     const instance = hub.getInstance(instanceId);
-    if (instance.connectionMode !== "tailscale-url" || !instance.endpoint) {
-      throw new HttpError(400, "This instance is not available through the tailnet proxy");
+    if (!hub.supportsFeature(instance.id, "native-ui-proxy")) {
+      throw new HttpError(400, "This instance's UI is not available through the Hub proxy");
     }
     try {
       await hub.prepareNativeUi(instanceId);
@@ -333,10 +338,15 @@ async function route(
 
   if (method === "GET" && !url.pathname.startsWith("/api/")) {
     if (selectedInstanceId) {
-      await hub.proxyCodemanRequest(selectedInstanceId, request, response);
+      await hub.proxyNativeUi(selectedInstanceId, request, response);
       return;
     }
     await serveDashboardAsset(url.pathname, response);
+    return;
+  }
+
+  if (method === "GET" && url.pathname === "/api/backends") {
+    sendJson(response, 200, { backends: describeBackends() });
     return;
   }
 
@@ -378,8 +388,9 @@ async function route(
       const node = controlPlane.nodes.list().find((candidate) => candidate.id === registration.nodeId);
       if (!node) throw new HttpError(404, `Unknown node: ${registration.nodeId}`);
       if (node.status === "revoked") throw new HttpError(403, `Node is revoked: ${node.id}`);
-      if (!node.capabilities.includes("codeman")) {
-        throw new HttpError(400, `Node does not support Codeman: ${node.id}`);
+      const backend = registration.backend ?? "codeman";
+      if (!node.capabilities.includes(backend as NodeCapability)) {
+        throw new HttpError(400, `Node does not support ${backend}: ${node.id}`);
       }
     }
     const instance = hub.registerInstance(
@@ -404,7 +415,7 @@ async function route(
   );
   if (method === "GET" && instanceCapabilitiesMatch) {
     const instanceId = decodeURIComponent(instanceCapabilitiesMatch[1]!);
-    const agents = await hub.listCapabilities(instanceId);
+    const agents = await hub.listAgents(instanceId);
     sendJson(response, 200, { agents });
     return;
   }
@@ -458,8 +469,8 @@ async function route(
   if (method === "GET" && instanceSessionsMatch) {
     const instanceId = decodeURIComponent(instanceSessionsMatch[1]!);
     await Promise.all([
-      hub.listCapabilities(instanceId),
-      hub.syncSessions(instanceId),
+      hub.listAgents(instanceId),
+      hub.supportsFeature(instanceId, "sessions") ? hub.syncSessions(instanceId) : undefined,
     ]);
     sendJson(response, 200, {
       sessions: hub.listSessions().filter((session) => session.instanceId === instanceId),
@@ -545,7 +556,7 @@ async function route(
 
   if (method === "GET" && url.pathname === "/api/events") {
     if (selectedInstanceId) {
-      await hub.proxyCodemanRequest(selectedInstanceId, request, response);
+      await hub.proxyNativeUi(selectedInstanceId, request, response);
       return;
     }
     const instanceId = url.searchParams.get("instanceId");
@@ -676,7 +687,7 @@ async function route(
   }
 
   if (selectedInstanceId) {
-    await hub.proxyCodemanRequest(selectedInstanceId, request, response);
+    await hub.proxyNativeUi(selectedInstanceId, request, response);
     return;
   }
 
@@ -724,9 +735,9 @@ function isWorkerOrJobRoute(pathname: string): boolean {
 
 /**
  * Hub-owned API prefixes stay under Hub CSRF. Everything else under /api is
- * treated as the selected host's native Codeman surface when a host cookie is set.
+ * treated as the selected host's native UI surface when a host cookie is set.
  */
-function isCodemanProxiedApiPath(pathname: string): boolean {
+function isNativeUiApiPath(pathname: string): boolean {
   if (!pathname.startsWith("/api/")) return false;
   return !(
     pathname === "/api/auth"
@@ -740,6 +751,7 @@ function isCodemanProxiedApiPath(pathname: string): boolean {
     || pathname === "/api/jobs"
     || pathname.startsWith("/api/jobs/")
     || pathname === "/api/audit"
+    || pathname === "/api/backends"
   );
 }
 
@@ -888,22 +900,6 @@ if(!response.ok)throw new Error((await response.json().catch(function(){return {
 location.assign("/");}catch(cause){error.textContent=cause.message||"Sign in failed";}
 });
 </script></body></html>`);
-}
-
-function rejectUpgrade(
-  socket: Duplex,
-  status: number,
-  message: string,
-): void {
-  if (socket.destroyed) return;
-  socket.write(
-    `HTTP/1.1 ${status} ${message}\r\n`
-    + "Connection: close\r\n"
-    + "Content-Type: text/plain; charset=utf-8\r\n"
-    + `Content-Length: ${Buffer.byteLength(message)}\r\n\r\n`
-    + message,
-  );
-  socket.destroy();
 }
 
 async function readJson<T>(request: IncomingMessage): Promise<T> {

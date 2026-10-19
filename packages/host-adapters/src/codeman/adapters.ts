@@ -1,65 +1,39 @@
+import type { IncomingMessage, ServerResponse } from "node:http";
+import type { Duplex } from "node:stream";
 import type {
   AgentProfile,
+  BackendFeature,
   HostInstance,
   HostSession,
   HostSessionEvent,
-  CodemanConnectorOperation,
-  CodemanStatus,
   WorkspaceDescriptor,
   WorkspacePathSuggestion,
-} from "../../../packages/protocol/src/index.ts";
-import type { IncomingMessage, ServerResponse } from "node:http";
-import type { Duplex } from "node:stream";
-import { createHash, randomBytes } from "node:crypto";
-import { request as httpRequest } from "node:http";
-import { request as httpsRequest } from "node:https";
+} from "../../../../packages/protocol/src/index.ts";
 import {
   isRecord,
   validateHostInstance,
-} from "../../../packages/protocol/src/index.ts";
+} from "../../../../packages/protocol/src/index.ts";
+import type {
+  ConnectorChannel,
+  HostAdapter,
+  NativeUiProxy,
+  PathSuggestions,
+  SessionControl,
+  TerminalProxy,
+} from "../contract.ts";
+import { proxyHttpRequest } from "../shared/http-proxy.ts";
+import { readSseStream } from "../shared/sse.ts";
+import { proxyWebSocket } from "../shared/ws-relay.ts";
 import {
   type CodemanEnvelope,
+  type CodemanStatus,
   codemanEventKind,
   codemanEventSessionId,
   codemanSessionStatus,
   codemanTimestamp,
   dedupeAgents,
   normalizeCodemanAgent,
-  readSseStream,
 } from "./wire.ts";
-
-export interface HostAdapter {
-  readonly instance: HostInstance;
-  getStatus(): Promise<CodemanStatus>;
-  listCapabilities(): Promise<AgentProfile[]>;
-  listWorkspaces(): Promise<WorkspaceDescriptor[]>;
-  listWorkspacePathSuggestions(prefix: string): Promise<WorkspacePathSuggestion[]>;
-  listSessions(): Promise<HostSession[]>;
-  createSession(
-    workspace: WorkspaceDescriptor,
-    agent: AgentProfile,
-    title?: string,
-  ): Promise<HostSession>;
-  sendInput(sessionId: string, input: string, raw?: boolean): Promise<void>;
-  resize(sessionId: string, cols: number, rows: number): Promise<void>;
-  stopSession(sessionId: string): Promise<void>;
-  subscribeEvents(onEvent: (event: HostSessionEvent) => void): () => void;
-  proxyTerminal?(
-    sessionId: string,
-    request: IncomingMessage,
-    clientSocket: Duplex,
-    head: Buffer,
-  ): Promise<void>;
-  proxyHttp?(
-    request: IncomingMessage,
-    response: ServerResponse,
-  ): Promise<void>;
-  /**
-   * Best-effort: ensure Codeman "cases" exist for Hub workspaces so the
-   * native Codeman Quick Start / New Session UI can create sessions.
-   */
-  ensureNativeCases?(): Promise<void>;
-}
 
 export interface CodemanHttpAdapterOptions {
   instance: HostInstance;
@@ -68,16 +42,21 @@ export interface CodemanHttpAdapterOptions {
   password?: string;
 }
 
-export interface CodemanConnectorAdapterOptions {
+export interface CodemanConnectorAdapterOptions extends ConnectorChannel {
   instance: HostInstance;
-  request: (
-    operation: CodemanConnectorOperation,
-    payload?: Record<string, unknown>,
-  ) => Promise<unknown>;
-  subscribeEvents: (
-    onEvent: (event: HostSessionEvent) => void,
-  ) => () => void;
 }
+
+export const CODEMAN_HTTP_FEATURES: readonly BackendFeature[] = [
+  "sessions",
+  "terminal",
+  "native-ui-proxy",
+  "workspace-suggest",
+];
+
+export const CODEMAN_CONNECTOR_FEATURES: readonly BackendFeature[] = [
+  "sessions",
+  "workspace-suggest",
+];
 
 interface SessionListData {
   sessions?: Array<Record<string, unknown>>;
@@ -91,8 +70,10 @@ interface SessionCreateData {
  * Adapter for one Codeman HTTP endpoint. It is used server-side, so endpoint
  * URLs and Basic credentials never cross into the dashboard.
  */
-export class CodemanHttpAdapter implements HostAdapter {
+export class CodemanHttpAdapter
+  implements HostAdapter, SessionControl, TerminalProxy, NativeUiProxy, PathSuggestions {
   readonly instance: HostInstance;
+  readonly features = CODEMAN_HTTP_FEATURES;
   private readonly fetchImpl: typeof fetch;
   private readonly headers: Record<string, string>;
   private readonly listeners = new Set<(event: HostSessionEvent) => void>();
@@ -100,18 +81,9 @@ export class CodemanHttpAdapter implements HostAdapter {
   private inputSequence = Date.now();
 
   constructor(options: CodemanHttpAdapterOptions) {
+    // Validation also enforces HTTPS or loopback HTTP without embedded credentials.
     this.instance = validateHostInstance(options.instance);
     if (!this.instance.endpoint) throw new Error("Codeman HTTP adapter requires an endpoint");
-    const endpoint = new URL(this.instance.endpoint);
-    if (
-      endpoint.protocol !== "https:"
-      && endpoint.hostname !== "localhost"
-      && endpoint.hostname !== "127.0.0.1"
-      && endpoint.hostname !== "::1"
-      && endpoint.hostname !== "[::1]"
-    ) {
-      throw new Error("Codeman endpoint must use HTTPS or loopback HTTP");
-    }
     this.fetchImpl = options.fetchImpl ?? fetch;
     this.headers = { accept: "application/json" };
     if (options.username !== undefined || options.password !== undefined) {
@@ -120,6 +92,22 @@ export class CodemanHttpAdapter implements HostAdapter {
       }
       this.headers.authorization = `Basic ${Buffer.from(`${options.username}:${options.password}`).toString("base64")}`;
     }
+  }
+
+  get sessionControl(): SessionControl {
+    return this;
+  }
+
+  get terminalProxy(): TerminalProxy {
+    return this;
+  }
+
+  get nativeUi(): NativeUiProxy {
+    return this;
+  }
+
+  get pathSuggestions(): PathSuggestions {
+    return this;
   }
 
   async listWorkspaces(): Promise<WorkspaceDescriptor[]> {
@@ -170,7 +158,7 @@ export class CodemanHttpAdapter implements HostAdapter {
     return status;
   }
 
-  async listCapabilities(): Promise<AgentProfile[]> {
+  async listAgents(): Promise<AgentProfile[]> {
     const status = await this.getStatus();
     if (status.agents && status.agents.length > 0) return status.agents;
     const fromCapabilities = normalizeAgents(status.capabilities ?? []);
@@ -255,61 +243,22 @@ export class CodemanHttpAdapter implements HostAdapter {
     clientSocket: Duplex,
     head: Buffer,
   ): Promise<void> {
-    const endpoint = new URL(this.instance.endpoint!);
-    const websocketPath = `/ws/sessions/${encodeURIComponent(sessionId)}/terminal`;
     const query = typeof request.url === "string"
       ? new URL(request.url, "http://controller.local").search
       : "";
-    const transport = endpoint.protocol === "https:" ? httpsRequest : httpRequest;
-    const upstreamKey = randomBytes(16).toString("base64");
-    const browserKey = request.headers["sec-websocket-key"];
-    if (typeof browserKey !== "string") {
-      rejectSocket(clientSocket, 400, "Missing WebSocket key");
-      return;
-    }
-    const headers: Record<string, string> = {
-      connection: "Upgrade",
-      upgrade: "websocket",
-      "sec-websocket-version": "13",
-      "sec-websocket-key": upstreamKey,
-    };
-    if (this.basicAuthorization) headers.authorization = this.basicAuthorization;
-    const upstreamRequest = transport({
-      hostname: endpoint.hostname,
-      port: endpoint.port || undefined,
-      path: `${websocketPath}${query}`,
-      method: "GET",
-      headers,
-      rejectUnauthorized: endpoint.protocol !== "https:" || endpoint.hostname === "localhost",
+    await proxyWebSocket(request, clientSocket, head, {
+      endpoint: new URL(this.instance.endpoint!),
+      path: `/ws/sessions/${encodeURIComponent(sessionId)}/terminal${query}`,
+      authorization: this.basicAuthorization,
+      label: "Codeman",
     });
-    upstreamRequest.once("upgrade", (response, upstreamSocket, upstreamHead) => {
-      if (response.statusCode !== 101) {
-        upstreamSocket.destroy();
-        rejectSocket(clientSocket, response.statusCode ?? 502, "Codeman WebSocket rejected");
-        return;
-      }
-      const accept = createHash("sha1")
-        .update(`${browserKey}258EAFA5-E914-47DA-95CA-C5AB0DC85B11`)
-        .digest("base64");
-      clientSocket.write(
-        "HTTP/1.1 101 Switching Protocols\r\n"
-        + "Upgrade: websocket\r\n"
-        + "Connection: Upgrade\r\n"
-        + `Sec-WebSocket-Accept: ${accept}\r\n\r\n`,
-      );
-      if (head.length > 0) upstreamSocket.write(head);
-      if (upstreamHead.length > 0) clientSocket.write(upstreamHead);
-      relaySockets(clientSocket, upstreamSocket);
-    });
-    upstreamRequest.once("response", (response) => {
-      response.resume();
-      rejectSocket(clientSocket, response.statusCode ?? 502, "Codeman WebSocket unavailable");
-    });
-    upstreamRequest.once("error", () => rejectSocket(clientSocket, 502, "Codeman WebSocket unavailable"));
-    upstreamRequest.end();
   }
 
-  async ensureNativeCases(): Promise<void> {
+  /**
+   * Best-effort: ensure Codeman "cases" exist for Hub workspaces so the
+   * native Codeman Quick Start / New Session UI can create sessions.
+   */
+  async prepareNativeUi(): Promise<void> {
     const workspaces = this.instance.workspaces.filter(
       (workspace) => typeof workspace.canonicalPath === "string" && workspace.canonicalPath.length > 0,
     );
@@ -355,80 +304,11 @@ export class CodemanHttpAdapter implements HostAdapter {
   }
 
   async proxyHttp(request: IncomingMessage, response: ServerResponse): Promise<void> {
-    const endpoint = new URL(this.instance.endpoint!);
-    const requestUrl = new URL(request.url ?? "/", "http://controller.local");
-    const transport = endpoint.protocol === "https:" ? httpsRequest : httpRequest;
-    const headers: Record<string, string> = {};
-    for (const [name, value] of Object.entries(request.headers)) {
-      if (
-        name === "host"
-        || name === "authorization"
-        || name === "cookie"
-        || name === "connection"
-        || name === "upgrade"
-        || name === "origin"
-        || name === "referer"
-        || name.startsWith("x-forwarded-")
-      ) continue;
-      if (typeof value === "string") headers[name] = value;
-      else if (Array.isArray(value)) headers[name] = value.join(", ");
-    }
-    headers["accept-encoding"] = "identity";
-    if (this.basicAuthorization) headers.authorization = this.basicAuthorization;
-    const upstreamRequest = transport({
-      hostname: endpoint.hostname,
-      port: endpoint.port || undefined,
-      path: `${requestUrl.pathname}${requestUrl.search}`,
-      method: request.method ?? "GET",
-      headers,
-      rejectUnauthorized: endpoint.protocol !== "https:" || endpoint.hostname === "localhost",
-    }, (upstreamResponse) => {
-      const isHtml = String(upstreamResponse.headers["content-type"] ?? "").includes("text/html");
-      const responseHeaders: Record<string, string | string[]> = {};
-      for (const [name, value] of Object.entries(upstreamResponse.headers)) {
-        if (
-          value === undefined
-          || name === "set-cookie"
-          || name === "connection"
-          || (isHtml && (name === "content-length" || name === "content-encoding"))
-        ) continue;
-        responseHeaders[name] = value;
-      }
-      const location = responseHeaders.location;
-      if (typeof location === "string") {
-        try {
-          const redirected = new URL(location, endpoint);
-          responseHeaders.location = `${redirected.pathname}${redirected.search}${redirected.hash}`;
-        } catch {
-          // Preserve a relative location when the upstream sends malformed data.
-        }
-      }
-      if (isHtml) {
-        const chunks: Buffer[] = [];
-        upstreamResponse.on("data", (chunk: Buffer) => chunks.push(Buffer.from(chunk)));
-        upstreamResponse.on("end", () => {
-          const html = Buffer.concat(chunks).toString("utf8");
-          const injected = html.includes("</body>")
-            ? html.replace("</body>", '<script src="/fleet-host-switcher.js"></script></body>')
-            : `${html}<script src="/fleet-host-switcher.js"></script>`;
-          responseHeaders["content-type"] = "text/html; charset=utf-8";
-          response.writeHead(upstreamResponse.statusCode ?? 502, responseHeaders);
-          response.end(injected);
-        });
-        return;
-      }
-      response.writeHead(upstreamResponse.statusCode ?? 502, responseHeaders);
-      upstreamResponse.pipe(response);
+    await proxyHttpRequest(request, response, {
+      endpoint: new URL(this.instance.endpoint!),
+      authorization: this.basicAuthorization,
+      label: "Codeman",
     });
-    upstreamRequest.once("error", () => {
-      if (!response.headersSent) {
-        response.writeHead(502, { "content-type": "application/json; charset=utf-8" });
-        response.end(JSON.stringify({ error: "Codeman request unavailable" }));
-      } else {
-        response.destroy();
-      }
-    });
-    request.pipe(upstreamRequest);
   }
 
   subscribeEvents(onEvent: (event: HostSessionEvent) => void): () => void {
@@ -597,10 +477,11 @@ export class CodemanHttpAdapter implements HostAdapter {
  * channel. The operation enum is deliberately allowlisted; callers cannot
  * turn the connector into an arbitrary HTTP proxy.
  */
-export class CodemanConnectorAdapter implements HostAdapter {
+export class CodemanConnectorAdapter implements HostAdapter, SessionControl, PathSuggestions {
   readonly instance: HostInstance;
-  private readonly request: CodemanConnectorAdapterOptions["request"];
-  private readonly subscribe: CodemanConnectorAdapterOptions["subscribeEvents"];
+  readonly features = CODEMAN_CONNECTOR_FEATURES;
+  private readonly request: ConnectorChannel["request"];
+  private readonly subscribe: ConnectorChannel["subscribeEvents"];
 
   constructor(options: CodemanConnectorAdapterOptions) {
     this.instance = validateHostInstance(options.instance);
@@ -611,11 +492,19 @@ export class CodemanConnectorAdapter implements HostAdapter {
     this.subscribe = options.subscribeEvents;
   }
 
+  get sessionControl(): SessionControl {
+    return this;
+  }
+
+  get pathSuggestions(): PathSuggestions {
+    return this;
+  }
+
   async getStatus(): Promise<CodemanStatus> {
     return this.request("status") as Promise<CodemanStatus>;
   }
 
-  async listCapabilities(): Promise<AgentProfile[]> {
+  async listAgents(): Promise<AgentProfile[]> {
     const data = await this.request("capabilities");
     const agents = isRecord(data) && Array.isArray(data.agents) ? data.agents : data;
     if (!Array.isArray(agents)) return this.instance.agents.map((agent) => ({ ...agent }));
@@ -731,38 +620,6 @@ function uniqueCaseNames(...values: Array<string | undefined>): string[] {
     if (name && !names.includes(name)) names.push(name);
   }
   return names;
-}
-
-function relaySockets(clientSocket: Duplex, upstreamSocket: Duplex): void {
-  let closed = false;
-  const close = () => {
-    if (closed) return;
-    closed = true;
-    clientSocket.destroy();
-    upstreamSocket.destroy();
-  };
-  clientSocket.on("data", (chunk) => {
-    if (!upstreamSocket.destroyed) upstreamSocket.write(chunk);
-  });
-  upstreamSocket.on("data", (chunk) => {
-    if (!clientSocket.destroyed) clientSocket.write(chunk);
-  });
-  clientSocket.on("error", close);
-  clientSocket.on("close", close);
-  upstreamSocket.on("error", close);
-  upstreamSocket.on("close", close);
-}
-
-function rejectSocket(socket: Duplex, status: number, message: string): void {
-  if (socket.destroyed) return;
-  socket.write(
-    `HTTP/1.1 ${status} ${message}\r\n`
-    + "Connection: close\r\n"
-    + "Content-Type: text/plain; charset=utf-8\r\n"
-    + `Content-Length: ${Buffer.byteLength(message)}\r\n\r\n`
-    + message,
-  );
-  socket.destroy();
 }
 
 interface RequestOptions {

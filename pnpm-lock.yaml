@@ -36,7 +36,7 @@ importers:
 
   apps/node-agent: {}
 
-  packages/codeman-bridge: {}
+  packages/host-adapters: {}
 
   packages/protocol: {}
 

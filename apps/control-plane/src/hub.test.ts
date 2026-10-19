@@ -6,9 +6,10 @@ import type {
   HostInstanceRegistration,
   HostSession,
   HostSessionEvent,
-  CodemanStatus,
   WorkspaceDescriptor,
 } from "../../../packages/protocol/src/index.ts";
+import type { HostAdapter } from "../../../packages/host-adapters/src/index.ts";
+import { UnsupportedError } from "./errors.ts";
 import { FleetHub } from "./hub.ts";
 
 const workspace: WorkspaceDescriptor = {
@@ -26,8 +27,9 @@ const agent: AgentProfile = {
   ready: true,
 };
 
-class FakeAdapter {
+class FakeAdapter implements HostAdapter {
   readonly instance: HostInstance;
+  readonly features = ["sessions", "workspace-suggest"] as const;
   readonly events = new Set<(event: HostSessionEvent) => void>();
   sessions: HostSession[] = [];
 
@@ -35,11 +37,15 @@ class FakeAdapter {
     this.instance = instance;
   }
 
-  async getStatus(): Promise<CodemanStatus> {
-    return { version: "test", agents: [agent] };
+  get sessionControl(): this {
+    return this;
   }
 
-  async listCapabilities(): Promise<AgentProfile[]> {
+  get pathSuggestions(): this {
+    return this;
+  }
+
+  async listAgents(): Promise<AgentProfile[]> {
     return [agent];
   }
 
@@ -193,5 +199,32 @@ test("FleetHub accepts an explicit path only inside the instance policy", async 
       "/workspaces/../outside",
     ),
     /outside the instance policy/,
+  );
+});
+
+test("FleetHub stores adapter features and rejects unsupported features with 409", async () => {
+  const hub = new FleetHub({
+    adapterFactory: (instance): HostAdapter => ({
+      instance,
+      features: [],
+      listAgents: async () => [agent],
+      listWorkspaces: async () => [workspace],
+    }),
+  });
+  const registered = hub.registerInstance(registration("link-only"));
+  assert.deepEqual(registered.features, []);
+  assert.equal(hub.supportsFeature("link-only", "sessions"), false);
+
+  await assert.rejects(
+    () => hub.createSession("link-only", workspace.id, agent.id),
+    (error: unknown) => error instanceof UnsupportedError && /does not support sessions/.test(error.message),
+  );
+  await assert.rejects(() => hub.prepareNativeUi("link-only"), UnsupportedError);
+  await assert.rejects(() => hub.suggestWorkspacePaths("link-only", "/"), UnsupportedError);
+
+  const full = new FleetHub({ adapterFactory: (instance) => new FakeAdapter(instance) });
+  assert.deepEqual(
+    full.registerInstance(registration("full")).features,
+    ["sessions", "workspace-suggest"],
   );
 });

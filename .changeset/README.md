@@ -19,7 +19,7 @@ pnpm changeset
 Pick **patch**, **minor**, or **major**, write a short summary aimed at
 operators, and commit the generated file under `.changeset/`.
 
-Private workspace packages (`cli`, `protocol`, `codeman-bridge`) are ignored.
+Private workspace packages (`cli`, `protocol`, `host-adapters`) are ignored.
 
 ## What happens on `master`
 

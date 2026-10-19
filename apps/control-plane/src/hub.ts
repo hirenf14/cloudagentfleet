@@ -1,13 +1,19 @@
 import {
-  CodemanHttpAdapter,
-  CodemanConnectorAdapter,
+  backendDefinition,
+  createAdapter,
+  type AdapterDependencies,
   type HostAdapter,
-} from "../../../packages/codeman-bridge/src/index.ts";
+  type NativeUiProxy,
+  type PathSuggestions,
+  type SessionControl,
+  type TerminalProxy,
+} from "../../../packages/host-adapters/src/index.ts";
 import { HubStateStore } from "../../../packages/protocol/src/persistence.ts";
-import { NotFoundError, UnavailableError } from "./errors.ts";
+import { NotFoundError, UnavailableError, UnsupportedError } from "./errors.ts";
 import type {
   AuditEvent,
   AgentProfile,
+  BackendFeature,
   HostInstance,
   HostInstanceRegistration,
   HostSession,
@@ -17,8 +23,6 @@ import type {
   WorkspacePathSuggestion,
 } from "../../../packages/protocol/src/index.ts";
 import {
-  CODEMAN_AGENT_MODES,
-  codemanAgentName,
   isPathAllowed,
   validateHostInstanceRegistration,
   validateHostInstance,
@@ -26,13 +30,13 @@ import {
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { Duplex } from "node:stream";
 
+type Credentials = { username: string; password: string };
+
 export interface HubOptions {
   statePath?: string;
-  credentials?: Record<string, { username: string; password: string }>;
-  adapterFactory?: (
-    instance: HostInstance,
-    credentials?: { username: string; password: string },
-  ) => HostAdapter;
+  credentials?: Record<string, Credentials>;
+  /** Test seam; defaults to the backend registry. */
+  adapterFactory?: (instance: HostInstance, credentials?: Credentials) => HostAdapter;
   connectorRequest?: (
     nodeId: string,
     instanceId: string,
@@ -46,6 +50,11 @@ export interface HubOptions {
   ) => () => void;
 }
 
+/**
+ * Fleet state plus one adapter per instance. Every backend-specific call goes
+ * through a facet that the instance's adapter advertises; anything else is a
+ * 409 (UnsupportedError) rather than a backend-name check.
+ */
 export class FleetHub {
   readonly state: HubStateStore;
   private readonly credentials: HubOptions["credentials"];
@@ -65,29 +74,13 @@ export class FleetHub {
     this.connectorRequest = options.connectorRequest;
     this.connectorSubscribeEvents = options.connectorSubscribeEvents;
     this.adapterFactory = options.adapterFactory
-      ?? ((instance, credentials) => {
-        if (instance.connectionMode === "connector") {
-          if (!this.connectorRequest || !this.connectorSubscribeEvents || !instance.nodeId) {
-            throw new Error(`Connector is not configured: ${instance.id}`);
-          }
-          return new CodemanConnectorAdapter({
-            instance,
-            request: (operation, payload) => this.connectorRequest!(
-              instance.nodeId!,
-              instance.id,
-              operation,
-              payload,
-            ),
-            subscribeEvents: (listener) => this.connectorSubscribeEvents!(
-              instance.nodeId!,
-              instance.id,
-              listener,
-            ),
-          });
-        }
-        return new CodemanHttpAdapter({ instance, ...(credentials ?? {}) });
-      });
-    for (const instance of this.state.snapshot().instances) this.attachAdapter(instance);
+      ?? ((instance, credentials) => createAdapter(instance, this.adapterDependencies(instance, credentials)));
+    for (const instance of this.state.snapshot().instances) {
+      const features = this.attachAdapter(instance);
+      if (!sameFeatures(features, instance.features)) {
+        this.state.upsertInstance({ ...instance, features });
+      }
+    }
   }
 
   listInstances(): HostInstance[] {
@@ -102,8 +95,8 @@ export class FleetHub {
     instanceId: string,
     prefix: string,
   ): Promise<WorkspacePathSuggestion[]> {
-    this.getInstance(instanceId);
-    return this.getAdapter(instanceId).listWorkspacePathSuggestions(prefix);
+    return this.facet(instanceId, "workspace-suggest", (adapter) => adapter.pathSuggestions)
+      .listWorkspacePathSuggestions(prefix);
   }
 
   listAudit(): AuditEvent[] {
@@ -112,13 +105,13 @@ export class FleetHub {
 
   getInstance(instanceId: string): HostInstance {
     const instance = this.listInstances().find((candidate) => candidate.id === instanceId);
-    if (!instance) throw new NotFoundError(`Unknown Codeman instance: ${instanceId}`);
+    if (!instance) throw new NotFoundError(`Unknown instance: ${instanceId}`);
     return instance;
   }
 
   getAdapter(instanceId: string): HostAdapter {
     const adapter = this.adapters.get(instanceId);
-    if (!adapter) throw new UnavailableError(`Codeman instance is not connected: ${instanceId}`);
+    if (!adapter) throw new UnavailableError(`Instance is not connected: ${instanceId}`);
     return adapter;
   }
 
@@ -136,10 +129,11 @@ export class FleetHub {
   ): HostInstance {
     validateHostInstanceRegistration(registration);
     const existing = this.listInstances().find((instance) => instance.id === registration.id);
+    const backend = registration.backend ?? "codeman";
     const instance: HostInstance = {
       id: registration.id,
       label: registration.label,
-      backend: registration.backend ?? "codeman",
+      backend,
       connectionMode: registration.connectionMode,
       ...(registration.nodeId ? { nodeId: registration.nodeId } : {}),
       endpoint: registration.endpoint ?? null,
@@ -161,7 +155,8 @@ export class FleetHub {
               },
             }
           : {}),
-      agents: (registration.agents ?? defaultAgents()).map((agent) => ({ ...agent })),
+      agents: (registration.agents ?? backendDefinition(backend).defaultAgents())
+        .map((agent) => ({ ...agent })),
       workspaces: (registration.workspaces ?? []).map((workspace) => ({
         ...workspace,
         providers: { ...workspace.providers },
@@ -171,10 +166,16 @@ export class FleetHub {
     };
     validateHostInstance(instance);
     if (credentials) this.runtimeCredentials.set(instance.id, credentials);
-    this.attachAdapter(instance, credentials ?? this.runtimeCredentials.get(instance.id));
-    this.state.upsertInstance(instance);
-    this.appendAudit("instance.registered", instance.id, { connectionMode: instance.connectionMode });
-    return instance;
+    const registered = {
+      ...instance,
+      features: this.attachAdapter(instance, credentials ?? this.runtimeCredentials.get(instance.id)),
+    };
+    this.state.upsertInstance(registered);
+    this.appendAudit("instance.registered", instance.id, {
+      backend: instance.backend,
+      connectionMode: instance.connectionMode,
+    });
+    return registered;
   }
 
   removeInstance(instanceId: string): void {
@@ -193,7 +194,7 @@ export class FleetHub {
     try {
       const [workspaces, agents] = await Promise.all([
         adapter.listWorkspaces(),
-        adapter.listCapabilities(),
+        adapter.listAgents(),
       ]);
       const updated = {
         ...instance,
@@ -213,9 +214,9 @@ export class FleetHub {
     }
   }
 
-  async listCapabilities(instanceId: string): Promise<AgentProfile[]> {
+  async listAgents(instanceId: string): Promise<AgentProfile[]> {
     const instance = this.getInstance(instanceId);
-    const agents = await this.getAdapter(instanceId).listCapabilities();
+    const agents = await this.getAdapter(instanceId).listAgents();
     this.state.upsertInstance({
       ...instance,
       agents,
@@ -226,8 +227,7 @@ export class FleetHub {
   }
 
   async syncSessions(instanceId: string): Promise<HostSession[]> {
-    const adapter = this.getAdapter(instanceId);
-    const sessions = await adapter.listSessions();
+    const sessions = await this.sessionControl(instanceId).listSessions();
     for (const session of sessions) this.state.upsertSession(session);
     return sessions;
   }
@@ -240,6 +240,7 @@ export class FleetHub {
     workspacePath?: string,
   ): Promise<HostSession> {
     const instance = this.getInstance(instanceId);
+    const control = this.sessionControl(instanceId);
     const workspace = workspaceId
       ? requireWorkspace(instance.workspaces, workspaceId)
       : this.resolveWorkspacePath(instance, workspacePath);
@@ -247,13 +248,13 @@ export class FleetHub {
     if (!agent || !agent.ready) throw new Error(`Agent is not ready: ${agentId}`);
     let session: HostSession;
     try {
-      session = await this.getAdapter(instanceId).createSession(workspace, agent, title);
+      session = await control.createSession(workspace, agent, title);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unable to create session";
       if (/workingDir does not exist|does not exist|ENOENT/i.test(message)) {
         throw new Error(
           `Workspace path does not exist on that host: ${workspace.canonicalPath}. `
-          + "Use a path that exists on the Codeman machine (for WSL, prefer /home/... or /mnt/...).",
+          + "Use a path that exists on that machine (for WSL, prefer /home/... or /mnt/...).",
         );
       }
       throw error;
@@ -268,12 +269,12 @@ export class FleetHub {
 
   async sendInput(instanceId: string, sessionId: string, input: string, raw = false): Promise<void> {
     this.assertSession(instanceId, sessionId);
-    await this.getAdapter(instanceId).sendInput(sessionId, input, raw);
+    await this.sessionControl(instanceId).sendInput(sessionId, input, raw);
   }
 
   async resizeSession(instanceId: string, sessionId: string, cols: number, rows: number): Promise<void> {
     this.assertSession(instanceId, sessionId);
-    await this.getAdapter(instanceId).resize(sessionId, cols, rows);
+    await this.sessionControl(instanceId).resize(sessionId, cols, rows);
   }
 
   async proxyTerminal(
@@ -283,57 +284,39 @@ export class FleetHub {
     clientSocket: Duplex,
     head: Buffer,
   ): Promise<void> {
-    const adapter = this.getAdapter(instanceId);
+    const terminal = this.facet(instanceId, "terminal", (adapter) => adapter.terminalProxy);
     if (!this.listSessions().some(
       (session) => session.instanceId === instanceId && session.id === sessionId,
     )) {
-      const remoteSession = (await adapter.listSessions())
+      const remoteSession = (await this.sessionControl(instanceId).listSessions())
         .find((session) => session.id === sessionId);
       if (!remoteSession) throw new NotFoundError(`Unknown session: ${instanceId}/${sessionId}`);
       this.state.upsertSession(remoteSession);
     }
-    const proxyTerminal = adapter.proxyTerminal;
-    if (!proxyTerminal) {
-      throw new Error(`Codeman WebSocket proxy is unavailable: ${instanceId}`);
-    }
-    await proxyTerminal.call(
-      adapter,
-      sessionId,
-      request,
-      clientSocket,
-      head,
-    );
+    await terminal.proxyTerminal(sessionId, request, clientSocket, head);
   }
 
-  async proxyCodemanRequest(
+  /** Proxies the instance's own UI on the Hub origin. */
+  async proxyNativeUi(
     instanceId: string,
     request: IncomingMessage,
     response: ServerResponse,
   ): Promise<void> {
-    const adapter = this.getAdapter(instanceId);
-    const proxyHttp = adapter.proxyHttp;
-    if (!proxyHttp) {
-      throw new Error(`Codeman HTTP proxy is unavailable: ${instanceId}`);
-    }
-    await proxyHttp.call(adapter, request, response);
+    await this.nativeUi(instanceId).proxyHttp(request, response);
   }
 
-  /**
-   * Prepare a Tailscale Codeman host for the native UI: seed Cases from Hub
-   * workspaces so Codeman Quick Start can create sessions.
-   */
+  /** Backend-specific setup before the native UI opens (Codeman seeds cases). */
   async prepareNativeUi(instanceId: string): Promise<void> {
-    const instance = this.getInstance(instanceId);
-    if (instance.connectionMode !== "tailscale-url") {
-      throw new Error(`Native Codeman UI requires a Tailscale host: ${instanceId}`);
-    }
-    const adapter = this.getAdapter(instanceId);
-    await adapter.ensureNativeCases?.();
+    await this.nativeUi(instanceId).prepareNativeUi?.();
+  }
+
+  supportsFeature(instanceId: string, feature: BackendFeature): boolean {
+    return this.adapters.get(instanceId)?.features.includes(feature) ?? false;
   }
 
   async stopSession(instanceId: string, sessionId: string): Promise<void> {
     this.assertSession(instanceId, sessionId);
-    await this.getAdapter(instanceId).stopSession(sessionId);
+    await this.sessionControl(instanceId).stopSession(sessionId);
     const existing = this.state.snapshot().sessions.find(
       (session) => session.instanceId === instanceId && session.id === sessionId,
     );
@@ -355,10 +338,27 @@ export class FleetHub {
     return () => this.listeners.delete(listener);
   }
 
-  private attachAdapter(
+  private adapterDependencies(
     instance: HostInstance,
-    credentials?: { username: string; password: string },
-  ): void {
+    credentials?: Credentials,
+  ): AdapterDependencies {
+    const { nodeId } = instance;
+    const connector = nodeId && this.connectorRequest && this.connectorSubscribeEvents
+      ? {
+          request: (operation: CodemanConnectorOperation, payload?: Record<string, unknown>) =>
+            this.connectorRequest!(nodeId, instance.id, operation, payload),
+          subscribeEvents: (listener: (event: HostSessionEvent) => void) =>
+            this.connectorSubscribeEvents!(nodeId, instance.id, listener),
+        }
+      : undefined;
+    return {
+      ...(credentials ? { credentials } : {}),
+      ...(connector ? { connector } : {}),
+    };
+  }
+
+  /** Attaches the instance's adapter and returns the features it advertises. */
+  private attachAdapter(instance: HostInstance, credentials?: Credentials): BackendFeature[] {
     this.adapterUnsubscribers.get(instance.id)?.();
     this.adapterUnsubscribers.delete(instance.id);
     this.adapters.delete(instance.id);
@@ -367,20 +367,45 @@ export class FleetHub {
         !instance.nodeId
         || (!this.hasCustomAdapterFactory
           && (!this.connectorRequest || !this.connectorSubscribeEvents))
-      ) return;
+      ) return [];
     } else if (!instance.endpoint) {
-      return;
+      return [];
     }
     const adapter = this.adapterFactory(
       instance,
       credentials ?? this.credentials?.[instance.id],
     );
     this.adapters.set(instance.id, adapter);
-    const unsubscribe = adapter.subscribeEvents((event) => {
+    const unsubscribe = adapter.subscribeEvents?.((event) => {
       this.updateSessionFromEvent(instance.id, event);
       for (const listener of this.listeners) listener(event);
     });
-    this.adapterUnsubscribers.set(instance.id, unsubscribe);
+    if (unsubscribe) this.adapterUnsubscribers.set(instance.id, unsubscribe);
+    return [...adapter.features];
+  }
+
+  private sessionControl(instanceId: string): SessionControl {
+    return this.facet(instanceId, "sessions", (adapter) => adapter.sessionControl);
+  }
+
+  private nativeUi(instanceId: string): NativeUiProxy {
+    return this.facet(instanceId, "native-ui-proxy", (adapter) => adapter.nativeUi);
+  }
+
+  private facet<T extends SessionControl | TerminalProxy | NativeUiProxy | PathSuggestions>(
+    instanceId: string,
+    feature: BackendFeature,
+    select: (adapter: HostAdapter) => T | undefined,
+  ): T {
+    const instance = this.getInstance(instanceId);
+    const adapter = this.getAdapter(instanceId);
+    const facet = adapter.features.includes(feature) ? select(adapter) : undefined;
+    if (!facet) {
+      throw new UnsupportedError(
+        `${backendDefinition(instance.backend).label} instance ${instanceId} does not support ${feature}`,
+      );
+    }
+    return facet;
   }
 
   private updateSessionFromEvent(instanceId: string, event: HostSessionEvent): void {
@@ -478,11 +503,6 @@ function requireWorkspace(workspaces: WorkspaceDescriptor[], workspaceId: string
   return workspace;
 }
 
-function defaultAgents(): AgentProfile[] {
-  return CODEMAN_AGENT_MODES.map((mode) => ({
-    id: mode,
-    name: codemanAgentName(mode, mode),
-    mode,
-    ready: true,
-  }));
+function sameFeatures(left: readonly BackendFeature[], right: readonly BackendFeature[]): boolean {
+  return left.length === right.length && left.every((feature, index) => feature === right[index]);
 }

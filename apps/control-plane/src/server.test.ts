@@ -3,13 +3,12 @@ import { createServer } from "node:http";
 import test from "node:test";
 import { FleetHub } from "./hub.ts";
 import { createControllerServer } from "./server.ts";
-import type { HostAdapter } from "../../../packages/codeman-bridge/src/index.ts";
+import type { HostAdapter } from "../../../packages/host-adapters/src/index.ts";
 import type {
   AgentProfile,
   HostInstance,
   HostSession,
   HostSessionEvent,
-  CodemanStatus,
   ControlMessage,
   NodeRegistration,
   WorkspaceDescriptor,
@@ -67,6 +66,15 @@ test("serves the single-origin dashboard assets without exposing provider endpoi
 
     const traversal = await fetch(`${baseUrl}/%2e%2e%2fpackage.json`);
     assert.equal(traversal.status, 404);
+
+    const backends = await fetch(`${baseUrl}/api/backends`);
+    assert.equal(backends.status, 200);
+    const { backends: summaries } = await backends.json() as {
+      backends: Array<{ backend: string; label: string; features: Record<string, string[]> }>;
+    };
+    assert.equal(summaries[0]?.backend, "codeman");
+    assert.equal(summaries[0]?.label, "Codeman");
+    assert.ok(summaries[0]?.features.connector?.includes("sessions"));
   } finally {
     await new Promise<void>((resolve, reject) => {
       app.server.close((error) => (error ? reject(error) : resolve()));
@@ -236,38 +244,42 @@ test("routes the Hub instance, workspace, and session APIs", async () => {
     adapterFactory: (instance: HostInstance) => {
       const createdAdapter: HostAdapter = {
         instance,
-        getStatus: async (): Promise<CodemanStatus> => ({ version: "test" }),
-        listCapabilities: async () => [agent],
+        features: ["sessions", "workspace-suggest"],
+        listAgents: async () => [agent],
         listWorkspaces: async () => [workspace],
-        listWorkspacePathSuggestions: async () => [{ path: workspace.canonicalPath, name: workspace.name }],
-        listSessions: async () => sessions,
-        createSession: async (
-          selectedWorkspace,
-          selectedAgent,
-          title = "session",
-        ) => {
-          const now = new Date().toISOString();
-          const session: HostSession = {
-            id: "session-route",
-            instanceId: instance.id,
-            workspaceId: selectedWorkspace.id,
-            agent: selectedAgent,
-            title,
-            status: "starting",
-            terminalBuffer: "",
-            needsInput: false,
-            previewAvailable: false,
-            browserAvailable: false,
-            createdAt: now,
-            lastEventAt: now,
-          };
-          sessions.push(session);
-          return session;
+        pathSuggestions: {
+          listWorkspacePathSuggestions: async () => [{ path: workspace.canonicalPath, name: workspace.name }],
         },
-        sendInput: async () => undefined,
-        resize: async () => undefined,
-        stopSession: async () => undefined,
         subscribeEvents: (_listener: (event: HostSessionEvent) => void) => () => undefined,
+        sessionControl: {
+          listSessions: async () => sessions,
+          createSession: async (
+            selectedWorkspace,
+            selectedAgent,
+            title = "session",
+          ) => {
+            const now = new Date().toISOString();
+            const session: HostSession = {
+              id: "session-route",
+              instanceId: instance.id,
+              workspaceId: selectedWorkspace.id,
+              agent: selectedAgent,
+              title,
+              status: "starting",
+              terminalBuffer: "",
+              needsInput: false,
+              previewAvailable: false,
+              browserAvailable: false,
+              createdAt: now,
+              lastEventAt: now,
+            };
+            sessions.push(session);
+            return session;
+          },
+          sendInput: async () => undefined,
+          resize: async () => undefined,
+          stopSession: async () => undefined,
+        },
       };
       return createdAdapter;
     },

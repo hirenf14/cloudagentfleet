@@ -201,7 +201,7 @@ Tailscale identity.
 - `@cloudagentfleet/worker` (`apps/node-agent` + CLI) — machine companion and operator CLI
 - `apps/cli` — private CLI sources packaged into the worker release
 - `packages/protocol` — private shared messages, domain types, and workspace policy
-- `packages/codeman-bridge` — private Codeman adapters (HTTP and Worker connector) and wire-format helpers
+- `packages/host-adapters` — private backend adapter contract, registry, shared proxy/relay code, and the Codeman adapters
 
 ## Contributing
 

@@ -14,7 +14,7 @@
   "updateInternalDependencies": "patch",
   "ignore": [
     "@cloudagentfleet/cli",
-    "@cloudagentfleet/codeman-bridge",
+    "@cloudagentfleet/host-adapters",
     "@cloudagentfleet/protocol"
   ]
 }

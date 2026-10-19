@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import test from "node:test";
-import { CodemanConnectorAdapter, CodemanHttpAdapter } from "./index.ts";
+import { CodemanConnectorAdapter, CodemanHttpAdapter } from "./adapters.ts";
 import type {
   HostInstance,
   HostSessionEvent,
   WorkspaceDescriptor,
-} from "../../../packages/protocol/src/index.ts";
+} from "../../../../packages/protocol/src/index.ts";
 
 const workspace: WorkspaceDescriptor = {
   id: "workspace-app",
@@ -78,7 +78,7 @@ test("CodemanHttpAdapter discovers capabilities and controls namespaced sessions
     password: "secret",
     fetchImpl,
   });
-  const agents = await adapter.listCapabilities();
+  const agents = await adapter.listAgents();
   const status = await adapter.getStatus();
   const sessions = await adapter.listSessions();
   const session = await adapter.createSession(workspace, agents[0]!);
@@ -191,7 +191,7 @@ test("CodemanHttpAdapter links Hub workspaces as Codeman cases for native Quick 
     },
     fetchImpl,
   });
-  await adapter.ensureNativeCases();
+  await adapter.prepareNativeUi();
   assert.equal(calls.some((call) => call.url.endsWith("/api/cases") && call.method === "GET"), true);
   const link = calls.find((call) => call.url.endsWith("/api/cases/link"));
   assert.ok(link);
@@ -295,7 +295,7 @@ test("CodemanConnectorAdapter uses allowlisted operations and forwards events", 
   });
   const events: unknown[] = [];
   const unsubscribe = adapter.subscribeEvents((event) => events.push(event));
-  const capabilities = await adapter.listCapabilities();
+  const capabilities = await adapter.listAgents();
   const sessions = await adapter.listSessions();
   await adapter.createSession(
     { ...workspace, id: workspace.canonicalPath, canonicalPath: "/workspaces/new-project" },

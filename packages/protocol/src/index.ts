@@ -121,13 +121,6 @@ export interface HostInstance {
   createdAt: string;
 }
 
-export interface CodemanStatus {
-  version?: string;
-  agents?: AgentProfile[];
-  capabilities?: string[];
-  sessions?: number;
-}
-
 export interface HostInstanceRegistration {
   id: string;
   label: string;

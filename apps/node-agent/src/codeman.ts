@@ -7,7 +7,6 @@ import type {
   AgentProfile,
   CodemanConnectorRequest,
   HostSessionEvent,
-  CodemanStatus,
   ControlMessage,
   NodeMessage,
   WorkspaceDescriptor,
@@ -27,8 +26,9 @@ import {
   codemanTimestamp,
   dedupeAgents,
   normalizeCodemanAgent,
-  readSseStream,
-} from "../../../packages/codeman-bridge/src/wire.ts";
+  type CodemanStatus,
+} from "../../../packages/host-adapters/src/codeman/wire.ts";
+import { readSseStream } from "../../../packages/host-adapters/src/shared/sse.ts";
 
 interface CodemanApiSession {
   id: string;
