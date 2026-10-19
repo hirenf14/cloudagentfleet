@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { resolve } from "node:path";
 import {
+  cptrInstallCommand,
   enrollInstance,
+  parseBackendList,
+  workerEnvironment,
   parseAgentProfiles,
   parseOptions,
   safeEndpoint,
@@ -159,4 +162,56 @@ test("enroll accepts --link-only only for cptr", async () => {
     () => enrollInstance(["tailscale-url", "--link-only"]),
     /--link-only applies only to --backend cptr/,
   );
+});
+
+test("parseBackendList accepts codeman and cptr only", () => {
+  assert.deepEqual(parseBackendList("codeman"), ["codeman"]);
+  assert.deepEqual(parseBackendList(" CPTR , codeman,cptr "), ["cptr", "codeman"]);
+  assert.throws(() => parseBackendList(""), /at least one backend/);
+  assert.throws(() => parseBackendList("codeman,docker"), /Unsupported backend: docker/);
+});
+
+test("cptrInstallCommand prefers isolated installers over user pip", () => {
+  const only = (...ok) => (probe) => ok.some((prefix) => probe.startsWith(prefix));
+  assert.equal(cptrInstallCommand(only("pipx", "uv", "python3")), "pipx install cptr");
+  assert.equal(cptrInstallCommand(only("uv", "python3")), "uv tool install cptr");
+  assert.equal(cptrInstallCommand(only("py ")), "py -m pip install --user cptr");
+  assert.equal(cptrInstallCommand(only()), undefined);
+});
+
+test("workerEnvironment turns off Codeman management on a cptr-only machine", () => {
+  const env = workerEnvironment({
+    nodeId: "laptop",
+    name: "Laptop",
+    controllerUrl: "http://127.0.0.1:8787",
+    execution: "local",
+    workspacePolicy: { mode: "folders", roots: ["/src"] },
+    workspaces: [],
+    backends: ["cptr"],
+    codemanMode: "claude",
+    codemanUrl: "http://127.0.0.1:3000",
+    manageCodeman: false,
+    installCodeman: false,
+    cptrUrl: "http://127.0.0.1:8000",
+    manageCptr: true,
+  });
+  assert.equal(env.CLOUDAGENTFLEET_BACKENDS, "cptr");
+  assert.equal(env.CLOUDAGENTFLEET_MANAGE_CODEMAN, "false");
+  assert.equal(env.CLOUDAGENTFLEET_CODEMAN_INSTALL, "false");
+  assert.equal(env.CLOUDAGENTFLEET_CPTR_URL, "http://127.0.0.1:8000");
+  assert.equal(env.CLOUDAGENTFLEET_MANAGE_CPTR, "true");
+
+  const legacy = workerEnvironment({
+    nodeId: "desk",
+    name: "Desk",
+    controllerUrl: "http://127.0.0.1:8787",
+    execution: "local",
+    workspacePolicy: { mode: "folders", roots: [] },
+    workspaces: [],
+    codemanMode: "claude",
+    codemanUrl: "http://127.0.0.1:3000",
+  });
+  assert.equal(legacy.CLOUDAGENTFLEET_BACKENDS, "codeman");
+  assert.equal(legacy.CLOUDAGENTFLEET_MANAGE_CODEMAN, "true");
+  assert.equal(legacy.CLOUDAGENTFLEET_CPTR_URL, undefined);
 });

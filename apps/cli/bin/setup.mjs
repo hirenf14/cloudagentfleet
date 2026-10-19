@@ -200,6 +200,9 @@ function detectEnvironment() {
     tmux: canRun("tmux") || (wsl && wslCanRun(["-e", "bash", "-lc", "command -v tmux"])),
     docker: canRun("docker"),
     claudeCli: canRun("claude") || (wsl && wslCanRun(["-e", "bash", "-lc", "command -v claude"])),
+    cptr: windows && wsl && !inWsl
+      ? wslCanRun(["-e", "bash", "-lc", "command -v cptr"])
+      : canRun("cptr", ["--help"]),
   };
 }
 
@@ -330,6 +333,62 @@ async function installCursorCli(environment) {
   return result.status === 0;
 }
 
+const cptrLicenseUrl = "https://github.com/open-webui/computer/blob/main/LICENSE";
+const cptrTailnetPort = 8443;
+
+/** Runs a script where the Worker runs: WSL when setup chose it, else the native shell. */
+function runWhereWorkerRuns(environment, script, options = {}) {
+  const runOptions = { timeout: options.timeout ?? 15_000, capture: options.capture ?? true, shell: false };
+  if (environment.execution === "wsl") {
+    return command("wsl.exe", ["-d", wslDistro, "-e", "bash", "-lc", script], runOptions);
+  }
+  if (process.platform === "win32") return command("cmd.exe", ["/d", "/s", "/c", script], runOptions);
+  return command("bash", ["-lc", script], runOptions);
+}
+
+/** Prefers isolated installers (pipx, uv) over a user-level pip install. */
+export function cptrInstallCommand(available) {
+  if (available("pipx --version")) return "pipx install cptr";
+  if (available("uv --version")) return "uv tool install cptr";
+  for (const python of ["python3", "python", "py"]) {
+    if (available(`${python} -m pip --version`)) return `${python} -m pip install --user cptr`;
+  }
+  return undefined;
+}
+
+async function installCptr(environment) {
+  console.log(
+    "\nOpen WebUI Computer (cptr) is third-party software under its own Open Use License:\n"
+    + `  ${cptrLicenseUrl}\n`
+    + "Cloud Agent Fleet does not bundle or modify it. It needs Python 3.10+.",
+  );
+  const installCommand = cptrInstallCommand(
+    (probe) => runWhereWorkerRuns(environment, probe).status === 0,
+  );
+  if (!installCommand) {
+    console.log("No pipx, uv, or pip was found where the Worker runs. Install Python 3.10+ (and pipx), then rerun setup.");
+    return false;
+  }
+  if (!await confirm(`Install Open WebUI Computer with \`${installCommand}\`?`, true)) return false;
+  const result = runWhereWorkerRuns(environment, installCommand, { timeout: 10 * 60 * 1000, capture: false });
+  if (result.status !== 0) return false;
+  if (runWhereWorkerRuns(environment, "cptr --help").status !== 0) {
+    console.log("cptr installed but is not on PATH yet; add the installer's bin directory to PATH, then rerun setup.");
+    return false;
+  }
+  return true;
+}
+
+/** Publishes the loopback cptr on this machine's tailnet name; returns its URL. */
+function exposeCptrOnTailnet(cptrUrl) {
+  const port = new URL(cptrUrl).port || "80";
+  runTailscale(["serve", "--bg", `--https=${cptrTailnetPort}`, `http://127.0.0.1:${port}`]);
+  const status = JSON.parse(runTailscale(["status", "--json"]).stdout || "{}");
+  const dnsName = String(status?.Self?.DNSName ?? "").replace(/\.$/, "");
+  if (!dnsName) throw new Error("Tailscale did not report this machine's DNS name");
+  return `https://${dnsName}:${cptrTailnetPort}`;
+}
+
 function startCodeman(environment) {
   const args = environment.execution === "wsl"
     ? ["-d", wslDistro, "-e", "bash", "-lc", "codeman web -d"]
@@ -351,16 +410,24 @@ function toWslPath(value) {
   return match ? `/mnt/${match[1].toLowerCase()}/${match[2].replaceAll("\\", "/")}` : value;
 }
 
-function workerEnvironment(config) {
+export function workerEnvironment(config) {
   const workspaces = config.execution === "wsl"
     ? config.workspaces.map((workspace) => ({ ...workspace, canonicalPath: toWslPath(workspace.canonicalPath) }))
     : config.workspaces;
   const roots = config.execution === "wsl"
     ? config.workspacePolicy.roots.map(toWslPath)
     : config.workspacePolicy.roots;
-  const manageCodeman = config.manageCodeman !== false;
-  const installCodeman = config.installCodeman !== false;
+  const backends = Array.isArray(config.backends) && config.backends.length > 0 ? config.backends : ["codeman"];
+  const manageCodeman = backends.includes("codeman") && config.manageCodeman !== false;
+  const installCodeman = manageCodeman && config.installCodeman !== false;
   return {
+    CLOUDAGENTFLEET_BACKENDS: backends.join(","),
+    ...(config.cptrUrl
+      ? {
+          CLOUDAGENTFLEET_CPTR_URL: config.cptrUrl,
+          CLOUDAGENTFLEET_MANAGE_CPTR: config.manageCptr === false ? "false" : "true",
+        }
+      : {}),
     CLOUDAGENTFLEET_NODE_ID: config.nodeId,
     CLOUDAGENTFLEET_NODE_NAME: config.name,
     CLOUDAGENTFLEET_CONTROLLER_URL: config.controllerUrl,
@@ -409,28 +476,42 @@ async function setup() {
   printEnvironment(environment);
   if (!environment.node || !environment.git) throw new Error("Node.js and Git are required");
 
-  if (!environment.codeman) {
+  const selectedBackends = parseBackendList(
+    await ask("\nBackends on this machine (codeman, cptr, or codeman,cptr)", "codeman"),
+  );
+  const useCodeman = selectedBackends.includes("codeman");
+  const useCptr = selectedBackends.includes("cptr");
+
+  if (useCodeman && !environment.codeman) {
     const installed = await installCodeman(environment);
     if (installed) environment.codeman = true;
   }
-  if (!environment.codeman) {
+  if (useCodeman && !environment.codeman) {
     console.log(
       "Codeman is not on PATH yet. The Worker will install/start it on run "
       + "(set manageCodeman/installCodeman false in worker.json to opt out).",
     );
   }
-  if (!environment.cursorCli) {
+  if (useCodeman && !environment.cursorCli) {
     const installed = await installCursorCli(environment);
     if (installed) environment.cursorCli = true;
+  }
+  if (useCptr && !environment.cptr) {
+    environment.cptr = await installCptr(environment);
   }
 
   const controllerUrl = await ask("\nController URL", "http://127.0.0.1:8787");
   const nodeId = await ask("Worker ID", hostname().toLowerCase().replaceAll(/[^a-z0-9-]/g, "-"));
   const name = await ask("Worker display name", hostname());
   const workspacePolicy = await selectFolders();
-  const codemanMode = await ask(`Codeman mode (${modes.join(", ")})`, "claude");
+  const codemanMode = useCodeman
+    ? await ask(`Codeman mode (${modes.join(", ")})`, "claude")
+    : "claude";
   if (!modes.includes(codemanMode)) throw new Error(`Unsupported Codeman mode: ${codemanMode}`);
-  const codemanUrl = await ask("Codeman URL", "http://127.0.0.1:3000");
+  const codemanUrl = useCodeman ? await ask("Codeman URL", "http://127.0.0.1:3000") : "http://127.0.0.1:3000";
+  const cptrUrl = useCptr
+    ? safeEndpoint(await ask("Open WebUI Computer local URL", "http://127.0.0.1:8000"), "Open WebUI Computer URL")
+    : undefined;
   const authToken = process.env.CLOUDAGENTFLEET_AUTH_TOKEN;
   const config = {
     nodeId,
@@ -445,10 +526,12 @@ async function setup() {
       environment.cursorCli,
       environment.claudeCli,
     ),
+    backends: selectedBackends,
     codemanMode,
     codemanUrl,
-    manageCodeman: true,
-    installCodeman: true,
+    manageCodeman: useCodeman,
+    installCodeman: useCodeman,
+    ...(cptrUrl ? { cptrUrl, manageCptr: true } : {}),
   };
 
   mkdirSync(dirname(configPath), { recursive: true });
@@ -456,13 +539,36 @@ async function setup() {
   console.log(`\nSaved Worker configuration: ${configPath}`);
   console.log(`Discovered ${config.workspaces.length} workspace(s).`);
 
-  if (environment.codeman && await confirm("Start Codeman now?", true)) {
+  if (useCptr) {
+    let tailnetUrl;
+    if (environment.cptr && await confirm(
+      `Publish Open WebUI Computer to your tailnet with Tailscale Serve (https port ${cptrTailnetPort})?`,
+      false,
+    )) {
+      try {
+        tailnetUrl = exposeCptrOnTailnet(cptrUrl);
+        console.log(`Open WebUI Computer is served privately at ${tailnetUrl}`);
+      } catch (error) {
+        console.log(`Tailscale Serve did not start: ${error instanceof Error ? error.message : error}`);
+      }
+    }
+    console.log([
+      "",
+      "Enroll Open WebUI Computer with the Hub once the Worker has started it:",
+      `  cloudagentfleet enroll tailscale-url --backend cptr --controller-url ${controllerUrl} \\`,
+      `    --instance-id ${nodeId}-cptr --name "${name} (Open WebUI Computer)" \\`,
+      `    --url ${tailnetUrl ?? "https://<this-machine>.<tailnet>.ts.net:<port>"}`,
+      "The Worker prints a one-time setup token on cptr's first start; open the host from the dashboard and visit /?token=<token>.",
+    ].join("\n"));
+  }
+
+  if (useCodeman && environment.codeman && await confirm("Start Codeman now?", true)) {
     if (!startCodeman(environment)) {
       console.log("Codeman did not start; Worker will start it on run when manageCodeman is on.");
     }
   }
   if (process.argv.includes("--run")) {
-    if (!environment.codeman) {
+    if (useCodeman && !environment.codeman) {
       console.log("Worker will install/start Codeman under the hood …");
     }
     runWorker(config);
@@ -487,6 +593,14 @@ function writeSafeJson(path, value) {
     }
   }
   chmodSync(path, 0o600);
+}
+
+export function parseBackendList(value) {
+  const selected = [...new Set(String(value).split(",").map((item) => item.trim().toLowerCase()).filter(Boolean))];
+  if (selected.length === 0) throw new Error("Choose at least one backend");
+  const unknown = selected.filter((item) => !backends.includes(item));
+  if (unknown.length > 0) throw new Error(`Unsupported backend: ${unknown.join(", ")} (use ${backends.join(", ")})`);
+  return selected;
 }
 
 export function parseOptions(args) {

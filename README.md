@@ -121,11 +121,15 @@ Explicit paths must fall inside the instance's configured folder roots; use
 `--workspace-mode system` during enrollment only when whole-system path
 selection is intentional.
 
-## Link an Open WebUI Computer host
+## Add an Open WebUI Computer host
 
 [Open WebUI Computer](https://openwebui.com/computer) (`cptr`) can sit next to
-Codeman as an optional per-machine backend. Install and run it yourself on that
-machine, reachable over the tailnet (for example behind Tailscale Serve), then:
+Codeman as an optional per-machine backend. In `cloudagentfleet setup`, answer
+`cptr` or `codeman,cptr` at the backends prompt. Setup shows cptr's license,
+offers to install it with pipx, uv, or pip (with your confirmation), and can
+publish it privately on your tailnet with Tailscale Serve. The Worker then
+keeps it running on loopback and prints the one-time setup token on its first
+start. You can also install and run cptr yourself. Either way, enroll it:
 
 ```bash
 cloudagentfleet enroll tailscale-url \

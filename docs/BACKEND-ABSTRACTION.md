@@ -1,8 +1,8 @@
 # Host backend abstraction and cptr support
 
-Status (2026-10-19): **Phases A, B, Spike S, C, and D are done.** Codeman and
-cptr (proxied by default, link mode with `--link-only`) are registered. Next
-is Phase E (setup and supervision of cptr).
+Status (2026-10-19): **All phases (A–E) are done.** Codeman and cptr (proxied
+by default, link mode with `--link-only`) are registered, and setup and the
+Worker can install and supervise cptr.
 
 The goal is to enroll a second per-machine backend, Open WebUI Computer
 (`cptr`), next to Codeman without forking the Hub, Worker, or dashboard per
@@ -219,7 +219,24 @@ Original sketch:
   injection (spike item 4).
 - A mock-cptr case in `multihost-harness.ts`.
 
-## Phase E — cptr Level 3: setup and status (only if the spike passes items 1–2)
+## Phase E — cptr Level 3: setup and supervision (done)
+
+- `cloudagentfleet setup` asks for backends (`codeman`, `cptr`, or both),
+  skips the Codeman prompts on a cptr-only machine, shows cptr's license, and
+  installs cptr with pipx, uv, or pip only after confirmation, in the same
+  place the Worker runs (WSL when setup chose it). It can publish cptr on the
+  tailnet (`tailscale serve --https=8443`) and prints the enroll command.
+- The Worker reads `CLOUDAGENTFLEET_BACKENDS` and runs a `BackendSupervisor`
+  for each one. The cptr supervisor never installs anything, starts cptr only
+  on loopback HTTP, logs to `~/.cloudagentfleet/cptr.log` (0600), and prints
+  the per-start setup token while cptr still needs first-run setup.
+- No Docker image is used: cptr's published image name was not verified. Run
+  cptr in Docker yourself (mounting only approved folders) and set
+  `CLOUDAGENTFLEET_MANAGE_CPTR=false` if you want that isolation.
+- cptr sessions are still not listed in the fleet view: cptr has no
+  documented session API (Spike S).
+
+Original sketch:
 
 - `setup` offers "Codeman / cptr / both". The cptr option installs via pip or
   Docker (Docker mounts only the approved roots) and adds a user service.
