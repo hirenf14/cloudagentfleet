@@ -65,6 +65,9 @@
     return match ? decodeURIComponent(match[1]) : "";
   }
 
+  /** Hub-owned routes; everything else on this origin may belong to a selected host. */
+  const FLEET = "/_fleet";
+
   function api(path, options) {
     const request = { ...(options || {}) };
     const method = String(request.method || "GET").toUpperCase();
@@ -72,7 +75,7 @@
       request.body = JSON.stringify(request.body);
     }
     const csrf = csrfToken();
-    return fetch(path, {
+    return fetch(`${FLEET}${path}`, {
       ...request,
       credentials: "same-origin",
       headers: {
@@ -233,7 +236,7 @@
     }, [refresh]);
 
     useEffect(() => {
-      const events = new EventSource("/api/events");
+      const events = new EventSource(`${FLEET}/api/events`);
       let refreshTimer = null;
       const reload = () => {
         if (refreshTimer !== null) return;
@@ -481,8 +484,11 @@
                   className: "button button--quiet",
                   onClick: () => {
                     if (hasFeature(selectedInstance, "native-ui-proxy")) {
-                      window.location.assign(
-                        `/api/fleet/select/${encodeURIComponent(selectedInstance.id)}`,
+                      // The host takes over this origin outside /_fleet, so keep the dashboard tab.
+                      window.open(
+                        `${FLEET}/api/fleet/select/${encodeURIComponent(selectedInstance.id)}`,
+                        "_blank",
+                        "noopener",
                       );
                     } else if (hasFeature(selectedInstance, "native-ui-link") && selectedInstance.launchUrl) {
                       window.open(selectedInstance.launchUrl, "_blank", "noopener,noreferrer");
@@ -491,7 +497,7 @@
                   disabled: !hasFeature(selectedInstance, "native-ui-proxy")
                     && !(hasFeature(selectedInstance, "native-ui-link") && selectedInstance.launchUrl),
                   title: hasFeature(selectedInstance, "native-ui-proxy")
-                    ? `Open ${backendLabel(backends, selectedInstance)}'s own UI for this host. Use Fleet dashboard in the top bar to return.`
+                    ? `Open ${backendLabel(backends, selectedInstance)}'s own UI for this host in a new tab, on this Hub origin.`
                     : hasFeature(selectedInstance, "native-ui-link")
                       ? `Open ${backendLabel(backends, selectedInstance)} in a new tab (signs in separately)`
                       : "This host's UI is not available through the Hub",

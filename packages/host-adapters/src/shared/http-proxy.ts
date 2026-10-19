@@ -1,9 +1,13 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { request as httpRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
+import type { CookieBridge } from "./cookies.ts";
 
-/** Injected into every proxied HTML page so operators can switch hosts. */
-export const FLEET_SWITCHER_SCRIPT = '<script src="/fleet-host-switcher.js"></script>';
+/** Hub-owned path prefix; nothing under it is ever proxied to a backend. */
+export const FLEET_PATH_PREFIX = "/_fleet";
+
+/** Injected into proxied HTML pages (when enabled) so operators can switch hosts. */
+export const FLEET_SWITCHER_SCRIPT = `<script src="${FLEET_PATH_PREFIX}/fleet-host-switcher.js"></script>`;
 
 export interface ProxyHttpOptions {
   endpoint: URL;
@@ -11,15 +15,21 @@ export interface ProxyHttpOptions {
   authorization?: string;
   /** Upstream product name used in the 502 body. */
   label: string;
+  /** Inject the fleet switcher into HTML. Off for backends whose UI must not be altered. */
+  injectSwitcher?: boolean;
+  /** Forward the browser's Referer (same Hub origin); some backends route on it. */
+  forwardReferer?: boolean;
+  /** Allowlisted backend session cookies; without it no cookies cross the proxy. */
+  cookies?: CookieBridge;
 }
 
 /**
  * Proxies one browser request to a backend's native UI on the Hub origin.
  *
- * Guarantees for every backend: the browser's Hub cookies, authorization,
- * origin, and referer never reach the upstream; upstream cookies never reach
- * the browser; absolute redirects are rewritten to Hub-relative paths; and
- * HTML pages get the fleet switcher.
+ * Guarantees for every backend: the Hub's cookies, the browser's
+ * authorization, and Origin never reach the upstream; upstream cookies reach
+ * the browser only through an explicit CookieBridge; absolute redirects are
+ * rewritten to Hub-relative paths.
  */
 export async function proxyHttpRequest(
   request: IncomingMessage,
@@ -38,7 +48,7 @@ export async function proxyHttpRequest(
       || name === "connection"
       || name === "upgrade"
       || name === "origin"
-      || name === "referer"
+      || (name === "referer" && !options.forwardReferer)
       || name.startsWith("x-forwarded-")
     ) continue;
     if (typeof value === "string") headers[name] = value;
@@ -46,6 +56,8 @@ export async function proxyHttpRequest(
   }
   headers["accept-encoding"] = "identity";
   if (options.authorization) headers.authorization = options.authorization;
+  const upstreamCookie = options.cookies?.toUpstream(request.headers.cookie);
+  if (upstreamCookie) headers.cookie = upstreamCookie;
   const upstreamRequest = transport({
     hostname: endpoint.hostname,
     port: endpoint.port || undefined,
@@ -54,27 +66,32 @@ export async function proxyHttpRequest(
     headers,
     rejectUnauthorized: endpoint.protocol !== "https:" || endpoint.hostname === "localhost",
   }, (upstreamResponse) => {
-    const isHtml = String(upstreamResponse.headers["content-type"] ?? "").includes("text/html");
+    const inject = options.injectSwitcher === true
+      && String(upstreamResponse.headers["content-type"] ?? "").includes("text/html");
     const responseHeaders: Record<string, string | string[]> = {};
     for (const [name, value] of Object.entries(upstreamResponse.headers)) {
       if (
         value === undefined
         || name === "set-cookie"
         || name === "connection"
-        || (isHtml && (name === "content-length" || name === "content-encoding"))
+        || (inject && (name === "content-length" || name === "content-encoding"))
       ) continue;
       responseHeaders[name] = value;
     }
+    const setCookies = options.cookies?.fromUpstream(upstreamResponse.headers["set-cookie"] ?? []);
+    if (setCookies && setCookies.length > 0) responseHeaders["set-cookie"] = setCookies;
     const location = responseHeaders.location;
     if (typeof location === "string") {
       try {
         const redirected = new URL(location, endpoint);
-        responseHeaders.location = `${redirected.pathname}${redirected.search}${redirected.hash}`;
+        if (redirected.origin === endpoint.origin) {
+          responseHeaders.location = `${redirected.pathname}${redirected.search}${redirected.hash}`;
+        }
       } catch {
         // Preserve a relative location when the upstream sends malformed data.
       }
     }
-    if (isHtml) {
+    if (inject) {
       const chunks: Buffer[] = [];
       upstreamResponse.on("data", (chunk: Buffer) => chunks.push(Buffer.from(chunk)));
       upstreamResponse.on("end", () => {

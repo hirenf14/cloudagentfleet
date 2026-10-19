@@ -5,32 +5,39 @@ maintaining a second terminal implementation.
 
 ## Browser flow
 
-1. Open the Hub through Tailscale Serve.
+1. Open the Hub through Tailscale Serve; the dashboard lives at `/_fleet/`.
 2. Authenticate with the Hub UI password.
-3. Select a registered Tailscale Codeman host.
-4. Cloud Agent Fleet stores the selected instance in a short-lived, HttpOnly
-   cookie.
-5. The Hub proxies that host's Codeman HTML, REST, SSE, and WebSocket traffic.
-6. The upstream Codeman page loads its own xterm.js, local-echo overlay,
-   terminal protocol, and feature panels.
+3. Choose **Open Codeman UI** on a Tailscale Codeman host. A new tab opens
+   `/_fleet/api/fleet/select/:id`, which stores the selected instance in an
+   HttpOnly cookie.
+4. Every path outside `/_fleet/` on the Hub origin now belongs to that host:
+   the Hub proxies its HTML, REST, SSE, and WebSocket traffic.
+5. The upstream Codeman page loads its own xterm.js, local-echo overlay,
+   terminal protocol, and feature panels. The Hub injects a fleet bar
+   (`/_fleet/fleet-host-switcher.js`) to switch hosts or return to the
+   dashboard.
 
-The native Codeman terminal WebSocket is exposed through the Hub as:
-
-```text
-/ws/sessions/:sessionId/terminal
-```
-
-The Hub resolves the selected host from the server-side cookie and forwards
-the WebSocket handshake and frames to that host's native Codeman endpoint. A
-host-explicit route is also available for integrations:
+Codeman's native WebSockets, such as `/ws/sessions/:sessionId/terminal`, are
+forwarded generically to the selected host. The dashboard's own terminal route
+is host-explicit and Hub-owned:
 
 ```text
-/ws/instances/:instanceId/sessions/:sessionId/terminal
+/_fleet/ws/instances/:instanceId/sessions/:sessionId/terminal
 ```
 
-Terminal frames are not parsed, batched, normalized, or rewritten by Hosted
-Agents. This preserves Codeman's local echo, input acknowledgements, resize
-messages, synchronized TUI updates, and reconnect behavior.
+Terminal frames are not parsed, batched, normalized, or rewritten by Cloud
+Agent Fleet. This preserves Codeman's local echo, input acknowledgements,
+resize messages, synchronized TUI updates, and reconnect behavior.
+
+## Routing contract
+
+- `/_fleet/...` is always the Hub.
+- With a selected-host cookie, every other path is the host's native UI.
+  Backends may use any path, including `/api/auth`.
+- Without that cookie (Workers, the CLI), unprefixed `/api/...`, `/ws/...`,
+  and `/healthz` remain the Hub's routes, so installed Workers keep working.
+- Every mutating request, Hub or proxied, must come from the Hub origin, and
+  every proxied request requires a Hub session.
 
 ## Host connectivity
 

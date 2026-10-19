@@ -113,8 +113,8 @@ cloudagentfleet enroll connector \
 ```
 
 Each session is shown under its instance and includes its agent, workspace, and
-short stable session ID. Direct hosts open Codeman's own UI through
-**Open Codeman UI**; terminal behavior remains upstream Codeman.
+short stable session ID. Direct hosts open Codeman's own UI in a new tab
+through **Open Codeman UI**; terminal behavior remains upstream Codeman.
 
 The unified session dialog accepts a discovered workspace or an explicit path.
 Explicit paths must fall inside the instance's configured folder roots; use
@@ -136,10 +136,16 @@ cloudagentfleet enroll tailscale-url \
   --url https://laptop.tailnet.ts.net
 ```
 
-The Hub health-checks `/api/health`, and the dashboard opens cptr in a new
-tab, where you sign in with cptr's own account. Hub folder policy does not
-apply inside cptr. Cloud Agent Fleet does not bundle cptr; its use is governed
-by the Open WebUI Computer license.
+The Hub health-checks `/api/health`. **Open Open WebUI Computer UI** opens it in
+a new tab through the Hub origin, so it is reachable wherever the Hub is; sign
+in once with cptr's own account (the Hub keeps that session separate from its
+own cookies). Add `--link-only` to have the dashboard open cptr's URL directly
+instead. Hub folder policy does not apply inside cptr. Cloud Agent Fleet does
+not bundle or modify cptr; its use is governed by the Open WebUI Computer
+license.
+
+The Hub dashboard always lives at `/_fleet/`. While a host's UI is open, every
+other path on the Hub origin belongs to that host.
 
 ## Worker service
 

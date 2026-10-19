@@ -3,6 +3,7 @@ import type { Duplex } from "node:stream";
 import { createHash, randomBytes } from "node:crypto";
 import { request as httpRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
+import type { CookieBridge } from "./cookies.ts";
 
 export interface ProxyWebSocketOptions {
   endpoint: URL;
@@ -11,6 +12,8 @@ export interface ProxyWebSocketOptions {
   authorization?: string;
   /** Upstream product name used in rejection messages. */
   label: string;
+  /** Allowlisted backend session cookies to forward on the upgrade. */
+  cookies?: CookieBridge;
 }
 
 /**
@@ -37,6 +40,10 @@ export async function proxyWebSocket(
     "sec-websocket-key": randomBytes(16).toString("base64"),
   };
   if (options.authorization) headers.authorization = options.authorization;
+  const protocol = request.headers["sec-websocket-protocol"];
+  if (typeof protocol === "string") headers["sec-websocket-protocol"] = protocol;
+  const upstreamCookie = options.cookies?.toUpstream(request.headers.cookie);
+  if (upstreamCookie) headers.cookie = upstreamCookie;
   const upstreamRequest = transport({
     hostname: endpoint.hostname,
     port: endpoint.port || undefined,
@@ -54,10 +61,12 @@ export async function proxyWebSocket(
     const accept = createHash("sha1")
       .update(`${browserKey}258EAFA5-E914-47DA-95CA-C5AB0DC85B11`)
       .digest("base64");
+    const acceptedProtocol = response.headers["sec-websocket-protocol"];
     clientSocket.write(
       "HTTP/1.1 101 Switching Protocols\r\n"
       + "Upgrade: websocket\r\n"
       + "Connection: Upgrade\r\n"
+      + (typeof acceptedProtocol === "string" ? `Sec-WebSocket-Protocol: ${acceptedProtocol}\r\n` : "")
       + `Sec-WebSocket-Accept: ${accept}\r\n\r\n`,
     );
     if (head.length > 0) upstreamSocket.write(head);

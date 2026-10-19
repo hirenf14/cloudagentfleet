@@ -79,12 +79,18 @@ logins, and keep Worker bearer credentials separate from the UI password.
 Tailscale ACLs remain the network boundary; the Hub password is the application
 boundary.
 
-### Link-mode hosts outside Hub policy
+### Proxied and linked hosts outside Hub policy
 
-Open WebUI Computer (`cptr`) instances are enrolled in link mode: the Hub
-health-checks them and returns their tailnet URL to authenticated dashboard
-users as `launchUrl` (Codeman endpoints are never returned). The browser
-then talks to cptr directly, using cptr's own login.
+Open WebUI Computer (`cptr`) instances are proxied through the Hub origin by
+default. The Hub session gates every proxied request, every mutation must come
+from the Hub origin, and only cptr's own session cookie crosses the proxy,
+renamed per instance (`cf_<instance>_cptr_session`). Hub cookies and
+authorization never reach cptr, and upstream cookies outside that allowlist
+never reach the browser. Hub logout clears the bridged cookies.
+
+Instances enrolled with `--link-only` are health-checked only; their tailnet
+URL is returned to authenticated dashboard users as `launchUrl` (Codeman
+endpoints are never returned), and the browser talks to cptr directly.
 
 - The URL is a tailnet address the operator already owns; Tailscale ACLs still
   decide who can reach it.

@@ -16,7 +16,11 @@ const FACETS: Partial<Record<BackendFeature, keyof HostAdapter>> = {
   "workspace-suggest": "pathSuggestions",
 };
 
-function fixture(backend: HostInstance["backend"], connectionMode: ConnectionMode): HostInstance {
+function fixture(
+  backend: HostInstance["backend"],
+  connectionMode: ConnectionMode,
+  capabilities: string[] = [],
+): HostInstance {
   return {
     id: `${backend}-${connectionMode}`,
     label: `${backend} ${connectionMode}`,
@@ -26,7 +30,7 @@ function fixture(backend: HostInstance["backend"], connectionMode: ConnectionMod
     endpoint: connectionMode === "connector" ? null : "https://host.tailnet.ts.net",
     status: "offline",
     features: [],
-    capabilities: [],
+    capabilities,
     agents: [],
     workspaces: [],
     lastSeenAt: null,
@@ -39,19 +43,33 @@ const connector = {
   subscribeEvents: () => () => undefined,
 };
 
+/** Capability variants that select a different adapter shape. */
+const VARIANTS: string[][] = [[], ["link"]];
+
 for (const definition of listBackends()) {
   for (const connectionMode of definition.connectionModes) {
-    test(`${definition.backend} (${connectionMode}) advertises exactly the facets it implements`, () => {
-      const adapter = createAdapter(fixture(definition.backend, connectionMode), { connector });
-      assert.deepEqual([...adapter.features], [...definition.features(connectionMode)]);
-      for (const [feature, facet] of Object.entries(FACETS)) {
-        assert.equal(
-          adapter[facet] !== undefined,
-          adapter.features.includes(feature as BackendFeature),
-          `feature ${feature} and facet ${facet} must agree`,
-        );
-      }
-    });
+    for (const capabilities of VARIANTS) {
+      test(`${definition.backend} (${connectionMode}, [${capabilities}]) advertises exactly the facets it implements`, () => {
+        const adapter = createAdapter(fixture(definition.backend, connectionMode, capabilities), { connector });
+        assert.ok(adapter.features.length > 0, "an adapter must advertise at least one feature");
+        for (const feature of adapter.features) {
+          assert.ok(
+            definition.features(connectionMode).includes(feature),
+            `${feature} is not declared by the backend definition`,
+          );
+        }
+        for (const [feature, facet] of Object.entries(FACETS)) {
+          assert.equal(
+            adapter[facet] !== undefined,
+            adapter.features.includes(feature as BackendFeature),
+            `feature ${feature} and facet ${facet} must agree`,
+          );
+        }
+        if (adapter.nativeUi) {
+          assert.ok(Array.isArray(adapter.nativeUi.browserCookieNames));
+        }
+      });
+    }
   }
 
   test(`${definition.backend} provides launchable default agents`, () => {

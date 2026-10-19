@@ -31,8 +31,8 @@
 ## Phase 2a: Host backend abstraction
 
 - [x] Backend-neutral instances, adapters, and feature gating
-- [~] Open WebUI Computer (`cptr`) as an optional backend (link mode shipped;
-      proxy and setup pending)
+- [~] Open WebUI Computer (`cptr`) as an optional backend (proxy and link modes shipped;
+      setup and supervision pending)
 
 See `docs/BACKEND-ABSTRACTION.md`.
 

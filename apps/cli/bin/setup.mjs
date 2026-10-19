@@ -492,7 +492,7 @@ function writeSafeJson(path, value) {
 export function parseOptions(args) {
   const values = new Map();
   const positionals = [];
-  const booleans = new Set(["help", "no-health"]);
+  const booleans = new Set(["help", "no-health", "link-only"]);
   for (let index = 0; index < args.length; index += 1) {
     const argument = args[index];
     if (!argument.startsWith("--")) {
@@ -703,6 +703,8 @@ export async function enrollInstance(argv = process.argv.slice(3)) {
   if (backend === "cptr" && selectedMode !== "tailscale-url") {
     throw new Error("Open WebUI Computer (cptr) supports only tailscale-url mode");
   }
+  const linkOnly = parsed.values.has("link-only");
+  if (linkOnly && backend !== "cptr") throw new Error("--link-only applies only to --backend cptr");
 
   const controllerUrl = safeEndpoint(
     optionValue(parsed, "controller-url", "controller")
@@ -763,7 +765,7 @@ export async function enrollInstance(argv = process.argv.slice(3)) {
             true,
           ),
         }),
-    capabilities: parseCapabilities(parsed, backend),
+    capabilities: [...new Set([...parseCapabilities(parsed, backend), ...(linkOnly ? ["link"] : [])])],
     ...(agents ? { agents } : {}),
     ...(selectedMode === "connector" || workspaceOptions.length > 0
       ? {
@@ -834,6 +836,7 @@ function printEnrollmentHelp() {
     "",
     "Options:",
     "  --backend <codeman|cptr>                   default codeman; cptr = Open WebUI Computer (tailscale-url only)",
+    "  --link-only                                cptr: open it directly instead of through the Hub",
     "  --mode <connector|tailscale-url>",
     "  --instance-id <id> --name <name>",
     "  --node-id <enrolled-worker-id>             connector mode",

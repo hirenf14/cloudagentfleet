@@ -303,9 +303,23 @@ export class CodemanHttpAdapter
     }
   }
 
+  /** Codeman keeps no browser session; Basic auth is injected server-side. */
+  readonly browserCookieNames: readonly string[] = [];
+
   async proxyHttp(request: IncomingMessage, response: ServerResponse): Promise<void> {
     await proxyHttpRequest(request, response, {
       endpoint: new URL(this.instance.endpoint!),
+      authorization: this.basicAuthorization,
+      label: "Codeman",
+      injectSwitcher: true,
+    });
+  }
+
+  async proxyUpgrade(request: IncomingMessage, clientSocket: Duplex, head: Buffer): Promise<void> {
+    const requestUrl = new URL(request.url ?? "/", "http://controller.local");
+    await proxyWebSocket(request, clientSocket, head, {
+      endpoint: new URL(this.instance.endpoint!),
+      path: `${requestUrl.pathname}${requestUrl.search}`,
       authorization: this.basicAuthorization,
       label: "Codeman",
     });

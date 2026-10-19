@@ -61,6 +61,10 @@ export interface TerminalProxy {
 
 export interface NativeUiProxy {
   proxyHttp(request: IncomingMessage, response: ServerResponse): Promise<void>;
+  /** Any WebSocket the native UI opens on the Hub origin. */
+  proxyUpgrade(request: IncomingMessage, clientSocket: Duplex, head: Buffer): Promise<void>;
+  /** Backend session cookies held in the browser; the Hub clears them on logout. */
+  readonly browserCookieNames: readonly string[];
   /** Best-effort setup before the native UI is opened through the Hub. */
   prepareNativeUi?(): Promise<void>;
 }
@@ -85,7 +89,7 @@ export interface BackendDefinition {
   /** Human-readable product name for the CLI and dashboard. */
   readonly label: string;
   readonly connectionModes: readonly ConnectionMode[];
-  /** Features an adapter of this backend can advertise, per connection mode. */
+  /** Every feature an adapter of this backend may advertise, per connection mode. */
   features(connectionMode: ConnectionMode): readonly BackendFeature[];
   /** Launch profiles assumed for a registration that lists none. */
   defaultAgents(): AgentProfile[];

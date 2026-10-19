@@ -153,3 +153,10 @@ test("enroll keeps cptr to tailscale-url mode", async () => {
     /supports only tailscale-url mode/,
   );
 });
+
+test("enroll accepts --link-only only for cptr", async () => {
+  await assert.rejects(
+    () => enrollInstance(["tailscale-url", "--link-only"]),
+    /--link-only applies only to --backend cptr/,
+  );
+});

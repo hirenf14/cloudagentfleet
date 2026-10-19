@@ -305,6 +305,22 @@ export class FleetHub {
     await this.nativeUi(instanceId).proxyHttp(request, response);
   }
 
+  /** Any WebSocket the selected host's native UI opens on the Hub origin. */
+  async proxyNativeUpgrade(
+    instanceId: string,
+    request: IncomingMessage,
+    clientSocket: Duplex,
+    head: Buffer,
+  ): Promise<void> {
+    await this.nativeUi(instanceId).proxyUpgrade(request, clientSocket, head);
+  }
+
+  /** Every backend session cookie the browser may hold, for Hub logout. */
+  browserCookieNames(): string[] {
+    return [...this.adapters.values()]
+      .flatMap((adapter) => adapter.nativeUi?.browserCookieNames ?? []);
+  }
+
   /** Backend-specific setup before the native UI opens (Codeman seeds cases). */
   async prepareNativeUi(instanceId: string): Promise<void> {
     await this.nativeUi(instanceId).prepareNativeUi?.();

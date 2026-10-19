@@ -33,10 +33,10 @@
     "color:#d7dee7",
   ].join(";");
   select.addEventListener("change", () => {
-    if (select.value) window.location.assign(`/api/fleet/select/${encodeURIComponent(select.value)}`);
+    if (select.value) window.location.assign(`/_fleet/api/fleet/select/${encodeURIComponent(select.value)}`);
   });
   const back = document.createElement("a");
-  back.href = "/api/fleet/clear";
+  back.href = "/_fleet/api/fleet/clear";
   back.textContent = "Fleet dashboard";
   back.style.cssText = [
     "margin-left:auto",
@@ -48,13 +48,13 @@
   document.body.prepend(bar);
   document.documentElement.style.paddingTop = "36px";
 
-  fetch("/api/instances", { headers: { accept: "application/json" } })
+  fetch("/_fleet/api/instances", { headers: { accept: "application/json" } })
     .then((response) => response.ok ? response.json() : Promise.reject(new Error("Unable to load hosts")))
     .then((payload) => {
       // Only hosts whose UI the Hub can proxy are switchable from inside a native UI.
       const instances = (Array.isArray(payload.instances) ? payload.instances : [])
         .filter((instance) => Array.isArray(instance.features) && instance.features.includes("native-ui-proxy"));
-      return fetch("/api/fleet/current")
+      return fetch("/_fleet/api/fleet/current")
         .then((response) => response.json())
         .then((current) => ({ instances, current }));
     })

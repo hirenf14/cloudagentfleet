@@ -1,8 +1,8 @@
 # Host backend abstraction and cptr support
 
-Status (2026-10-19): **Phases A, B, Spike S, and C are done.** Codeman and
-cptr (link mode) are registered. Next is Phase D (proxied cptr), which first
-needs the Hub's own routes moved under one reserved prefix.
+Status (2026-10-19): **Phases A, B, Spike S, C, and D are done.** Codeman and
+cptr (proxied by default, link mode with `--link-only`) are registered. Next
+is Phase E (setup and supervision of cptr).
 
 The goal is to enroll a second per-machine backend, Open WebUI Computer
 (`cptr`), next to Codeman without forking the Hub, Worker, or dashboard per
@@ -82,7 +82,7 @@ src/
   `adapterFactory` test seam), stores advertised features, and reaches
   backend functions only through facets. A missing feature raises
   `UnsupportedError` (HTTP 409).
-- `/api/fleet/select/:id` gates on `native-ui-proxy`; session sync gates on
+- `/_fleet/api/fleet/select/:id` gates on `native-ui-proxy`; session sync gates on
   `sessions`; the terminal upgrade gates on `terminal`.
 - `GET /api/backends` returns `[{ backend, label, connectionModes, features }]`.
 - Connector enrollment checks the node capability named after the backend.
@@ -186,7 +186,33 @@ backend does not support.
 Done when a mixed fleet (one Codeman, one cptr) lists both, health-checks
 both, and opens each correctly.
 
-## Phase D — cptr Level 2: proxied (only if the spike passes item 3)
+## Phase D — cptr Level 2: proxied (done)
+
+Shipped differently from the sketch below, based on the spike:
+
+- **Routing contract:** all Hub-owned routes moved under `/_fleet/`
+  (dashboard, its API, its terminal WebSocket, the switcher script). With a
+  selected-host cookie, every other path and WebSocket goes to that host, so
+  cptr's `/api/auth` no longer collides. Without the cookie, unprefixed
+  `/api/...`, `/ws/...`, and `/healthz` stay Hub routes, so installed Workers
+  and CLIs are unaffected. `/` redirects to `/_fleet/`.
+- **No stored cptr credentials:** instead of the Hub logging in, a
+  `CookieBridge` passes only `cptr_session` across the proxy, renamed per
+  instance. Each browser signs in to cptr once; cptr logout works; two cptr
+  hosts never share a session. Hub logout clears the bridged cookies.
+- `nativeUi` gained `proxyUpgrade` (any WebSocket, with subprotocol and
+  bridged-cookie forwarding) and `browserCookieNames`. The shared HTTP proxy
+  gained per-backend `injectSwitcher` (on for Codeman, off for cptr because
+  its license forbids altering its UI), `forwardReferer` (cptr routes
+  previews by Referer), and `cookies`. Off-origin redirects are no longer
+  rewritten into Hub paths.
+- **CSRF is stricter:** every mutating request, Hub or proxied, now needs a
+  same-origin Origin/Referer or the CSRF token. Previously, proxied `/api/*`
+  mutations were exempt.
+- The dashboard opens proxied UIs in a new tab, so it stays open at
+  `/_fleet/`.
+
+Original sketch:
 
 - A cptr proxy adapter with `["native-ui-proxy"]`, built on
   `shared/http-proxy.ts` and `shared/ws-relay.ts`, with optional credential

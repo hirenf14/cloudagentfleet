@@ -611,63 +611,176 @@ async function closeHttp(server: ReturnType<typeof createServer>): Promise<void>
   });
 }
 
-test("links to cptr hosts directly and keeps Codeman endpoints server-side", async () => {
+test("routes /_fleet to the Hub and everything else to the selected host", async () => {
+  const upstreamPaths: string[] = [];
+  const upstream = createServer((request, response) => {
+    upstreamPaths.push(`${request.method} ${request.url} cookie=${request.headers.cookie ?? ""}`);
+    if (request.url === "/api/health") {
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify({ status: "ok" }));
+      return;
+    }
+    response.writeHead(200, {
+      "content-type": "application/json",
+      "set-cookie": "cptr_session=jwt; HttpOnly; Path=/; SameSite=lax",
+    });
+    response.end(JSON.stringify({ upstream: request.url }));
+  });
+  await listenHttp(upstream);
+  const upstreamUrl = `http://127.0.0.1:${(upstream.address() as { port: number }).port}`;
   const app = createControllerServer({ statePath: "" });
   const baseUrl = await listen(app);
-  const register = (body: Record<string, unknown>) => fetch(`${baseUrl}/api/instances`, {
+  const register = (body: Record<string, unknown>) => fetch(`${baseUrl}/_fleet/api/instances`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
   });
 
   try {
+    // Without a selected host, legacy unprefixed Hub routes keep working (Workers, CLI).
+    assert.equal((await fetch(`${baseUrl}/healthz`)).status, 200);
+    const root = await fetch(`${baseUrl}/`, { redirect: "manual" });
+    assert.equal(root.status, 303);
+    assert.equal(root.headers.get("location"), "/_fleet/");
+    assert.match(await (await fetch(`${baseUrl}/_fleet/`)).text(), /\/_fleet\/app\.js/);
+
     assert.equal((await register({
-      id: "codeman-tailnet",
-      label: "Tailnet Codeman",
-      connectionMode: "tailscale-url",
-      endpoint: "https://codeman-tailnet.example.ts.net",
-    })).status, 201);
-    const cptr = await register({
       id: "laptop-cptr",
       label: "Laptop",
       backend: "cptr",
       connectionMode: "tailscale-url",
-      endpoint: "https://laptop.example.ts.net",
-    });
-    assert.equal(cptr.status, 201);
+      endpoint: upstreamUrl,
+    })).status, 201);
+    assert.equal((await register({
+      id: "desk-cptr",
+      label: "Desk",
+      backend: "cptr",
+      connectionMode: "tailscale-url",
+      endpoint: "https://desk.example.ts.net",
+      capabilities: ["cptr", "link"],
+    })).status, 201);
 
     const { instances } = await (await fetch(`${baseUrl}/api/instances`)).json() as {
       instances: Array<{ id: string; endpoint: unknown; launchUrl?: string; features: string[] }>;
     };
-    const codeman = instances.find((instance) => instance.id === "codeman-tailnet");
     const laptop = instances.find((instance) => instance.id === "laptop-cptr");
-    assert.equal(codeman?.endpoint, null);
-    assert.equal(codeman?.launchUrl, undefined);
-    assert.deepEqual(laptop?.features, ["native-ui-link"]);
+    const desk = instances.find((instance) => instance.id === "desk-cptr");
+    assert.deepEqual(laptop?.features, ["native-ui-proxy"]);
     assert.equal(laptop?.endpoint, null);
-    assert.equal(laptop?.launchUrl, "https://laptop.example.ts.net");
+    assert.equal(laptop?.launchUrl, undefined);
+    assert.deepEqual(desk?.features, ["native-ui-link"]);
+    assert.equal(desk?.launchUrl, "https://desk.example.ts.net");
+    assert.equal(
+      (await fetch(`${baseUrl}/_fleet/api/fleet/select/desk-cptr`, { redirect: "manual" })).status,
+      400,
+    );
 
-    const select = await fetch(`${baseUrl}/api/fleet/select/laptop-cptr`, { redirect: "manual" });
-    assert.equal(select.status, 400);
-    const sessions = await fetch(`${baseUrl}/api/instances/laptop-cptr/sessions`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ agentId: "claude", workspacePath: "/tmp" }),
-    });
-    assert.equal(sessions.status, 409);
+    const selected = await fetch(`${baseUrl}/_fleet/api/fleet/select/laptop-cptr`, { redirect: "manual" });
+    assert.equal(selected.status, 303);
+    assert.equal(selected.headers.get("location"), "/");
+    const hostCookie = (selected.headers.get("set-cookie") ?? "").split(";")[0]!;
 
-    const connector = await register({
-      id: "cptr-connector",
-      label: "Nope",
-      backend: "cptr",
-      connectionMode: "connector",
-      nodeId: "worker-1",
+    // With a host selected, its own /api/auth is reachable: it is not the Hub's.
+    const proxied = await fetch(`${baseUrl}/api/auth`, {
+      headers: { cookie: `${hostCookie}; cloudagentfleet_session=hub-secret` },
     });
-    assert.equal(connector.status, 400);
-    assert.match((await connector.json() as { error: string }).error, /Open WebUI Computer supports only: tailscale-url/);
+    assert.deepEqual(await proxied.json(), { upstream: "/api/auth" });
+    assert.match(proxied.headers.get("set-cookie") ?? "", /^cf_laptop-cptr_cptr_session=jwt;/);
+    assert.ok(upstreamPaths.includes("GET /api/auth cookie="), "Hub cookies must not reach the host");
+
+    // The Hub stays reachable under /_fleet while the host is selected.
+    const hubInstances = await fetch(`${baseUrl}/_fleet/api/instances`, { headers: { cookie: hostCookie } });
+    assert.equal(hubInstances.status, 200);
+    assert.equal(((await hubInstances.json()) as { instances: unknown[] }).instances.length, 2);
+
+    const cleared = await fetch(`${baseUrl}/_fleet/api/fleet/clear`, { redirect: "manual" });
+    assert.equal(cleared.headers.get("location"), "/_fleet/");
   } finally {
     await new Promise<void>((resolve, reject) => {
       app.server.close((error) => (error ? reject(error) : resolve()));
     });
+    await closeHttp(upstream);
+  }
+});
+
+test("applies Hub auth and same-origin checks to proxied host requests", async () => {
+  const upstream = createServer((request, response) => {
+    if (request.url === "/api/health") {
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify({ status: "ok" }));
+      return;
+    }
+    response.writeHead(200, { "content-type": "application/json" });
+    response.end(JSON.stringify({ upstream: request.url }));
+  });
+  await listenHttp(upstream);
+  const app = createControllerServer({
+    statePath: "",
+    uiPassword: "correct horse battery staple",
+    uiCookieSecure: false,
+  });
+  const baseUrl = await listen(app);
+
+  try {
+    const login = await fetch(`${baseUrl}/_fleet/api/auth/login`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ password: "correct horse battery staple" }),
+    });
+    assert.equal(login.status, 200);
+    const setCookie = login.headers.get("set-cookie") ?? "";
+    const hubCookies = `cloudagentfleet_session=${cookieValue(setCookie, "cloudagentfleet_session")}; `
+      + `cloudagentfleet_csrf=${cookieValue(setCookie, "cloudagentfleet_csrf")}`;
+    const registered = await fetch(`${baseUrl}/_fleet/api/instances`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: hubCookies, origin: baseUrl },
+      body: JSON.stringify({
+        id: "laptop-cptr",
+        label: "Laptop",
+        backend: "cptr",
+        connectionMode: "tailscale-url",
+        endpoint: `http://127.0.0.1:${(upstream.address() as { port: number }).port}`,
+      }),
+    });
+    assert.equal(registered.status, 201);
+    const cookie = `${hubCookies}; cloudagentfleet_instance=laptop-cptr`;
+
+    const unauthenticated = await fetch(`${baseUrl}/api/chats`, {
+      headers: { cookie: "cloudagentfleet_instance=laptop-cptr" },
+    });
+    const unauthenticatedBody = await unauthenticated.text();
+    assert.match(unauthenticatedBody, /Sign in to the private fleet Hub/);
+    assert.doesNotMatch(unauthenticatedBody, /upstream/);
+    const unauthenticatedPost = await fetch(`${baseUrl}/api/chats`, {
+      method: "POST",
+      headers: { cookie: "cloudagentfleet_instance=laptop-cptr" },
+      body: "{}",
+    });
+    assert.equal(unauthenticatedPost.status, 401);
+
+    const crossSite = await fetch(`${baseUrl}/api/chats`, {
+      method: "POST",
+      headers: { cookie, origin: "https://evil.example" },
+      body: "{}",
+    });
+    assert.equal(crossSite.status, 403);
+
+    const sameOrigin = await fetch(`${baseUrl}/api/chats`, {
+      method: "POST",
+      headers: { cookie, origin: baseUrl },
+      body: "{}",
+    });
+    assert.deepEqual(await sameOrigin.json(), { upstream: "/api/chats" });
+
+    const logout = await fetch(`${baseUrl}/_fleet/api/auth/logout`, {
+      method: "POST",
+      headers: { cookie, origin: baseUrl },
+    });
+    assert.match(logout.headers.get("set-cookie") ?? "", /cf_laptop-cptr_cptr_session=; Path=\/; Max-Age=0/);
+  } finally {
+    await new Promise<void>((resolve, reject) => {
+      app.server.close((error) => (error ? reject(error) : resolve()));
+    });
+    await closeHttp(upstream);
   }
 });

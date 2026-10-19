@@ -10,6 +10,7 @@ import { FleetHub } from "./hub.ts";
 import { resolveUiAuth, type UiAuth, type UiAuthRequest } from "./auth.ts";
 import { HttpError } from "./errors.ts";
 import {
+  FLEET_PATH_PREFIX,
   backendDefinition,
   describeBackends,
   rejectSocket,
@@ -124,45 +125,42 @@ export function createControllerServer(
 
   const server = createServer(async (request, response) => {
     try {
-      const url = new URL(request.url ?? "/", "http://controller.local");
+      const target = resolveTarget(request);
+      const hubPath = target.kind === "hub" ? target.url.pathname : undefined;
       const auth = uiAuth.authenticate(request, authToken);
-      const isHealthCheck = request.method === "GET" && url.pathname === "/healthz";
-      const isLoginRoute = url.pathname === "/api/auth/login";
-      const isSessionRoute = url.pathname === "/api/auth/session";
-      const isLogoutRoute = url.pathname === "/api/auth/logout";
-      if (!isHealthCheck && !isLoginRoute && !isSessionRoute && !auth.authenticated) {
-        if (request.method === "GET" && !url.pathname.startsWith("/api/")) {
+      const isPublicHubRoute = hubPath !== undefined && (
+        (request.method === "GET" && hubPath === "/healthz")
+        || hubPath === "/api/auth/login"
+        || hubPath === "/api/auth/session"
+      );
+      if (!isPublicHubRoute && !auth.authenticated) {
+        if (request.method === "GET" && !hubPath?.startsWith("/api/")) {
           sendLoginPage(response, uiAuth.enabled);
         } else {
           sendJson(response, 401, { error: "Authentication required" });
         }
         return;
       }
-      if (isLogoutRoute && uiAuth.enabled && !auth.authenticated) {
+      if (hubPath === "/api/auth/logout" && uiAuth.enabled && !auth.authenticated) {
         sendJson(response, 401, { error: "Unauthorized" });
         return;
       }
-      const selectedForCsrf = selectedInstance(request);
-      const proxiedCodemanMutation = Boolean(
-        selectedForCsrf
-        && request.method !== "GET"
-        && request.method !== "HEAD"
-        && isNativeUiApiPath(url.pathname),
-      );
+      // Every mutation, Hub or proxied host, must come from the Hub origin. A
+      // backend UI served through the proxy runs on that origin, so it passes.
       if (
         auth.authenticated
         && request.method !== "GET"
         && request.method !== "HEAD"
-        && !proxiedCodemanMutation
         && !uiAuth.isCsrfValid(request, auth)
       ) {
         sendJson(response, 403, { error: "Cross-site request blocked" });
         return;
       }
       if (
-        auth.authenticated
+        hubPath !== undefined
+        && auth.authenticated
         && uiAuth.enabled
-        && isWorkerOrJobRoute(url.pathname)
+        && isWorkerOrJobRoute(hubPath)
         && auth.method === "ui"
         && authToken
       ) {
@@ -170,7 +168,16 @@ export function createControllerServer(
         return;
       }
 
-      await route(request, response, controlPlane, hub, uiAuth, auth);
+      if (target.kind === "host") {
+        await hub.proxyNativeUi(target.instanceId, request, response);
+        return;
+      }
+      if (request.method === "GET" && target.url.pathname === "/" && !target.prefixed) {
+        response.writeHead(303, { location: `${FLEET_PATH_PREFIX}/` });
+        response.end();
+        return;
+      }
+      await route(request, response, target.url, controlPlane, hub, uiAuth, auth);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Request failed";
       const status = error instanceof HttpError ? error.status : 400;
@@ -178,13 +185,38 @@ export function createControllerServer(
     }
   });
   server.on("upgrade", (request, socket, head) => {
-    void handleTerminalUpgrade(request, socket, head, hub, uiAuth, authToken);
+    void handleUpgrade(request, socket, head, hub, uiAuth, authToken);
   });
 
   return { server, controlPlane, hub, host, port, revealPassword: resolvedAuth.revealPassword };
 }
 
-async function handleTerminalUpgrade(
+type RequestTarget =
+  | { kind: "hub"; url: URL; prefixed: boolean }
+  | { kind: "host"; instanceId: string };
+
+/**
+ * Routing contract for the single Hub origin:
+ *
+ * - `/_fleet/...` is always the Hub (dashboard, its API, its WebSockets).
+ * - With a selected-host cookie, every other path belongs to that host's
+ *   native UI, so backends may use any path, including `/api/auth`.
+ * - Without one (Workers, the CLI, older dashboards), unprefixed paths are
+ *   the Hub's legacy routes, so installed Workers keep working.
+ */
+function resolveTarget(request: IncomingMessage): RequestTarget {
+  const url = new URL(request.url ?? "/", "http://controller.local");
+  if (url.pathname === FLEET_PATH_PREFIX || url.pathname.startsWith(`${FLEET_PATH_PREFIX}/`)) {
+    const hubUrl = new URL(url);
+    hubUrl.pathname = url.pathname.slice(FLEET_PATH_PREFIX.length) || "/";
+    return { kind: "hub", url: hubUrl, prefixed: true };
+  }
+  const selected = selectedInstance(request);
+  if (selected) return { kind: "host", instanceId: selected };
+  return { kind: "hub", url, prefixed: false };
+}
+
+async function handleUpgrade(
   request: IncomingMessage,
   socket: Duplex,
   head: Buffer,
@@ -192,12 +224,11 @@ async function handleTerminalUpgrade(
   uiAuth: UiAuth,
   authToken: string | undefined,
 ): Promise<void> {
-  const url = new URL(request.url ?? "/", "http://controller.local");
-  const explicitMatch = url.pathname.match(
-    /^\/ws\/instances\/([^/]+)\/sessions\/([^/]+)\/terminal$/,
-  );
-  const nativeMatch = url.pathname.match(/^\/ws\/sessions\/([^/]+)\/terminal$/);
-  if (!explicitMatch && !nativeMatch) {
+  const target = resolveTarget(request);
+  const terminalMatch = target.kind === "hub"
+    ? target.url.pathname.match(/^\/ws\/instances\/([^/]+)\/sessions\/([^/]+)\/terminal$/)
+    : null;
+  if (target.kind === "hub" && !terminalMatch) {
     socket.destroy();
     return;
   }
@@ -211,23 +242,23 @@ async function handleTerminalUpgrade(
     rejectSocket(socket, 401, "Unauthorized");
     return;
   }
-  const instanceId = explicitMatch
-    ? decodeURIComponent(explicitMatch[1]!)
-    : selectedInstance(request);
-  const sessionId = explicitMatch
-    ? decodeURIComponent(explicitMatch[2]!)
-    : decodeURIComponent(nativeMatch![1]!);
-  if (!instanceId) {
-    rejectSocket(socket, 400, "A host must be selected");
-    return;
-  }
   try {
-    await hub.proxyTerminal(instanceId, sessionId, request, socket, head);
+    if (target.kind === "host") {
+      await hub.proxyNativeUpgrade(target.instanceId, request, socket, head);
+    } else {
+      await hub.proxyTerminal(
+        decodeURIComponent(terminalMatch![1]!),
+        decodeURIComponent(terminalMatch![2]!),
+        request,
+        socket,
+        head,
+      );
+    }
   } catch (error) {
     rejectSocket(
       socket,
       502,
-      error instanceof Error ? error.message : "Terminal proxy unavailable",
+      error instanceof Error ? error.message : "WebSocket proxy unavailable",
     );
   }
 }
@@ -235,13 +266,13 @@ async function handleTerminalUpgrade(
 async function route(
   request: IncomingMessage,
   response: ServerResponse,
+  url: URL,
   controlPlane: ControlPlane,
   hub: FleetHub,
   uiAuth: UiAuth,
   auth: UiAuthRequest,
 ): Promise<void> {
   const method = request.method ?? "GET";
-  const url = new URL(request.url ?? "/", "http://controller.local");
 
   if (method === "GET" && url.pathname === "/healthz") {
     sendJson(response, 200, {
@@ -290,7 +321,9 @@ async function route(
     uiAuth.revoke(request);
     response.setHeader("set-cookie", [
       ...uiAuth.clearCookies(request),
-      `${CODEMAN_INSTANCE_COOKIE}=; Path=/; Max-Age=0; SameSite=Lax${isSecureRequest(request) ? "; Secure" : ""}`,
+      ...[CODEMAN_INSTANCE_COOKIE, ...hub.browserCookieNames()].map(
+        (name) => `${name}=; Path=/; Max-Age=0; SameSite=Lax${isSecureRequest(request) ? "; Secure" : ""}`,
+      ),
     ]);
     sendJson(response, 204, {});
     return;
@@ -323,7 +356,7 @@ async function route(
       "set-cookie",
       `${CODEMAN_INSTANCE_COOKIE}=; Path=/; Max-Age=0; SameSite=Lax${isSecureRequest(request) ? "; Secure" : ""}`,
     );
-    response.writeHead(303, { location: "/" });
+    response.writeHead(303, { location: `${FLEET_PATH_PREFIX}/` });
     response.end();
     return;
   }
@@ -336,16 +369,7 @@ async function route(
     return;
   }
 
-  if (method === "GET" && url.pathname === "/fleet-host-switcher.js") {
-    await serveDashboardAsset("/fleet-host-switcher.js", response);
-    return;
-  }
-
   if (method === "GET" && !url.pathname.startsWith("/api/")) {
-    if (selectedInstanceId) {
-      await hub.proxyNativeUi(selectedInstanceId, request, response);
-      return;
-    }
     await serveDashboardAsset(url.pathname, response);
     return;
   }
@@ -448,7 +472,7 @@ async function route(
     return;
   }
 
-  if (method === "GET" && url.pathname === "/api/sessions" && !selectedInstanceId) {
+  if (method === "GET" && url.pathname === "/api/sessions") {
     const instanceId = url.searchParams.get("instanceId");
     if (instanceId) hub.getInstance(instanceId);
     sendJson(response, 200, {
@@ -568,10 +592,6 @@ async function route(
   }
 
   if (method === "GET" && url.pathname === "/api/events") {
-    if (selectedInstanceId) {
-      await hub.proxyNativeUi(selectedInstanceId, request, response);
-      return;
-    }
     const instanceId = url.searchParams.get("instanceId");
     if (instanceId) hub.getInstance(instanceId);
     response.writeHead(200, {
@@ -699,11 +719,6 @@ async function route(
     return;
   }
 
-  if (selectedInstanceId) {
-    await hub.proxyNativeUi(selectedInstanceId, request, response);
-    return;
-  }
-
   sendJson(response, 404, { error: "Not found" });
 }
 
@@ -744,28 +759,6 @@ function isWorkerOrJobRoute(pathname: string): boolean {
     || pathname.startsWith("/api/workers/")
     || pathname === "/api/jobs"
     || pathname.startsWith("/api/jobs/");
-}
-
-/**
- * Hub-owned API prefixes stay under Hub CSRF. Everything else under /api is
- * treated as the selected host's native UI surface when a host cookie is set.
- */
-function isNativeUiApiPath(pathname: string): boolean {
-  if (!pathname.startsWith("/api/")) return false;
-  return !(
-    pathname === "/api/auth"
-    || pathname.startsWith("/api/auth/")
-    || pathname === "/api/fleet"
-    || pathname.startsWith("/api/fleet/")
-    || pathname === "/api/instances"
-    || pathname.startsWith("/api/instances/")
-    || pathname === "/api/workers"
-    || pathname.startsWith("/api/workers/")
-    || pathname === "/api/jobs"
-    || pathname.startsWith("/api/jobs/")
-    || pathname === "/api/audit"
-    || pathname === "/api/backends"
-  );
 }
 
 function readCodemanCredentials(): Record<string, { username: string; password: string }> {
@@ -920,9 +913,9 @@ button{width:100%;margin-top:16px;padding:12px;border:0;border-radius:8px;backgr
 <script>
 document.getElementById("login").addEventListener("submit",async function(event){
 event.preventDefault();const error=document.getElementById("error");error.textContent="";
-try{const response=await fetch("/api/auth/login",{method:"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({password:document.getElementById("password").value})});
+try{const response=await fetch("/_fleet/api/auth/login",{method:"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({password:document.getElementById("password").value})});
 if(!response.ok)throw new Error((await response.json().catch(function(){return {}})).error||"Sign in failed");
-location.assign("/");}catch(cause){error.textContent=cause.message||"Sign in failed";}
+location.reload();}catch(cause){error.textContent=cause.message||"Sign in failed";}
 });
 </script></body></html>`);
 }
