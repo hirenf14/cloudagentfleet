@@ -9,6 +9,16 @@ import { ControlPlane, type NodeConnection } from "./index.ts";
 import { FleetHub } from "./hub.ts";
 import { resolveUiAuth, type UiAuth, type UiAuthRequest } from "./auth.ts";
 import { HttpError } from "./errors.ts";
+import { createHostUiServer } from "./host-ui.ts";
+import {
+  INSTANCE_COOKIE,
+  instanceCookie,
+  isSecureRequest,
+  originFor,
+  selectedInstance,
+  sendJson,
+  type OriginPlan,
+} from "./http-helpers.ts";
 import {
   FLEET_PATH_PREFIX,
   backendDefinition,
@@ -27,7 +37,6 @@ import type {
 } from "../../../packages/protocol/src/index.ts";
 
 const MAX_BODY_BYTES = 1_048_576;
-const CODEMAN_INSTANCE_COOKIE = "cloudagentfleet_instance";
 
 function resolveDashboardRoot(): string {
   const here = dirname(fileURLToPath(import.meta.url));
@@ -56,6 +65,11 @@ const DASHBOARD_ROOT = resolveDashboardRoot();
 export interface ControllerServerOptions {
   host?: string;
   port?: number;
+  /** Host-UI origin listener (proxied backend UIs); defaults to port + 1. */
+  hostPort?: number;
+  /** Public dashboard / host-UI origins when the defaults can't be inferred. */
+  publicUrl?: string;
+  hostUiUrl?: string;
   authToken?: string;
   uiPassword?: string;
   uiPasswordHash?: string;
@@ -69,9 +83,14 @@ export interface ControllerServerOptions {
 
 export interface ControllerServer {
   server: Server;
+  /** Serves proxied backend UIs on their own origin, isolated from the Hub API. */
+  hostServer: Server;
   controlPlane: ControlPlane;
   host: string;
   port: number;
+  hostPort: number;
+  /** Read per request; tests and embedders may set explicit public URLs after binding. */
+  origins: OriginPlan;
   hub: FleetHub;
   /** Auto-generated Hub password still in bootstrap form (print on each start). */
   revealPassword?: string;
@@ -81,6 +100,9 @@ export function startControllerServer(
   options: ControllerServerOptions = {},
 ): ControllerServer {
   const controller = createControllerServer(options);
+  controller.hostServer.listen(controller.hostPort, controller.host, () => {
+    console.log(`Host UIs listening on ${controller.host}:${controller.hostPort}`);
+  });
   controller.server.listen(controller.port, controller.host, () => {
     console.log(`Cloud Agent Fleet Hub listening on ${controller.host}:${controller.port}`);
     if (controller.revealPassword) {
@@ -98,6 +120,13 @@ export function createControllerServer(
 ): ControllerServer {
   const host = options.host ?? process.env.CLOUDAGENTFLEET_HOST ?? "127.0.0.1";
   const port = options.port ?? Number(process.env.CLOUDAGENTFLEET_PORT ?? 8787);
+  const hostPort = options.hostPort ?? Number(process.env.CLOUDAGENTFLEET_HOST_PORT ?? port + 1);
+  const origins: OriginPlan = {
+    hubPort: port,
+    hostPort,
+    hubUrl: options.publicUrl ?? process.env.CLOUDAGENTFLEET_PUBLIC_URL,
+    hostUrl: options.hostUiUrl ?? process.env.CLOUDAGENTFLEET_HOST_UI_URL,
+  };
   const authToken = options.authToken ?? process.env.CLOUDAGENTFLEET_AUTH_TOKEN;
   const statePath = options.statePath ?? process.env.CLOUDAGENTFLEET_DATA_PATH ?? "data/hub.json";
   const dataDir = statePath ? dirname(resolve(statePath)) : undefined;
@@ -125,16 +154,16 @@ export function createControllerServer(
 
   const server = createServer(async (request, response) => {
     try {
-      const target = resolveTarget(request);
-      const hubPath = target.kind === "hub" ? target.url.pathname : undefined;
+      const target = resolveHubUrl(request);
+      const hubPath = target.url.pathname;
       const auth = uiAuth.authenticate(request, authToken);
-      const isPublicHubRoute = hubPath !== undefined && (
+      const isPublicHubRoute = (
         (request.method === "GET" && hubPath === "/healthz")
         || hubPath === "/api/auth/login"
         || hubPath === "/api/auth/session"
       );
       if (!isPublicHubRoute && !auth.authenticated) {
-        if (request.method === "GET" && !hubPath?.startsWith("/api/")) {
+        if (request.method === "GET" && !hubPath.startsWith("/api/")) {
           sendLoginPage(response, uiAuth.enabled);
         } else {
           sendJson(response, 401, { error: "Authentication required" });
@@ -145,8 +174,8 @@ export function createControllerServer(
         sendJson(response, 401, { error: "Unauthorized" });
         return;
       }
-      // Every mutation, Hub or proxied host, must come from the Hub origin. A
-      // backend UI served through the proxy runs on that origin, so it passes.
+      // Mutations must come from the dashboard origin. Backend UIs run on the
+      // separate host-UI origin, so their requests are rejected here.
       if (
         auth.authenticated
         && request.method !== "GET"
@@ -157,8 +186,7 @@ export function createControllerServer(
         return;
       }
       if (
-        hubPath !== undefined
-        && auth.authenticated
+        auth.authenticated
         && uiAuth.enabled
         && isWorkerOrJobRoute(hubPath)
         && auth.method === "ui"
@@ -168,16 +196,12 @@ export function createControllerServer(
         return;
       }
 
-      if (target.kind === "host") {
-        await hub.proxyNativeUi(target.instanceId, request, response);
-        return;
-      }
       if (request.method === "GET" && target.url.pathname === "/" && !target.prefixed) {
         response.writeHead(303, { location: `${FLEET_PATH_PREFIX}/` });
         response.end();
         return;
       }
-      await route(request, response, target.url, controlPlane, hub, uiAuth, auth);
+      await route(request, response, target.url, controlPlane, hub, uiAuth, auth, origins);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Request failed";
       const status = error instanceof HttpError ? error.status : 400;
@@ -187,33 +211,34 @@ export function createControllerServer(
   server.on("upgrade", (request, socket, head) => {
     void handleUpgrade(request, socket, head, hub, uiAuth, authToken);
   });
+  const hostServer = createHostUiServer({ hub, uiAuth, origins, serveAsset: serveDashboardAsset });
 
-  return { server, controlPlane, hub, host, port, revealPassword: resolvedAuth.revealPassword };
+  return {
+    server,
+    hostServer,
+    controlPlane,
+    hub,
+    host,
+    port,
+    hostPort,
+    origins,
+    revealPassword: resolvedAuth.revealPassword,
+  };
 }
 
-type RequestTarget =
-  | { kind: "hub"; url: URL; prefixed: boolean }
-  | { kind: "host"; instanceId: string };
-
 /**
- * Routing contract for the single Hub origin:
- *
- * - `/_fleet/...` is always the Hub (dashboard, its API, its WebSockets).
- * - With a selected-host cookie, every other path belongs to that host's
- *   native UI, so backends may use any path, including `/api/auth`.
- * - Without one (Workers, the CLI, older dashboards), unprefixed paths are
- *   the Hub's legacy routes, so installed Workers keep working.
+ * Dashboard-origin routing: `/_fleet/...` is canonical; unprefixed `/api`,
+ * `/ws`, and `/healthz` stay as legacy aliases for installed Workers and
+ * CLIs. Backend UIs never run on this origin (see host-ui.ts).
  */
-function resolveTarget(request: IncomingMessage): RequestTarget {
+function resolveHubUrl(request: IncomingMessage): { url: URL; prefixed: boolean } {
   const url = new URL(request.url ?? "/", "http://controller.local");
   if (url.pathname === FLEET_PATH_PREFIX || url.pathname.startsWith(`${FLEET_PATH_PREFIX}/`)) {
     const hubUrl = new URL(url);
     hubUrl.pathname = url.pathname.slice(FLEET_PATH_PREFIX.length) || "/";
-    return { kind: "hub", url: hubUrl, prefixed: true };
+    return { url: hubUrl, prefixed: true };
   }
-  const selected = selectedInstance(request);
-  if (selected) return { kind: "host", instanceId: selected };
-  return { kind: "hub", url, prefixed: false };
+  return { url, prefixed: false };
 }
 
 async function handleUpgrade(
@@ -224,11 +249,9 @@ async function handleUpgrade(
   uiAuth: UiAuth,
   authToken: string | undefined,
 ): Promise<void> {
-  const target = resolveTarget(request);
-  const terminalMatch = target.kind === "hub"
-    ? target.url.pathname.match(/^\/ws\/instances\/([^/]+)\/sessions\/([^/]+)\/terminal$/)
-    : null;
-  if (target.kind === "hub" && !terminalMatch) {
+  const terminalMatch = resolveHubUrl(request).url.pathname
+    .match(/^\/ws\/instances\/([^/]+)\/sessions\/([^/]+)\/terminal$/);
+  if (!terminalMatch) {
     socket.destroy();
     return;
   }
@@ -243,17 +266,13 @@ async function handleUpgrade(
     return;
   }
   try {
-    if (target.kind === "host") {
-      await hub.proxyNativeUpgrade(target.instanceId, request, socket, head);
-    } else {
-      await hub.proxyTerminal(
-        decodeURIComponent(terminalMatch![1]!),
-        decodeURIComponent(terminalMatch![2]!),
-        request,
-        socket,
-        head,
-      );
-    }
+    await hub.proxyTerminal(
+      decodeURIComponent(terminalMatch[1]!),
+      decodeURIComponent(terminalMatch[2]!),
+      request,
+      socket,
+      head,
+    );
   } catch (error) {
     rejectSocket(
       socket,
@@ -271,6 +290,7 @@ async function route(
   hub: FleetHub,
   uiAuth: UiAuth,
   auth: UiAuthRequest,
+  origins: OriginPlan,
 ): Promise<void> {
   const method = request.method ?? "GET";
 
@@ -321,7 +341,7 @@ async function route(
     uiAuth.revoke(request);
     response.setHeader("set-cookie", [
       ...uiAuth.clearCookies(request),
-      ...[CODEMAN_INSTANCE_COOKIE, ...hub.browserCookieNames()].map(
+      ...[INSTANCE_COOKIE, ...hub.browserCookieNames()].map(
         (name) => `${name}=; Path=/; Max-Age=0; SameSite=Lax${isSecureRequest(request) ? "; Secure" : ""}`,
       ),
     ]);
@@ -337,27 +357,23 @@ async function route(
     if (!hub.supportsFeature(instance.id, "native-ui-proxy")) {
       throw new HttpError(400, "This instance's UI is not available through the Hub proxy");
     }
-    try {
-      await hub.prepareNativeUi(instanceId);
-    } catch {
-      // Selection still proceeds; Codeman UI can create cases manually if seeding fails.
-    }
-    response.setHeader(
-      "set-cookie",
-      `${CODEMAN_INSTANCE_COOKIE}=${encodeURIComponent(instanceId)}; Path=/; Max-Age=86400; SameSite=Lax${isSecureRequest(request) ? "; Secure" : ""}`,
-    );
-    response.writeHead(303, { location: "/" });
+    // Backend UIs live on the host-UI origin, never on the dashboard origin.
+    response.writeHead(303, {
+      location: `${originFor(request, "host", origins)}/_fleet/select/${encodeURIComponent(instanceId)}`,
+    });
     response.end();
     return;
   }
 
   if (method === "GET" && url.pathname === "/api/fleet/clear") {
-    response.setHeader(
-      "set-cookie",
-      `${CODEMAN_INSTANCE_COOKIE}=; Path=/; Max-Age=0; SameSite=Lax${isSecureRequest(request) ? "; Secure" : ""}`,
-    );
+    response.setHeader("set-cookie", instanceCookie(request));
     response.writeHead(303, { location: `${FLEET_PATH_PREFIX}/` });
     response.end();
+    return;
+  }
+
+  if (method === "GET" && url.pathname === "/api/fleet/origins") {
+    sendJson(response, 200, { hostUiOrigin: originFor(request, "host", origins) });
     return;
   }
 
@@ -800,26 +816,6 @@ function clientAddress(request: IncomingMessage): string {
   return request.socket.remoteAddress ?? "unknown";
 }
 
-function selectedInstance(request: IncomingMessage): string | undefined {
-  const cookie = request.headers.cookie;
-  for (const item of cookie?.split(";") ?? []) {
-    const separator = item.indexOf("=");
-    if (separator < 1 || item.slice(0, separator).trim() !== CODEMAN_INSTANCE_COOKIE) continue;
-    const value = item.slice(separator + 1).trim();
-    try {
-      return decodeURIComponent(value) || undefined;
-    } catch {
-      return value || undefined;
-    }
-  }
-  return undefined;
-}
-
-function isSecureRequest(request: IncomingMessage): boolean {
-  return request.headers["x-forwarded-proto"] === "https"
-    || ("encrypted" in request.socket && request.socket.encrypted === true);
-}
-
 function isTailnetEndpoint(value: string): boolean {
   try {
     const endpoint = new URL(value);
@@ -874,19 +870,6 @@ function publicInstance(
 
 function isLoopback(host: string): boolean {
   return host === "127.0.0.1" || host === "::1" || host === "localhost";
-}
-
-function sendJson(response: ServerResponse, status: number, body: unknown): void {
-  if (status === 204) {
-    response.writeHead(status);
-    response.end();
-    return;
-  }
-  response.writeHead(status, {
-    "content-type": "application/json; charset=utf-8",
-    "cache-control": "no-store",
-  });
-  response.end(JSON.stringify(body));
 }
 
 function sendLoginPage(response: ServerResponse, authEnabled: boolean): void {

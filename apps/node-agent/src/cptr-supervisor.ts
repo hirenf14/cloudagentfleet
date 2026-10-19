@@ -1,7 +1,8 @@
 import { spawn, type ChildProcess, type SpawnOptions } from "node:child_process";
-import { appendFileSync, chmodSync, mkdirSync } from "node:fs";
+import { appendFileSync, chmodSync, mkdirSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
+import { envFlagFrom } from "./codeman-supervisor.ts";
 import type { SupervisorHandle } from "./supervisor.ts";
 
 const DEFAULT_READY_TIMEOUT_MS = 60_000;
@@ -17,6 +18,8 @@ export interface CptrSupervisorOptions {
   baseUrl?: string;
   command?: string;
   logPath?: string;
+  /** Where the one-time setup token is written (0600); never printed. */
+  tokenPath?: string;
   readyTimeoutMs?: number;
   pollIntervalMs?: number;
   fetchImpl?: typeof fetch;
@@ -26,8 +29,7 @@ export interface CptrSupervisorOptions {
 }
 
 export function manageCptrEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
-  const raw = env.CLOUDAGENTFLEET_MANAGE_CPTR?.trim().toLowerCase();
-  return !["0", "false", "no", "off"].includes(raw ?? "");
+  return envFlagFrom(env, "CLOUDAGENTFLEET_MANAGE_CPTR", true);
 }
 
 export async function isCptrReachable(baseUrl: string, fetchImpl: typeof fetch = fetch): Promise<boolean> {
@@ -81,6 +83,7 @@ export async function ensureCptr(options: CptrSupervisorOptions = {}): Promise<S
   }
   const port = target.port || "80";
   const logPath = options.logPath ?? join(homedir(), ".cloudagentfleet", "cptr.log");
+  const tokenPath = options.tokenPath ?? join(dirname(logPath), "cptr-setup-token");
   mkdirSync(dirname(logPath), { recursive: true });
   appendFileSync(logPath, `\n--- ${new Date().toISOString()} starting cptr ---\n`, { mode: 0o600 });
   chmodSync(logPath, 0o600);
@@ -95,8 +98,9 @@ export async function ensureCptr(options: CptrSupervisorOptions = {}): Promise<S
   );
   const capture = (chunk: Buffer) => {
     const text = chunk.toString("utf8");
-    appendFileSync(logPath, text);
     token ??= text.match(SETUP_TOKEN)?.[1];
+    // The token grants cptr's first admin account; keep it out of logs.
+    appendFileSync(logPath, text.replace(SETUP_TOKEN, "/?token=<redacted: see cptr-setup-token>"));
   };
   child.stdout?.on("data", capture);
   child.stderr?.on("data", capture);
@@ -123,9 +127,11 @@ export async function ensureCptr(options: CptrSupervisorOptions = {}): Promise<S
     if (await isCptrReachable(baseUrl, fetchImpl)) {
       log(`Open WebUI Computer ready at ${baseUrl}`);
       if (token && await needsSetup(baseUrl, fetchImpl)) {
+        writeFileSync(tokenPath, `${token}\n`, { mode: 0o600 });
+        chmodSync(tokenPath, 0o600);
         log(
-          "Finish Open WebUI Computer setup: open it from the fleet dashboard and go to "
-          + `/?token=${token} (the token changes on every start).`,
+          "Open WebUI Computer needs first-run setup. Its one-time token is in "
+          + `${tokenPath} (owner-only); open the host from the fleet dashboard and go to /?token=<token>.`,
         );
       }
       return {

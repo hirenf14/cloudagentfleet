@@ -190,12 +190,15 @@ both, and opens each correctly.
 
 Shipped differently from the sketch below, based on the spike:
 
-- **Routing contract:** all Hub-owned routes moved under `/_fleet/`
-  (dashboard, its API, its terminal WebSocket, the switcher script). With a
-  selected-host cookie, every other path and WebSocket goes to that host, so
-  cptr's `/api/auth` no longer collides. Without the cookie, unprefixed
-  `/api/...`, `/ws/...`, and `/healthz` stay Hub routes, so installed Workers
-  and CLIs are unaffected. `/` redirects to `/_fleet/`.
+- **Routing contract (revised after review):** all Hub-owned routes moved
+  under `/_fleet/`, and host UIs moved to a **second listener and origin**
+  (port + 1, Serve 8443). Serving them on the dashboard origin would have let
+  cptr pages, including third-party sites in its in-app browser, call the Hub
+  API with the operator's session. The dashboard origin never proxies, so a
+  stale selection can't break it. cptr's `/api/auth` is free on the host-UI
+  origin. Unprefixed `/api/...`, `/ws/...`, and `/healthz` stay Hub routes,
+  so installed Workers and CLIs are unaffected. See
+  `CODEMAN-UI-INTEGRATION.md` § Routing contract.
 - **No stored cptr credentials:** instead of the Hub logging in, a
   `CookieBridge` passes only `cptr_session` across the proxy, renamed per
   instance. Each browser signs in to cptr once; cptr logout works; two cptr
@@ -206,9 +209,11 @@ Shipped differently from the sketch below, based on the spike:
   its license forbids altering its UI), `forwardReferer` (cptr routes
   previews by Referer), and `cookies`. Off-origin redirects are no longer
   rewritten into Hub paths.
-- **CSRF is stricter:** every mutating request, Hub or proxied, now needs a
+- **CSRF is stricter:** every mutating request on either origin needs a
   same-origin Origin/Referer or the CSRF token. Previously, proxied `/api/*`
   mutations were exempt.
+- **TLS:** the proxy and WebSocket relay now verify upstream certificates for
+  every non-loopback host (the old condition disabled verification).
 - The dashboard opens proxied UIs in a new tab, so it stays open at
   `/_fleet/`.
 
@@ -225,11 +230,13 @@ Original sketch:
   skips the Codeman prompts on a cptr-only machine, shows cptr's license, and
   installs cptr with pipx, uv, or pip only after confirmation, in the same
   place the Worker runs (WSL when setup chose it). It can publish cptr on the
-  tailnet (`tailscale serve --https=8443`) and prints the enroll command.
+  tailnet (`tailscale serve --https=8444`) and prints the enroll command.
 - The Worker reads `CLOUDAGENTFLEET_BACKENDS` and runs a `BackendSupervisor`
   for each one. The cptr supervisor never installs anything, starts cptr only
   on loopback HTTP, logs to `~/.cloudagentfleet/cptr.log` (0600), and prints
-  the per-start setup token while cptr still needs first-run setup.
+  where to find the per-start setup token (an owner-only file, never the
+  log) while cptr still needs first-run setup. A cptr failure is logged and
+  never stops the Worker or delays its Codeman connector.
 - No Docker image is used: cptr's published image name was not verified. Run
   cptr in Docker yourself (mounting only approved folders) and set
   `CLOUDAGENTFLEET_MANAGE_CPTR=false` if you want that isolation.

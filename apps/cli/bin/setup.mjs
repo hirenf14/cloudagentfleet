@@ -75,8 +75,17 @@ export function parseHubOptions(args = [], env = process.env) {
       + "Set CLOUDAGENTFLEET_HOST=127.0.0.1 and restart the Controller.",
     );
   }
-  return { host, port };
+  const rawHostPort = optionValue(parsed, "host-port") ?? env.CLOUDAGENTFLEET_HOST_PORT ?? String(port + 1);
+  const hostPort = Number(rawHostPort);
+  if (!/^\d+$/.test(rawHostPort) || !Number.isSafeInteger(hostPort) || hostPort < 1 || hostPort > 65535) {
+    throw new Error("Host UI port must be a number between 1 and 65535");
+  }
+  return { host, port, hostPort };
 }
+
+/** Tailscale Serve HTTPS ports: the dashboard on 443, proxied host UIs on their own origin. */
+const hubServePort = 443;
+const hostUiServePort = 8443;
 
 function tailscaleFailure(result) {
   const detail = result?.stderr?.trim() || result?.stdout?.trim();
@@ -137,8 +146,10 @@ export async function serveHub(args = [], dependencies = {}) {
   await checkLocalHub(config.port, env.CLOUDAGENTFLEET_AUTH_TOKEN, dependencies.fetchImpl ?? fetch);
   const target = `http://127.0.0.1:${config.port}`;
   runTailscale(["serve", "--bg", target], runner);
-  console.log(`Serving the single Cloud Agent Fleet Hub privately at ${target} through Tailscale.`);
-  console.log("Codeman instances remain private; no per-instance public domains were created.");
+  runTailscale(["serve", "--bg", `--https=${hostUiServePort}`, `http://127.0.0.1:${config.hostPort}`], runner);
+  console.log(`Serving the Cloud Agent Fleet Hub privately at ${target} through Tailscale (https port ${hubServePort}).`);
+  console.log(`Host UIs are served on their own origin (https port ${hostUiServePort}); grant operators both ports.`);
+  console.log("Backend instances remain private; no per-instance public domains were created.");
   return config;
 }
 
@@ -150,6 +161,7 @@ export function statusHub(args = [], dependencies = {}) {
   runTailscale(["status"], runner);
   const result = runTailscale(["serve", "status"], runner);
   console.log(`Hub loopback target: http://127.0.0.1:${config.port}`);
+  console.log(`Host UI loopback target: http://127.0.0.1:${config.hostPort}`);
   console.log(result.stdout?.trim() || "Tailscale Serve returned no configured routes.");
   return config;
 }
@@ -159,8 +171,11 @@ export function stopHub(args = [], dependencies = {}) {
   const config = parseHubOptions(args, env);
   const runner = dependencies.runner ?? command;
   runTailscale(["version"], runner);
-  runTailscale(["serve", "reset"], runner);
-  console.log("Tailscale Serve routes reset; the Cloud Agent Fleet Hub is no longer served.");
+  // Remove only the Hub's own routes; other Serve routes on this node (for
+  // example a published Open WebUI Computer) are left alone.
+  runTailscale(["serve", `--https=${hubServePort}`, "off"], runner);
+  runTailscale(["serve", `--https=${hostUiServePort}`, "off"], runner);
+  console.log("The Cloud Agent Fleet Hub is no longer served through Tailscale.");
   return config;
 }
 
@@ -334,7 +349,7 @@ async function installCursorCli(environment) {
 }
 
 const cptrLicenseUrl = "https://github.com/open-webui/computer/blob/main/LICENSE";
-const cptrTailnetPort = 8443;
+const cptrTailnetPort = 8444;
 
 /** Runs a script where the Worker runs: WSL when setup chose it, else the native shell. */
 function runWhereWorkerRuns(environment, script, options = {}) {
@@ -972,7 +987,7 @@ function printHubHelp() {
     "Serve the single Cloud Agent Fleet Hub privately through Tailscale Serve.",
     "",
     "Usage:",
-    "  cloudagentfleet hub serve [--port <1-65535>]",
+    "  cloudagentfleet hub serve [--port <1-65535>] [--host-port <1-65535>]",
     "  cloudagentfleet hub status [--port <1-65535>]",
     "  cloudagentfleet hub stop  [--port <1-65535>]",
     "",
@@ -1026,17 +1041,21 @@ function workerServicePaths() {
 }
 
 /**
- * One-time move from the pre-rename install layout (~/.hosted-agents and the
- * hosted-agents user service). Safe to remove once no pre-0.2 installs remain.
+ * One-time move of the pre-rename config directory (~/.hosted-agents). Safe on
+ * every command, including `run`, which the legacy service still invokes.
  */
-function migrateLegacyInstall() {
+function migrateLegacyConfig() {
   const legacyDir = join(homedir(), ".hosted-agents");
   const currentDir = dirname(configPath);
   if (existsSync(legacyDir) && !existsSync(currentDir)) {
     renameSync(legacyDir, currentDir);
     console.log(`Moved configuration from ${legacyDir} to ${currentDir}`);
   }
-  const legacyService = process.platform === "linux"
+}
+
+/** The pre-rename user service, if still installed (Windows kept its task name). */
+function legacyWorkerService() {
+  const service = process.platform === "linux"
     ? {
         kind: "systemd",
         path: join(homedir(), ".config", "systemd", "user", "hosted-agents-worker.service"),
@@ -1049,17 +1068,25 @@ function migrateLegacyInstall() {
           name: "com.hosted-agents.worker",
         }
       : undefined;
-  if (!legacyService || !existsSync(legacyService.path)) return;
-  if (legacyService.kind === "systemd") {
-    command("systemctl", ["--user", "disable", "--now", legacyService.name], { capture: true });
+  return service && existsSync(service.path) ? service : undefined;
+}
+
+/**
+ * Removes the legacy service. Called only after the replacement is installed,
+ * and never from `run`: the legacy service itself execs `run`, so removing
+ * it there would stop the Worker with nothing to replace it.
+ */
+function removeLegacyWorkerService() {
+  const legacy = legacyWorkerService();
+  if (!legacy) return;
+  if (legacy.kind === "systemd") {
+    command("systemctl", ["--user", "disable", "--now", legacy.name], { capture: true });
   } else {
-    command("launchctl", ["unload", legacyService.path], { capture: true });
+    command("launchctl", ["unload", legacy.path], { capture: true });
   }
-  unlinkSync(legacyService.path);
-  if (legacyService.kind === "systemd") {
-    command("systemctl", ["--user", "daemon-reload"], { capture: true });
-  }
-  console.log(`Removed legacy Worker service ${legacyService.name}; run \`cloudagentfleet worker install\` to reinstall it.`);
+  unlinkSync(legacy.path);
+  if (legacy.kind === "systemd") command("systemctl", ["--user", "daemon-reload"], { capture: true });
+  console.log(`Replaced legacy Worker service ${legacy.name}.`);
 }
 
 function workerServiceCommand() {
@@ -1113,6 +1140,7 @@ function installWorkerService() {
     ]);
   }
   console.log(`Installed user-level Worker service: ${service.name}`);
+  removeLegacyWorkerService();
 }
 
 /**
@@ -1241,7 +1269,10 @@ function isDirectCliEntrypoint() {
 if (isDirectCliEntrypoint()) {
   try {
     const commandName = process.argv[2] ?? "help";
-    migrateLegacyInstall();
+    migrateLegacyConfig();
+    if (commandName !== "run" && legacyWorkerService()) {
+      console.log("A legacy hosted-agents Worker service is still installed; run `cloudagentfleet worker install` to replace it.");
+    }
     if (commandName === "setup") await setup();
     else if (commandName === "run") runSavedWorker();
     else if (commandName === "worker") workerServiceAction(process.argv[3] ?? "status");

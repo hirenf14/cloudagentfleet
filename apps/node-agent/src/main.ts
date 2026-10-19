@@ -146,9 +146,24 @@ export async function runWorker(): Promise<void> {
   const stopSupervised = () => {
     for (const handle of supervised.splice(0)) handle.stopIfOwned();
   };
+  let stopping = false;
   try {
     for (const supervisor of backendSupervisors(backends, { codeman: { baseUrl: codemanBaseUrl } })) {
-      supervised.push(await supervisor.ensure());
+      if (supervisor.required) {
+        supervised.push(await supervisor.ensure());
+        continue;
+      }
+      void supervisor.ensure().then(
+        (handle) => {
+          if (stopping) handle.stopIfOwned();
+          else supervised.push(handle);
+        },
+        (error) => console.error(
+          `${supervisor.backend} is unavailable; the Worker keeps running without it: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        ),
+      );
     }
   } catch (error) {
     stopSupervised();
@@ -185,6 +200,7 @@ export async function runWorker(): Promise<void> {
   };
 
   const shutdown = () => {
+    stopping = true;
     transport.stop();
     stopSupervised();
   };
@@ -196,6 +212,7 @@ export async function runWorker(): Promise<void> {
       codemanEnabled ? (request) => runtime.handleConnectorRequest(request) : codemanDisabled,
     );
   } finally {
+    stopping = true;
     stopEventForwarding();
     stopSupervised();
   }

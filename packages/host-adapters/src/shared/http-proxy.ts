@@ -2,6 +2,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { request as httpRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
 import type { CookieBridge } from "./cookies.ts";
+import { verifyUpstreamTls } from "./tls.ts";
 
 /** Hub-owned path prefix; nothing under it is ever proxied to a backend. */
 export const FLEET_PATH_PREFIX = "/_fleet";
@@ -64,7 +65,7 @@ export async function proxyHttpRequest(
     path: `${requestUrl.pathname}${requestUrl.search}`,
     method: request.method ?? "GET",
     headers,
-    rejectUnauthorized: endpoint.protocol !== "https:" || endpoint.hostname === "localhost",
+    rejectUnauthorized: verifyUpstreamTls(endpoint),
   }, (upstreamResponse) => {
     const inject = options.injectSwitcher === true
       && String(upstreamResponse.headers["content-type"] ?? "").includes("text/html");

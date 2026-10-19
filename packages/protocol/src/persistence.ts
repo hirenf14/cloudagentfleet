@@ -47,6 +47,19 @@ export class HubStateStore {
     return structuredClone(this.state);
   }
 
+  /** One instance without cloning the whole state (hot path for session calls). */
+  findInstance(instanceId: string): HostInstance | undefined {
+    const instance = this.state.instances.find((candidate) => candidate.id === instanceId);
+    return instance ? structuredClone(instance) : undefined;
+  }
+
+  findSession(instanceId: string, sessionId: string): HostSession | undefined {
+    const session = this.state.sessions.find(
+      (candidate) => candidate.instanceId === instanceId && candidate.id === sessionId,
+    );
+    return session ? structuredClone(session) : undefined;
+  }
+
   upsertInstance(instance: HostInstance): void {
     validateHostInstance(instance);
     const index = this.state.instances.findIndex((candidate) => candidate.id === instance.id);

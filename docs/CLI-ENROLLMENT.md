@@ -57,7 +57,7 @@ starting.
    the Controller URL, Worker ID and name, approved workspace folders (or
    whole-system access), and each backend's local URL (plus the Codeman mode).
    For cptr, setup shows its license, offers to install it with pipx, uv, or
-   pip, and can publish it on the tailnet with `tailscale serve --https=8443`.
+   pip, and can publish it on the tailnet with `tailscale serve --https=8444`.
 4. Save the configuration to `~/.cloudagentfleet/worker.json` (user-only, mode
    `0600`). When `CLOUDAGENTFLEET_AUTH_TOKEN` is set, the Controller token is
    stored there so the Worker service can authenticate.

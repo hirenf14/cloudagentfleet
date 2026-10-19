@@ -36,7 +36,7 @@ export interface CodemanSupervisorHandle {
   stopIfOwned(): void;
 }
 
-function envFlagFrom(env: NodeJS.ProcessEnv, name: string, defaultValue: boolean): boolean {
+export function envFlagFrom(env: NodeJS.ProcessEnv, name: string, defaultValue: boolean): boolean {
   const raw = env[name]?.trim().toLowerCase();
   if (raw === undefined || raw === "") return defaultValue;
   if (["1", "true", "yes", "on"].includes(raw)) return true;
@@ -272,6 +272,12 @@ export async function ensureCodeman(
     await sleep(pollIntervalMs);
   }
 
+  // We started it but it never became ready: stop it rather than orphan it.
+  try {
+    stopCodemanDaemon(options);
+  } catch {
+    // Best-effort cleanup only.
+  }
   throw new Error(
     `Codeman did not become ready at ${baseUrl}/api/v1/status within ${readyTimeoutMs}ms`,
   );

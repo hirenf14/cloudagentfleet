@@ -68,8 +68,12 @@ test("ensureCptr starts cptr on loopback, captures the setup token, and owns the
     });
     assert.deepEqual(spawned, [["cptr", "run", "--headless", "--host", "127.0.0.1", "--port", "8123"]]);
     assert.equal(handle.startedByUs, true);
-    assert.ok(logs.some((line) => line.includes(`/?token=${TOKEN}`)), "setup token must be surfaced");
-    assert.match(readFileSync(join(directory, "cptr.log"), "utf8"), /token=/);
+    assert.ok(!logs.some((line) => line.includes(TOKEN)), "the setup token must never be printed");
+    assert.ok(logs.some((line) => line.includes("cptr-setup-token")), "the token file location is printed");
+    assert.equal(readFileSync(join(directory, "cptr-setup-token"), "utf8").trim(), TOKEN);
+    const log = readFileSync(join(directory, "cptr.log"), "utf8");
+    assert.ok(!log.includes(TOKEN), "the token is redacted from cptr.log");
+    assert.match(log, /token=<redacted/);
     handle.stopIfOwned();
     assert.equal(child.killed, true);
   } finally {

@@ -1,12 +1,15 @@
 # Private access with Tailscale
 
-Cloud Agent Fleet is reachable only over your tailnet. The browser reaches one
-Hub origin published with Tailscale Serve; the Hub reaches Codeman hosts over
-the tailnet. Nothing is published with Funnel, and Cloud Agent Fleet never
-binds host-local `:80` or `:443`.
+Cloud Agent Fleet is reachable only over your tailnet. The browser reaches the
+Hub through Tailscale Serve on two HTTPS ports: 443 for the dashboard and 8443
+for proxied host UIs (a separate origin, so backend pages can't use your Hub
+session against the Hub API). The Hub reaches hosts over the tailnet. Nothing
+is published with Funnel, and Cloud Agent Fleet never binds host-local `:80`
+or `:443`.
 
 ```text
-Browser → Tailscale Serve (Hub node) → Controller on 127.0.0.1:8787 → tailnet → Codeman hosts
+Browser → Serve :443  → Controller dashboard on 127.0.0.1:8787
+Browser → Serve :8443 → Controller host UIs  on 127.0.0.1:8788 → tailnet → hosts
 ```
 
 ## Hub UI via Tailscale Serve
@@ -80,7 +83,7 @@ ports are deny-by-default, so list only what you intend.
     {
       "src": ["group:cloudagentfleet-operators"],
       "dst": ["tag:cloudagentfleet-hub"],
-      "ip": ["tcp:443"]
+      "ip": ["tcp:443", "tcp:8443"]
     },
     {
       "src": ["tag:cloudagentfleet-hub"],

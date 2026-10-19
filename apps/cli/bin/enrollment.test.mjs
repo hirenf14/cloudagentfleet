@@ -81,7 +81,10 @@ test("Hub serving accepts only loopback configuration and numeric ports", () => 
   }), {
     host: "127.0.0.1",
     port: 9443,
+    hostPort: 9444,
   });
+  assert.equal(parseHubOptions(["--host-port", "9000"], {}).hostPort, 9000);
+  assert.throws(() => parseHubOptions(["--host-port", "x"], {}), /Host UI port must be a number/);
   assert.throws(
     () => parseHubOptions(["--port", "9443;tailscale serve funnel"], {}),
     /port must be a number/,
@@ -113,11 +116,13 @@ test("Hub lifecycle invokes Tailscale with argument arrays and one loopback orig
     ["version"],
     ["status"],
     ["serve", "--bg", "http://127.0.0.1:8787"],
+    ["serve", "--bg", "--https=8443", "http://127.0.0.1:8788"],
     ["version"],
     ["status"],
     ["serve", "status"],
     ["version"],
-    ["serve", "reset"],
+    ["serve", "--https=443", "off"],
+    ["serve", "--https=8443", "off"],
   ]);
   assert.ok(calls.every(({ options }) => options.shell === false));
 });

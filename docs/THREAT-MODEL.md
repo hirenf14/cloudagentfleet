@@ -81,12 +81,22 @@ boundary.
 
 ### Proxied and linked hosts outside Hub policy
 
-Open WebUI Computer (`cptr`) instances are proxied through the Hub origin by
-default. The Hub session gates every proxied request, every mutation must come
-from the Hub origin, and only cptr's own session cookie crosses the proxy,
-renamed per instance (`cf_<instance>_cptr_session`). Hub cookies and
-authorization never reach cptr, and upstream cookies outside that allowlist
-never reach the browser. Hub logout clears the bridged cookies.
+Proxied host UIs (Codeman and Open WebUI Computer) are served on a separate
+**host-UI origin** (its own port), never on the dashboard origin. That matters
+most for cptr, whose in-app browser renders arbitrary third-party pages into
+its own origin: those scripts cannot read Hub API responses (same-origin
+policy), and the Hub rejects mutations whose Origin is not the dashboard. The
+Hub session gates every request on both origins.
+
+Only cptr's own session cookie crosses the proxy, renamed per instance
+(`cf_<instance>_cptr_session`). Hub cookies and authorization never reach a
+backend, upstream cookies outside that allowlist never reach the browser, and
+Hub logout clears the bridged cookies. The proxy and WebSocket relay verify
+upstream TLS certificates for every non-loopback host.
+
+cptr prints a one-time setup token on each start; the Worker writes it to
+`~/.cloudagentfleet/cptr-setup-token` (owner-only), redacts it from
+`cptr.log`, and never prints it to service logs.
 
 Instances enrolled with `--link-only` are health-checked only; their tailnet
 URL is returned to authenticated dashboard users as `launchUrl` (Codeman

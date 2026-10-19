@@ -52,7 +52,7 @@ browsers, or containers. A Worker owns local process execution, provider
 credentials, Codeman sessions, preview connections, and browser sessions.
 
 For private remote operator access, the Controller stays bound to `127.0.0.1`
-and publishes a single Hub origin with Tailscale Serve (`cloudagentfleet hub
+and publishes the Hub (dashboard on 443, host UIs on 8443) with Tailscale Serve (`cloudagentfleet hub
 serve`). Cloud Agent Fleet never binds host-local 80 or 443. The Hub password
 is the browser application boundary. Tailnet ACLs allow operators to reach the Hub tag and
 allow the Hub tag to reach only Codeman-host ports. Codeman endpoints are

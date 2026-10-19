@@ -168,3 +168,28 @@ test("ensureCodeman fails clearly when install is disabled and binary missing", 
     /CLOUDAGENTFLEET_CODEMAN_INSTALL=false|not installed/i,
   );
 });
+
+test("ensureCodeman stops a daemon it started that never became ready", async () => {
+  const scripts: string[] = [];
+  await assert.rejects(
+    () => ensureCodeman({
+      platformImpl: "linux",
+      baseUrl: "http://127.0.0.1:3999",
+      installIfMissing: false,
+      readyTimeoutMs: 20,
+      pollIntervalMs: 5,
+      fetchImpl: (async () => {
+        throw new Error("ECONNREFUSED");
+      }) as typeof fetch,
+      sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+      runCommand: (_commandName, args) => {
+        scripts.push(args.at(-1) ?? "");
+        return okSpawn(args.at(-1) === "command -v codeman" ? "/usr/bin/codeman\n" : "");
+      },
+      log: () => undefined,
+    }),
+    /did not become ready/,
+  );
+  assert.ok(scripts.includes("codeman web -d"), "the daemon was started");
+  assert.ok(scripts.includes("codeman web --stop"), "and stopped again instead of being orphaned");
+});

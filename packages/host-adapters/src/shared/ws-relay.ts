@@ -4,6 +4,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { request as httpRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
 import type { CookieBridge } from "./cookies.ts";
+import { verifyUpstreamTls } from "./tls.ts";
 
 export interface ProxyWebSocketOptions {
   endpoint: URL;
@@ -50,7 +51,7 @@ export async function proxyWebSocket(
     path: options.path,
     method: "GET",
     headers,
-    rejectUnauthorized: endpoint.protocol !== "https:" || endpoint.hostname === "localhost",
+    rejectUnauthorized: verifyUpstreamTls(endpoint),
   });
   upstreamRequest.once("upgrade", (response, upstreamSocket, upstreamHead) => {
     if (response.statusCode !== 101) {

@@ -33,10 +33,10 @@
     "color:#d7dee7",
   ].join(";");
   select.addEventListener("change", () => {
-    if (select.value) window.location.assign(`/_fleet/api/fleet/select/${encodeURIComponent(select.value)}`);
+    if (select.value) window.location.assign(`/_fleet/select/${encodeURIComponent(select.value)}`);
   });
   const back = document.createElement("a");
-  back.href = "/_fleet/api/fleet/clear";
+  back.href = "/_fleet/clear";
   back.textContent = "Fleet dashboard";
   back.style.cssText = [
     "margin-left:auto",
@@ -48,25 +48,20 @@
   document.body.prepend(bar);
   document.documentElement.style.paddingTop = "36px";
 
-  fetch("/_fleet/api/instances", { headers: { accept: "application/json" } })
+  // Runs on the host-UI origin, which only exposes this read-only host list.
+  fetch("/_fleet/api/switcher", { headers: { accept: "application/json" } })
     .then((response) => response.ok ? response.json() : Promise.reject(new Error("Unable to load hosts")))
     .then((payload) => {
-      // Only hosts whose UI the Hub can proxy are switchable from inside a native UI.
-      const instances = (Array.isArray(payload.instances) ? payload.instances : [])
-        .filter((instance) => Array.isArray(instance.features) && instance.features.includes("native-ui-proxy"));
-      return fetch("/_fleet/api/fleet/current")
-        .then((response) => response.json())
-        .then((current) => ({ instances, current }));
-    })
-    .then(({ instances, current }) => {
-      for (const instance of instances) {
+      const hosts = Array.isArray(payload.hosts) ? payload.hosts : [];
+      if (typeof payload.dashboardUrl === "string") back.href = payload.dashboardUrl;
+      for (const host of hosts) {
         const option = document.createElement("option");
-        option.value = String(instance.id);
-        option.textContent = `${instance.label} · ${instance.status}`;
-        option.selected = instance.id === current.instanceId;
+        option.value = String(host.id);
+        option.textContent = `${host.label} · ${host.status}`;
+        option.selected = host.id === payload.current;
         select.append(option);
       }
-      if (instances.length === 0) {
+      if (hosts.length === 0) {
         select.disabled = true;
         select.title = "No hosts with a proxied UI are registered";
       }

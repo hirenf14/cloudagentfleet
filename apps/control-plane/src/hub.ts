@@ -104,7 +104,7 @@ export class FleetHub {
   }
 
   getInstance(instanceId: string): HostInstance {
-    const instance = this.listInstances().find((candidate) => candidate.id === instanceId);
+    const instance = this.state.findInstance(instanceId);
     if (!instance) throw new NotFoundError(`Unknown instance: ${instanceId}`);
     return instance;
   }
@@ -116,9 +116,7 @@ export class FleetHub {
   }
 
   getSession(instanceId: string, sessionId: string): HostSession {
-    const session = this.listSessions().find(
-      (candidate) => candidate.instanceId === instanceId && candidate.id === sessionId,
-    );
+    const session = this.state.findSession(instanceId, sessionId);
     if (!session) throw new NotFoundError(`Unknown session: ${instanceId}/${sessionId}`);
     return session;
   }
@@ -285,9 +283,7 @@ export class FleetHub {
     head: Buffer,
   ): Promise<void> {
     const terminal = this.facet(instanceId, "terminal", (adapter) => adapter.terminalProxy);
-    if (!this.listSessions().some(
-      (session) => session.instanceId === instanceId && session.id === sessionId,
-    )) {
+    if (!this.state.findSession(instanceId, sessionId)) {
       const remoteSession = (await this.sessionControl(instanceId).listSessions())
         .find((session) => session.id === sessionId);
       if (!remoteSession) throw new NotFoundError(`Unknown session: ${instanceId}/${sessionId}`);
@@ -333,9 +329,7 @@ export class FleetHub {
   async stopSession(instanceId: string, sessionId: string): Promise<void> {
     this.assertSession(instanceId, sessionId);
     await this.sessionControl(instanceId).stopSession(sessionId);
-    const existing = this.state.snapshot().sessions.find(
-      (session) => session.instanceId === instanceId && session.id === sessionId,
-    );
+    const existing = this.state.findSession(instanceId, sessionId);
     if (existing) this.state.upsertSession({ ...existing, status: "stopped", lastEventAt: new Date().toISOString() });
     this.appendAudit("session.stopped", `${instanceId}/${sessionId}`);
   }
@@ -425,9 +419,7 @@ export class FleetHub {
   }
 
   private updateSessionFromEvent(instanceId: string, event: HostSessionEvent): void {
-    const existing = this.state.snapshot().sessions.find(
-      (session) => session.instanceId === instanceId && session.id === event.sessionId,
-    );
+    const existing = this.state.findSession(instanceId, event.sessionId);
     if (!existing) return;
     const status = sessionStatusForEvent(event.event, existing.status);
     this.state.upsertSession({
@@ -444,10 +436,9 @@ export class FleetHub {
   }
 
   private assertSession(instanceId: string, sessionId: string): void {
-    const exists = this.state.snapshot().sessions.some(
-      (session) => session.instanceId === instanceId && session.id === sessionId,
-    );
-    if (!exists) throw new NotFoundError(`Unknown session: ${instanceId}/${sessionId}`);
+    if (!this.state.findSession(instanceId, sessionId)) {
+      throw new NotFoundError(`Unknown session: ${instanceId}/${sessionId}`);
+    }
   }
 
   private resolveWorkspacePath(

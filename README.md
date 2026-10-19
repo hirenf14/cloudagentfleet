@@ -141,15 +141,16 @@ cloudagentfleet enroll tailscale-url \
 ```
 
 The Hub health-checks `/api/health`. **Open Open WebUI Computer UI** opens it in
-a new tab through the Hub origin, so it is reachable wherever the Hub is; sign
-in once with cptr's own account (the Hub keeps that session separate from its
-own cookies). Add `--link-only` to have the dashboard open cptr's URL directly
-instead. Hub folder policy does not apply inside cptr. Cloud Agent Fleet does
-not bundle or modify cptr; its use is governed by the Open WebUI Computer
-license.
+a new tab through the Hub's host-UI origin, so it is reachable wherever the Hub
+is; sign in once with cptr's own account (the Hub keeps that session separate
+from its own cookies). Add `--link-only` to have the dashboard open cptr's URL
+directly instead. Hub folder policy does not apply inside cptr. Cloud Agent
+Fleet does not bundle or modify cptr; its use is governed by the Open WebUI
+Computer license.
 
-The Hub dashboard always lives at `/_fleet/`. While a host's UI is open, every
-other path on the Hub origin belongs to that host.
+The Hub has two origins: the dashboard (`/_fleet/`, port 8787, served on 443)
+and host UIs (port 8788, served on 8443). Backend UIs never run on the
+dashboard origin, so they cannot use your Hub session to call the Hub API.
 
 ## Worker service
 
