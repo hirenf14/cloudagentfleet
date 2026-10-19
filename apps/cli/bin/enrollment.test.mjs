@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { resolve } from "node:path";
 import {
+  enrollInstance,
   parseAgentProfiles,
   parseOptions,
   safeEndpoint,
@@ -137,4 +138,11 @@ test("Hub serving reports missing Tailscale and refuses an unhealthy Hub", async
     /Hub is not reachable/,
   );
   assert.deepEqual(calls.map(({ args }) => args), [["version"], ["status"]]);
+});
+
+test("enroll rejects an unknown backend before prompting", async () => {
+  await assert.rejects(
+    () => enrollInstance(["tailscale-url", "--backend", "unknown"]),
+    /--backend must be one of: codeman/,
+  );
 });

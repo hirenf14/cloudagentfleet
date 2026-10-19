@@ -30,7 +30,7 @@
 
 ## Phase 2a: Host backend abstraction
 
-- [ ] Backend-neutral instances, adapters, and feature gating
+- [x] Backend-neutral instances, adapters, and feature gating
 - [ ] Open WebUI Computer (`cptr`) as an optional backend
 
 See `docs/BACKEND-ABSTRACTION.md`.

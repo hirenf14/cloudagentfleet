@@ -19,6 +19,8 @@ const thisFile = fileURLToPath(import.meta.url);
 const thisDir = dirname(thisFile);
 const configPath = join(homedir(), ".cloudagentfleet", "worker.json");
 const instancesConfigPath = join(homedir(), ".cloudagentfleet", "instances.json");
+/** Backends the Hub registry knows; keep in sync with packages/host-adapters. */
+const backends = ["codeman"];
 const modes = ["claude", "shell", "opencode", "codex", "gemini", "antigravity", "pi", "grok", "deepseek"];
 const defaultAgentNames = { claude: "Claude Code" };
 const tailscaleCommand = process.platform === "win32" ? "tailscale.exe" : "tailscale";
@@ -689,6 +691,10 @@ export async function enrollInstance(argv = process.argv.slice(3)) {
     printEnrollmentHelp();
     return;
   }
+  const backend = optionValue(parsed, "backend") ?? "codeman";
+  if (!backends.includes(backend)) {
+    throw new Error(`--backend must be one of: ${backends.join(", ")}`);
+  }
   const selectedMode = optionValue(parsed, "mode") ?? parsed.positionals[0]
     ?? await ask("Connection mode (connector or tailscale-url)", "connector");
   if (selectedMode !== "connector" && selectedMode !== "tailscale-url") {
@@ -702,11 +708,11 @@ export async function enrollInstance(argv = process.argv.slice(3)) {
     "Controller URL",
   );
   const id = assertNonEmpty(
-    optionValue(parsed, "instance-id", "id") ?? await ask("Codeman instance ID"),
+    optionValue(parsed, "instance-id", "id") ?? await ask("Instance ID"),
     "Instance ID",
   );
   const label = assertNonEmpty(
-    optionValue(parsed, "name", "label") ?? await ask("Codeman instance name", id),
+    optionValue(parsed, "name", "label") ?? await ask("Instance name", id),
     "Instance name",
   );
   const codemanUsername = optionValue(parsed, "username")
@@ -735,6 +741,7 @@ export async function enrollInstance(argv = process.argv.slice(3)) {
   const registration = {
     id,
     label,
+    backend,
     connectionMode: selectedMode,
     ...(selectedMode === "connector"
       ? {
@@ -748,8 +755,8 @@ export async function enrollInstance(argv = process.argv.slice(3)) {
       : {
           endpoint: safeEndpoint(
             optionValue(parsed, "url", "endpoint", "tailscale-url")
-              ?? await ask("Tailscale Codeman URL"),
-            "Tailscale Codeman URL",
+              ?? await ask("Tailscale URL"),
+            "Tailscale URL",
             true,
           ),
         }),
@@ -813,12 +820,13 @@ export async function enrollInstance(argv = process.argv.slice(3)) {
 
 function printEnrollmentHelp() {
   console.log([
-    "Register a Codeman instance with the Controller.",
+    "Register a host instance (default backend: Codeman) with the Controller.",
     "",
     "Usage:",
     "  cloudagentfleet enroll [connector|tailscale-url] [options]",
     "",
     "Options:",
+    "  --backend <codeman>                        default codeman",
     "  --mode <connector|tailscale-url>",
     "  --instance-id <id> --name <name>",
     "  --node-id <enrolled-worker-id>             connector mode",
@@ -845,7 +853,7 @@ function printHubHelp() {
     "  cloudagentfleet hub stop  [--port <1-65535>]",
     "",
     "The Controller must already be running on 127.0.0.1 (default port 8787).",
-    "Serve uses one tailnet origin for the Hub and never publishes Codeman instances.",
+    "Serve uses one tailnet origin for the Hub and never publishes host instances.",
   ].join("\n"));
 }
 
