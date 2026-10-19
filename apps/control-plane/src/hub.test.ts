@@ -228,3 +228,17 @@ test("FleetHub stores adapter features and rejects unsupported features with 409
     ["sessions", "workspace-suggest"],
   );
 });
+
+test("FleetHub marks sessions the host no longer reports as stopped", async () => {
+  let adapter: FakeAdapter | undefined;
+  const hub = new FleetHub({
+    adapterFactory: (instance) => (adapter = new FakeAdapter(instance)),
+  });
+  hub.registerInstance(registration("codeman-sync"));
+  const session = await hub.createSession("codeman-sync", workspace.id, agent.id);
+  assert.equal(hub.getSession("codeman-sync", session.id).status, "starting");
+
+  adapter!.sessions = [];
+  await hub.syncSessions("codeman-sync");
+  assert.equal(hub.getSession("codeman-sync", session.id).status, "stopped");
+});

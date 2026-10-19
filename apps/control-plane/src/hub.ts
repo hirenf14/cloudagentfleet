@@ -227,6 +227,18 @@ export class FleetHub {
   async syncSessions(instanceId: string): Promise<HostSession[]> {
     const sessions = await this.sessionControl(instanceId).listSessions();
     for (const session of sessions) this.state.upsertSession(session);
+    // A session the host no longer reports has ended (stopped elsewhere, or the
+    // host restarted); keep it for history but stop showing it as live.
+    const live = new Set(sessions.map((session) => session.id));
+    for (const stored of this.listSessions()) {
+      if (
+        stored.instanceId === instanceId
+        && !live.has(stored.id)
+        && !["completed", "failed", "stopped"].includes(stored.status)
+      ) {
+        this.state.upsertSession({ ...stored, status: "stopped", needsInput: false, lastEventAt: new Date().toISOString() });
+      }
+    }
     return sessions;
   }
 

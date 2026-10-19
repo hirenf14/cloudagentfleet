@@ -273,16 +273,22 @@
       (session) => `${session.instanceId}/${session.id}` === selectedSessionKey,
     ) || null;
 
+    // Open the most recent session once, on first load; after that the operator's
+    // choice (including an instance overview with no session open) sticks.
+    const autoSelectedSession = useRef(false);
     useEffect(() => {
-      if (!selectedSessionKey && sessions[0]) {
-        setSelectedSessionKey(`${sessions[0].instanceId}/${sessions[0].id}`);
+      if (!loading && !autoSelectedSession.current) {
+        autoSelectedSession.current = true;
+        if (!selectedSessionKey && sessions[0]) {
+          setSelectedSessionKey(`${sessions[0].instanceId}/${sessions[0].id}`);
+        }
       }
       if (selectedSessionKey && !sessions.some(
         (session) => `${session.instanceId}/${session.id}` === selectedSessionKey,
       )) {
         setSelectedSessionKey(null);
       }
-    }, [sessions, selectedSessionKey]);
+    }, [loading, sessions, selectedSessionKey]);
 
     const sessionsByInstance = useMemo(() => {
       const groups = new Map();
@@ -379,7 +385,11 @@
                     "button",
                     {
                       className: `instance-card ${selectedInstanceId === instance.id ? "instance-card--selected" : ""}`,
-                      onClick: () => setSelectedInstanceId(instance.id),
+                      onClick: () => {
+                        // Show this instance's overview, not a session from another instance.
+                        setSelectedInstanceId(instance.id);
+                        setSelectedSessionKey(null);
+                      },
                       "aria-pressed": selectedInstanceId === instance.id,
                     },
                     h(StatusDot, { status: instance.status }),

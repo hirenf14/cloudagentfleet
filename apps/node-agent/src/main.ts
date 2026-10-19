@@ -211,6 +211,9 @@ export async function runWorker(): Promise<void> {
       codemanEnabled ? (message) => runtime.handle(message) : codemanDisabled,
       codemanEnabled ? (request) => runtime.handleConnectorRequest(request) : codemanDisabled,
     );
+  } catch (error) {
+    // SIGINT/SIGTERM aborts the Controller stream; that is a clean shutdown.
+    if (!(stopping && error instanceof Error && error.name === "AbortError")) throw error;
   } finally {
     stopping = true;
     stopEventForwarding();
