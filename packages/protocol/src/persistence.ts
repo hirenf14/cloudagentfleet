@@ -9,19 +9,20 @@ import {
 import { dirname } from "node:path";
 import type {
   AuditEvent,
-  CodemanInstance,
-  CodemanSession,
+  HostInstance,
+  HostSession,
 } from "./index.ts";
 import {
-  isCodemanInstance,
-  isCodemanSession,
-  validateCodemanInstance,
-  validateCodemanSession,
+  isRecord,
+  isHostInstance,
+  isHostSession,
+  validateHostInstance,
+  validateHostSession,
 } from "./index.ts";
 
 export interface HubState {
-  instances: CodemanInstance[];
-  sessions: CodemanSession[];
+  instances: HostInstance[];
+  sessions: HostSession[];
   audit: AuditEvent[];
 }
 
@@ -46,8 +47,8 @@ export class HubStateStore {
     return structuredClone(this.state);
   }
 
-  upsertInstance(instance: CodemanInstance): void {
-    validateCodemanInstance(instance);
+  upsertInstance(instance: HostInstance): void {
+    validateHostInstance(instance);
     const index = this.state.instances.findIndex((candidate) => candidate.id === instance.id);
     if (index < 0) this.state.instances.push(structuredClone(instance));
     else this.state.instances[index] = structuredClone(instance);
@@ -60,8 +61,8 @@ export class HubStateStore {
     this.persist();
   }
 
-  upsertSession(session: CodemanSession): void {
-    validateCodemanSession(session);
+  upsertSession(session: HostSession): void {
+    validateHostSession(session);
     const index = this.state.sessions.findIndex(
       (candidate) => candidate.instanceId === session.instanceId && candidate.id === session.id,
     );
@@ -109,10 +110,10 @@ function load(path: string): HubState {
     const parsed = JSON.parse(readFileSync(path, "utf8")) as Partial<HubState>;
     return {
       instances: Array.isArray(parsed.instances)
-        ? parsed.instances.filter(isCodemanInstance)
+        ? parsed.instances.map(migrateInstance).filter(isHostInstance)
         : [],
       sessions: Array.isArray(parsed.sessions)
-        ? parsed.sessions.filter(isCodemanSession)
+        ? parsed.sessions.filter(isHostSession)
         : [],
       audit: Array.isArray(parsed.audit)
         ? parsed.audit.filter(isAuditEvent)
@@ -121,6 +122,20 @@ function load(path: string): HubState {
   } catch {
     return emptyState();
   }
+}
+
+/**
+ * Brings instances written before the backend abstraction up to date:
+ * every pre-existing instance is a Codeman instance, and features are
+ * recomputed by the Hub when it attaches an adapter.
+ */
+function migrateInstance(value: unknown): unknown {
+  if (!isRecord(value)) return value;
+  return {
+    ...value,
+    backend: value.backend ?? "codeman",
+    features: Array.isArray(value.features) ? value.features : [],
+  };
 }
 
 function isAuditEvent(value: unknown): value is AuditEvent {

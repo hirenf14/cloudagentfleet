@@ -4,9 +4,9 @@ import { basename, dirname, join, resolve } from "node:path";
 import type {
   AgentJob,
   CodemanAgentMode,
-  CodemanAgentProfile,
+  AgentProfile,
   CodemanConnectorRequest,
-  CodemanSessionEvent,
+  HostSessionEvent,
   CodemanStatus,
   ControlMessage,
   NodeMessage,
@@ -30,12 +30,12 @@ import {
   readSseStream,
 } from "../../../packages/codeman-bridge/src/wire.ts";
 
-interface CodemanSession {
+interface CodemanApiSession {
   id: string;
 }
 
 interface CreateSessionData {
-  session: CodemanSession;
+  session: CodemanApiSession;
 }
 
 interface InputData {
@@ -125,7 +125,7 @@ export class CodemanClient {
     }
   }
 
-  async createSession(options: CodemanCreateSessionOptions): Promise<CodemanSession> {
+  async createSession(options: CodemanCreateSessionOptions): Promise<CodemanApiSession> {
     const envelope = await this.request<CreateSessionData>("/api/v1/sessions", {
       method: "POST",
       body: {
@@ -339,7 +339,7 @@ export interface CodemanWorkerRuntimeOptions {
   workspacePolicy: WorkspacePolicy;
   send: (message: NodeMessage) => Promise<void>;
   mode?: CodemanAgentMode;
-  agentProfiles?: CodemanAgentProfile[];
+  agentProfiles?: AgentProfile[];
   cursorCommand?: string;
   claudeCommand?: string;
 }
@@ -360,7 +360,7 @@ export class CodemanWorkerRuntime {
   private readonly workspacePolicy: WorkspacePolicy;
   private readonly send: (message: NodeMessage) => Promise<void>;
   private readonly mode: CodemanAgentMode;
-  private readonly agentProfiles: CodemanAgentProfile[];
+  private readonly agentProfiles: AgentProfile[];
   private readonly cursorCommand?: string;
   private readonly claudeCommand?: string;
   private readonly activeJobs = new Map<string, ActiveJob>();
@@ -624,7 +624,7 @@ export class CodemanWorkerRuntime {
     return workspace;
   }
 
-  private toSessionEvent(event: CodemanProviderEvent): CodemanSessionEvent | undefined {
+  private toSessionEvent(event: CodemanProviderEvent): HostSessionEvent | undefined {
     const mapped = codemanEventKind(event.type);
     if (!mapped) return undefined;
     return {
@@ -669,9 +669,9 @@ function isAgentProfile(
 export function mergeLaunchAgents(input: {
   mode: CodemanAgentMode;
   statusAgents?: unknown[];
-  localProfiles?: CodemanAgentProfile[];
-}): CodemanAgentProfile[] {
-  const ordered: CodemanAgentProfile[] = [
+  localProfiles?: AgentProfile[];
+}): AgentProfile[] {
+  const ordered: AgentProfile[] = [
     {
       id: "shell",
       name: "Shell (raw CLI)",

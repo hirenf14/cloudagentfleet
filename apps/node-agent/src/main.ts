@@ -13,7 +13,7 @@ import { validateConfig, type NodeAgentConfig } from "./index.ts";
 import { ControllerTransport } from "./transport.ts";
 import type {
   CodemanAgentMode,
-  CodemanAgentProfile,
+  AgentProfile,
   WorkspaceDescriptor,
   WorkspacePolicy,
 } from "../../../packages/protocol/src/index.ts";
@@ -81,7 +81,7 @@ function isCursorAuthenticated(commandName: string): boolean {
 function detectAgentProfiles(providers: {
   cursor?: { command: string; ready: boolean };
   claude?: { command: string; ready: boolean };
-}): CodemanAgentProfile[] {
+}): AgentProfile[] {
   return [
     ...(providers.cursor ? [{
       id: "cursor-agent",

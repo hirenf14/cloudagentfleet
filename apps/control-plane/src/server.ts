@@ -6,11 +6,11 @@ import { fileURLToPath } from "node:url";
 import { resolve, dirname, join, sep } from "node:path";
 import type { Duplex } from "node:stream";
 import { ControlPlane, type NodeConnection } from "./index.ts";
-import { CodemanHub } from "./hub.ts";
+import { FleetHub } from "./hub.ts";
 import { resolveUiAuth, type UiAuth, type UiAuthRequest } from "./auth.ts";
 import { HttpError } from "./errors.ts";
 import type {
-  CodemanInstanceRegistration,
+  HostInstanceRegistration,
   CreateJobRequest,
   NodeHeartbeat,
   NodeMessage,
@@ -52,7 +52,7 @@ export interface ControllerServerOptions {
   uiCookieSecure?: boolean;
   codemanCredentials?: Record<string, { username: string; password: string }>;
   controlPlane?: ControlPlane;
-  hub?: CodemanHub;
+  hub?: FleetHub;
   statePath?: string;
 }
 
@@ -61,7 +61,7 @@ export interface ControllerServer {
   controlPlane: ControlPlane;
   host: string;
   port: number;
-  hub: CodemanHub;
+  hub: FleetHub;
   /** Auto-generated Hub password still in bootstrap form (print on each start). */
   revealPassword?: string;
 }
@@ -99,7 +99,7 @@ export function createControllerServer(
   });
   const uiAuth = resolvedAuth.auth;
   const controlPlane = options.controlPlane ?? new ControlPlane();
-  const hub = options.hub ?? new CodemanHub({
+  const hub = options.hub ?? new FleetHub({
     statePath,
     credentials: options.codemanCredentials ?? readCodemanCredentials(),
     connectorRequest: (nodeId, instanceId, operation, payload) =>
@@ -178,7 +178,7 @@ async function handleTerminalUpgrade(
   request: IncomingMessage,
   socket: Duplex,
   head: Buffer,
-  hub: CodemanHub,
+  hub: FleetHub,
   uiAuth: UiAuth,
   authToken: string | undefined,
 ): Promise<void> {
@@ -226,7 +226,7 @@ async function route(
   request: IncomingMessage,
   response: ServerResponse,
   controlPlane: ControlPlane,
-  hub: CodemanHub,
+  hub: FleetHub,
   uiAuth: UiAuth,
   auth: UiAuthRequest,
 ): Promise<void> {
@@ -346,12 +346,12 @@ async function route(
   }
 
   if (method === "POST" && url.pathname === "/api/instances") {
-    const body = await readJson<CodemanInstanceRegistration & {
+    const body = await readJson<HostInstanceRegistration & {
       credentials?: { username?: string; password?: string };
     }>(request);
     const credentials = body.credentials;
-    const registration: CodemanInstanceRegistration = { ...body };
-    delete (registration as CodemanInstanceRegistration & { credentials?: unknown }).credentials;
+    const registration: HostInstanceRegistration = { ...body };
+    delete (registration as HostInstanceRegistration & { credentials?: unknown }).credentials;
     if (
       credentials !== undefined
       && (
@@ -838,7 +838,7 @@ function isTailscaleIpv4(hostname: string): boolean {
   return first === 100 && second >= 64 && second <= 127;
 }
 
-function publicInstance(instance: ReturnType<CodemanHub["getInstance"]>): ReturnType<CodemanHub["getInstance"]> {
+function publicInstance(instance: ReturnType<FleetHub["getInstance"]>): ReturnType<FleetHub["getInstance"]> {
   return { ...instance, endpoint: null };
 }
 

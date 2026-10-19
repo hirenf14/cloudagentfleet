@@ -3,8 +3,8 @@ import { createServer } from "node:http";
 import test from "node:test";
 import { CodemanConnectorAdapter, CodemanHttpAdapter } from "./index.ts";
 import type {
-  CodemanInstance,
-  CodemanSessionEvent,
+  HostInstance,
+  HostSessionEvent,
   WorkspaceDescriptor,
 } from "../../../packages/protocol/src/index.ts";
 
@@ -16,9 +16,11 @@ const workspace: WorkspaceDescriptor = {
   providers: { codeman: "ready" },
 };
 
-const instance: CodemanInstance = {
+const instance: HostInstance = {
   id: "codeman-1",
   label: "Codeman",
+  backend: "codeman",
+  features: [],
   connectionMode: "tailscale-url",
   endpoint: "https://codeman.example.ts.net",
   status: "offline",
@@ -246,7 +248,7 @@ test("CodemanHttpAdapter rejects non-TLS remote endpoints", () => {
     () => new CodemanHttpAdapter({
       instance: { ...instance, endpoint: "http://codeman.example.ts.net" },
     }),
-    /Invalid Codeman instance/,
+    /Invalid host instance/,
   );
 });
 
@@ -264,14 +266,14 @@ async function closeServer(server: ReturnType<typeof createServer>): Promise<voi
 }
 
 test("CodemanConnectorAdapter uses allowlisted operations and forwards events", async () => {
-  const connectorInstance: CodemanInstance = {
+  const connectorInstance: HostInstance = {
     ...instance,
     connectionMode: "connector",
     nodeId: "worker-1",
     endpoint: null,
   };
   const operations: string[] = [];
-  let emit: ((event: CodemanSessionEvent) => void) | undefined;
+  let emit: ((event: HostSessionEvent) => void) | undefined;
   const adapter = new CodemanConnectorAdapter({
     instance: connectorInstance,
     request: async (operation, payload) => {

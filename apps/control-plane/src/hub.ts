@@ -1,17 +1,17 @@
 import {
   CodemanHttpAdapter,
   CodemanConnectorAdapter,
-  type CodemanInstanceAdapter,
+  type HostAdapter,
 } from "../../../packages/codeman-bridge/src/index.ts";
 import { HubStateStore } from "../../../packages/protocol/src/persistence.ts";
 import { NotFoundError, UnavailableError } from "./errors.ts";
 import type {
   AuditEvent,
-  CodemanAgentProfile,
-  CodemanInstance,
-  CodemanInstanceRegistration,
-  CodemanSession,
-  CodemanSessionEvent,
+  AgentProfile,
+  HostInstance,
+  HostInstanceRegistration,
+  HostSession,
+  HostSessionEvent,
   CodemanConnectorOperation,
   WorkspaceDescriptor,
   WorkspacePathSuggestion,
@@ -20,8 +20,8 @@ import {
   CODEMAN_AGENT_MODES,
   codemanAgentName,
   isPathAllowed,
-  validateCodemanInstanceRegistration,
-  validateCodemanInstance,
+  validateHostInstanceRegistration,
+  validateHostInstance,
 } from "../../../packages/protocol/src/index.ts";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { Duplex } from "node:stream";
@@ -30,9 +30,9 @@ export interface HubOptions {
   statePath?: string;
   credentials?: Record<string, { username: string; password: string }>;
   adapterFactory?: (
-    instance: CodemanInstance,
+    instance: HostInstance,
     credentials?: { username: string; password: string },
-  ) => CodemanInstanceAdapter;
+  ) => HostAdapter;
   connectorRequest?: (
     nodeId: string,
     instanceId: string,
@@ -42,11 +42,11 @@ export interface HubOptions {
   connectorSubscribeEvents?: (
     nodeId: string,
     instanceId: string,
-    listener: (event: CodemanSessionEvent) => void,
+    listener: (event: HostSessionEvent) => void,
   ) => () => void;
 }
 
-export class CodemanHub {
+export class FleetHub {
   readonly state: HubStateStore;
   private readonly credentials: HubOptions["credentials"];
   private readonly adapterFactory: NonNullable<HubOptions["adapterFactory"]>;
@@ -54,9 +54,9 @@ export class CodemanHub {
   private readonly connectorRequest?: HubOptions["connectorRequest"];
   private readonly connectorSubscribeEvents?: HubOptions["connectorSubscribeEvents"];
   private readonly runtimeCredentials = new Map<string, { username: string; password: string }>();
-  private readonly adapters = new Map<string, CodemanInstanceAdapter>();
+  private readonly adapters = new Map<string, HostAdapter>();
   private readonly adapterUnsubscribers = new Map<string, () => void>();
-  private readonly listeners = new Set<(event: CodemanSessionEvent) => void>();
+  private readonly listeners = new Set<(event: HostSessionEvent) => void>();
 
   constructor(options: HubOptions = {}) {
     this.state = new HubStateStore(options.statePath);
@@ -90,11 +90,11 @@ export class CodemanHub {
     for (const instance of this.state.snapshot().instances) this.attachAdapter(instance);
   }
 
-  listInstances(): CodemanInstance[] {
+  listInstances(): HostInstance[] {
     return this.state.snapshot().instances;
   }
 
-  listSessions(): CodemanSession[] {
+  listSessions(): HostSession[] {
     return this.state.snapshot().sessions;
   }
 
@@ -110,19 +110,19 @@ export class CodemanHub {
     return this.state.snapshot().audit;
   }
 
-  getInstance(instanceId: string): CodemanInstance {
+  getInstance(instanceId: string): HostInstance {
     const instance = this.listInstances().find((candidate) => candidate.id === instanceId);
     if (!instance) throw new NotFoundError(`Unknown Codeman instance: ${instanceId}`);
     return instance;
   }
 
-  getAdapter(instanceId: string): CodemanInstanceAdapter {
+  getAdapter(instanceId: string): HostAdapter {
     const adapter = this.adapters.get(instanceId);
     if (!adapter) throw new UnavailableError(`Codeman instance is not connected: ${instanceId}`);
     return adapter;
   }
 
-  getSession(instanceId: string, sessionId: string): CodemanSession {
+  getSession(instanceId: string, sessionId: string): HostSession {
     const session = this.listSessions().find(
       (candidate) => candidate.instanceId === instanceId && candidate.id === sessionId,
     );
@@ -131,18 +131,20 @@ export class CodemanHub {
   }
 
   registerInstance(
-    registration: CodemanInstanceRegistration,
+    registration: HostInstanceRegistration,
     credentials?: { username: string; password: string },
-  ): CodemanInstance {
-    validateCodemanInstanceRegistration(registration);
+  ): HostInstance {
+    validateHostInstanceRegistration(registration);
     const existing = this.listInstances().find((instance) => instance.id === registration.id);
-    const instance: CodemanInstance = {
+    const instance: HostInstance = {
       id: registration.id,
       label: registration.label,
+      backend: registration.backend ?? "codeman",
       connectionMode: registration.connectionMode,
       ...(registration.nodeId ? { nodeId: registration.nodeId } : {}),
       endpoint: registration.endpoint ?? null,
       status: existing?.status ?? "offline",
+      features: [],
       capabilities: [...new Set(registration.capabilities ?? ["codeman"])],
       ...(registration.workspacePolicy
         ? {
@@ -167,7 +169,7 @@ export class CodemanHub {
       lastSeenAt: existing?.lastSeenAt ?? null,
       createdAt: existing?.createdAt ?? new Date().toISOString(),
     };
-    validateCodemanInstance(instance);
+    validateHostInstance(instance);
     if (credentials) this.runtimeCredentials.set(instance.id, credentials);
     this.attachAdapter(instance, credentials ?? this.runtimeCredentials.get(instance.id));
     this.state.upsertInstance(instance);
@@ -185,7 +187,7 @@ export class CodemanHub {
     this.state.removeInstance(instanceId);
   }
 
-  async checkInstance(instanceId: string): Promise<CodemanInstance> {
+  async checkInstance(instanceId: string): Promise<HostInstance> {
     const instance = this.getInstance(instanceId);
     const adapter = this.getAdapter(instanceId);
     try {
@@ -211,7 +213,7 @@ export class CodemanHub {
     }
   }
 
-  async listCapabilities(instanceId: string): Promise<CodemanAgentProfile[]> {
+  async listCapabilities(instanceId: string): Promise<AgentProfile[]> {
     const instance = this.getInstance(instanceId);
     const agents = await this.getAdapter(instanceId).listCapabilities();
     this.state.upsertInstance({
@@ -223,7 +225,7 @@ export class CodemanHub {
     return agents;
   }
 
-  async syncSessions(instanceId: string): Promise<CodemanSession[]> {
+  async syncSessions(instanceId: string): Promise<HostSession[]> {
     const adapter = this.getAdapter(instanceId);
     const sessions = await adapter.listSessions();
     for (const session of sessions) this.state.upsertSession(session);
@@ -236,14 +238,14 @@ export class CodemanHub {
     agentId: string,
     title?: string,
     workspacePath?: string,
-  ): Promise<CodemanSession> {
+  ): Promise<HostSession> {
     const instance = this.getInstance(instanceId);
     const workspace = workspaceId
       ? requireWorkspace(instance.workspaces, workspaceId)
       : this.resolveWorkspacePath(instance, workspacePath);
     const agent = instance.agents.find((candidate) => candidate.id === agentId);
     if (!agent || !agent.ready) throw new Error(`Agent is not ready: ${agentId}`);
-    let session: CodemanSession;
+    let session: HostSession;
     try {
       session = await this.getAdapter(instanceId).createSession(workspace, agent, title);
     } catch (error) {
@@ -348,13 +350,13 @@ export class CodemanHub {
     this.appendAudit("session.removed", `${instanceId}/${sessionId}`);
   }
 
-  subscribeEvents(listener: (event: CodemanSessionEvent) => void): () => void {
+  subscribeEvents(listener: (event: HostSessionEvent) => void): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
   }
 
   private attachAdapter(
-    instance: CodemanInstance,
+    instance: HostInstance,
     credentials?: { username: string; password: string },
   ): void {
     this.adapterUnsubscribers.get(instance.id)?.();
@@ -381,7 +383,7 @@ export class CodemanHub {
     this.adapterUnsubscribers.set(instance.id, unsubscribe);
   }
 
-  private updateSessionFromEvent(instanceId: string, event: CodemanSessionEvent): void {
+  private updateSessionFromEvent(instanceId: string, event: HostSessionEvent): void {
     const existing = this.state.snapshot().sessions.find(
       (session) => session.instanceId === instanceId && session.id === event.sessionId,
     );
@@ -408,7 +410,7 @@ export class CodemanHub {
   }
 
   private resolveWorkspacePath(
-    instance: CodemanInstance,
+    instance: HostInstance,
     workspacePath: string | undefined,
   ): WorkspaceDescriptor {
     if (!workspacePath?.trim()) throw new Error("workspaceId or workspacePath is required");
@@ -446,9 +448,9 @@ export class CodemanHub {
 }
 
 function sessionStatusForEvent(
-  event: CodemanSessionEvent["event"],
-  current: CodemanSession["status"],
-): CodemanSession["status"] {
+  event: HostSessionEvent["event"],
+  current: HostSession["status"],
+): HostSession["status"] {
   switch (event) {
     case "output":
       return current;
@@ -476,7 +478,7 @@ function requireWorkspace(workspaces: WorkspaceDescriptor[], workspaceId: string
   return workspace;
 }
 
-function defaultAgents(): CodemanAgentProfile[] {
+function defaultAgents(): AgentProfile[] {
   return CODEMAN_AGENT_MODES.map((mode) => ({
     id: mode,
     name: codemanAgentName(mode, mode),

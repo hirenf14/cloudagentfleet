@@ -1,15 +1,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type {
-  CodemanAgentProfile,
-  CodemanInstance,
-  CodemanInstanceRegistration,
-  CodemanSession,
-  CodemanSessionEvent,
+  AgentProfile,
+  HostInstance,
+  HostInstanceRegistration,
+  HostSession,
+  HostSessionEvent,
   CodemanStatus,
   WorkspaceDescriptor,
 } from "../../../packages/protocol/src/index.ts";
-import { CodemanHub } from "./hub.ts";
+import { FleetHub } from "./hub.ts";
 
 const workspace: WorkspaceDescriptor = {
   id: "workspace-a",
@@ -19,7 +19,7 @@ const workspace: WorkspaceDescriptor = {
   providers: { codeman: "ready" },
 };
 
-const agent: CodemanAgentProfile = {
+const agent: AgentProfile = {
   id: "claude",
   name: "Claude Code",
   mode: "claude",
@@ -27,11 +27,11 @@ const agent: CodemanAgentProfile = {
 };
 
 class FakeAdapter {
-  readonly instance: CodemanInstance;
-  readonly events = new Set<(event: CodemanSessionEvent) => void>();
-  sessions: CodemanSession[] = [];
+  readonly instance: HostInstance;
+  readonly events = new Set<(event: HostSessionEvent) => void>();
+  sessions: HostSession[] = [];
 
-  constructor(instance: CodemanInstance) {
+  constructor(instance: HostInstance) {
     this.instance = instance;
   }
 
@@ -39,7 +39,7 @@ class FakeAdapter {
     return { version: "test", agents: [agent] };
   }
 
-  async listCapabilities(): Promise<CodemanAgentProfile[]> {
+  async listCapabilities(): Promise<AgentProfile[]> {
     return [agent];
   }
 
@@ -51,17 +51,17 @@ class FakeAdapter {
     return [];
   }
 
-  async listSessions(): Promise<CodemanSession[]> {
+  async listSessions(): Promise<HostSession[]> {
     return this.sessions;
   }
 
   async createSession(
     selectedWorkspace: WorkspaceDescriptor,
-    selectedAgent: CodemanAgentProfile,
+    selectedAgent: AgentProfile,
     title = "session",
-  ): Promise<CodemanSession> {
+  ): Promise<HostSession> {
     const now = new Date().toISOString();
-    const session: CodemanSession = {
+    const session: HostSession = {
       id: `${this.instance.id}-session`,
       instanceId: this.instance.id,
       workspaceId: selectedWorkspace.id,
@@ -92,17 +92,17 @@ class FakeAdapter {
     });
   }
 
-  subscribeEvents(listener: (event: CodemanSessionEvent) => void): () => void {
+  subscribeEvents(listener: (event: HostSessionEvent) => void): () => void {
     this.events.add(listener);
     return () => this.events.delete(listener);
   }
 
-  emit(event: CodemanSessionEvent): void {
+  emit(event: HostSessionEvent): void {
     for (const listener of this.events) listener(event);
   }
 }
 
-function registration(id: string): CodemanInstanceRegistration {
+function registration(id: string): HostInstanceRegistration {
   return {
     id,
     label: id,
@@ -113,9 +113,9 @@ function registration(id: string): CodemanInstanceRegistration {
   };
 }
 
-test("CodemanHub isolates many instances and applies adapter events durably", async () => {
+test("FleetHub isolates many instances and applies adapter events durably", async () => {
   const adapters = new Map<string, FakeAdapter>();
-  const hub = new CodemanHub({
+  const hub = new FleetHub({
     adapterFactory: (instance) => {
       const adapter = new FakeAdapter(instance);
       adapters.set(instance.id, adapter);
@@ -134,7 +134,7 @@ test("CodemanHub isolates many instances and applies adapter events durably", as
     /Unknown session: codeman-b/,
   );
 
-  const received: CodemanSessionEvent[] = [];
+  const received: HostSessionEvent[] = [];
   const unsubscribe = hub.subscribeEvents((event) => received.push(event));
   adapters.get("codeman-a")!.emit({
     instanceId: "codeman-a",
@@ -157,8 +157,8 @@ test("CodemanHub isolates many instances and applies adapter events durably", as
   assert.equal(hub.getInstance("codeman-a").status, "online");
 });
 
-test("CodemanHub accepts an explicit path only inside the instance policy", async () => {
-  const hub = new CodemanHub({
+test("FleetHub accepts an explicit path only inside the instance policy", async () => {
+  const hub = new FleetHub({
     adapterFactory: (instance) => new FakeAdapter(instance),
   });
   hub.registerInstance({

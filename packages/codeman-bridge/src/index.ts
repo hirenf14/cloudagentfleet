@@ -1,8 +1,8 @@
 import type {
-  CodemanAgentProfile,
-  CodemanInstance,
-  CodemanSession,
-  CodemanSessionEvent,
+  AgentProfile,
+  HostInstance,
+  HostSession,
+  HostSessionEvent,
   CodemanConnectorOperation,
   CodemanStatus,
   WorkspaceDescriptor,
@@ -15,7 +15,7 @@ import { request as httpRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
 import {
   isRecord,
-  validateCodemanInstance,
+  validateHostInstance,
 } from "../../../packages/protocol/src/index.ts";
 import {
   type CodemanEnvelope,
@@ -28,22 +28,22 @@ import {
   readSseStream,
 } from "./wire.ts";
 
-export interface CodemanInstanceAdapter {
-  readonly instance: CodemanInstance;
+export interface HostAdapter {
+  readonly instance: HostInstance;
   getStatus(): Promise<CodemanStatus>;
-  listCapabilities(): Promise<CodemanAgentProfile[]>;
+  listCapabilities(): Promise<AgentProfile[]>;
   listWorkspaces(): Promise<WorkspaceDescriptor[]>;
   listWorkspacePathSuggestions(prefix: string): Promise<WorkspacePathSuggestion[]>;
-  listSessions(): Promise<CodemanSession[]>;
+  listSessions(): Promise<HostSession[]>;
   createSession(
     workspace: WorkspaceDescriptor,
-    agent: CodemanAgentProfile,
+    agent: AgentProfile,
     title?: string,
-  ): Promise<CodemanSession>;
+  ): Promise<HostSession>;
   sendInput(sessionId: string, input: string, raw?: boolean): Promise<void>;
   resize(sessionId: string, cols: number, rows: number): Promise<void>;
   stopSession(sessionId: string): Promise<void>;
-  subscribeEvents(onEvent: (event: CodemanSessionEvent) => void): () => void;
+  subscribeEvents(onEvent: (event: HostSessionEvent) => void): () => void;
   proxyTerminal?(
     sessionId: string,
     request: IncomingMessage,
@@ -62,20 +62,20 @@ export interface CodemanInstanceAdapter {
 }
 
 export interface CodemanHttpAdapterOptions {
-  instance: CodemanInstance;
+  instance: HostInstance;
   fetchImpl?: typeof fetch;
   username?: string;
   password?: string;
 }
 
 export interface CodemanConnectorAdapterOptions {
-  instance: CodemanInstance;
+  instance: HostInstance;
   request: (
     operation: CodemanConnectorOperation,
     payload?: Record<string, unknown>,
   ) => Promise<unknown>;
   subscribeEvents: (
-    onEvent: (event: CodemanSessionEvent) => void,
+    onEvent: (event: HostSessionEvent) => void,
   ) => () => void;
 }
 
@@ -91,16 +91,16 @@ interface SessionCreateData {
  * Adapter for one Codeman HTTP endpoint. It is used server-side, so endpoint
  * URLs and Basic credentials never cross into the dashboard.
  */
-export class CodemanHttpAdapter implements CodemanInstanceAdapter {
-  readonly instance: CodemanInstance;
+export class CodemanHttpAdapter implements HostAdapter {
+  readonly instance: HostInstance;
   private readonly fetchImpl: typeof fetch;
   private readonly headers: Record<string, string>;
-  private readonly listeners = new Set<(event: CodemanSessionEvent) => void>();
+  private readonly listeners = new Set<(event: HostSessionEvent) => void>();
   private eventAbort?: AbortController;
   private inputSequence = Date.now();
 
   constructor(options: CodemanHttpAdapterOptions) {
-    this.instance = validateCodemanInstance(options.instance);
+    this.instance = validateHostInstance(options.instance);
     if (!this.instance.endpoint) throw new Error("Codeman HTTP adapter requires an endpoint");
     const endpoint = new URL(this.instance.endpoint);
     if (
@@ -170,7 +170,7 @@ export class CodemanHttpAdapter implements CodemanInstanceAdapter {
     return status;
   }
 
-  async listCapabilities(): Promise<CodemanAgentProfile[]> {
+  async listCapabilities(): Promise<AgentProfile[]> {
     const status = await this.getStatus();
     if (status.agents && status.agents.length > 0) return status.agents;
     const fromCapabilities = normalizeAgents(status.capabilities ?? []);
@@ -178,7 +178,7 @@ export class CodemanHttpAdapter implements CodemanInstanceAdapter {
     return this.instance.agents.map((agent) => ({ ...agent }));
   }
 
-  async listSessions(): Promise<CodemanSession[]> {
+  async listSessions(): Promise<HostSession[]> {
     const data = await this.requestData<SessionListData | Array<Record<string, unknown>>>(
       "/api/v1/sessions",
     );
@@ -200,9 +200,9 @@ export class CodemanHttpAdapter implements CodemanInstanceAdapter {
 
   async createSession(
     workspace: WorkspaceDescriptor,
-    agent: CodemanAgentProfile,
+    agent: AgentProfile,
     title = `${agent.name} · ${workspace.name}`,
-  ): Promise<CodemanSession> {
+  ): Promise<HostSession> {
     const data = await this.requestData<SessionCreateData>("/api/v1/sessions", {
       method: "POST",
       body: {
@@ -431,7 +431,7 @@ export class CodemanHttpAdapter implements CodemanInstanceAdapter {
     request.pipe(upstreamRequest);
   }
 
-  subscribeEvents(onEvent: (event: CodemanSessionEvent) => void): () => void {
+  subscribeEvents(onEvent: (event: HostSessionEvent) => void): () => void {
     this.listeners.add(onEvent);
     if (!this.eventAbort) void this.startEventStream();
     return () => {
@@ -452,7 +452,7 @@ export class CodemanHttpAdapter implements CodemanInstanceAdapter {
     }).catch(() => undefined);
     if (response?.ok && response.body) {
       await readSseStream(response.body, abort.signal, (frame) => {
-        let event: CodemanSessionEvent | undefined;
+        let event: HostSessionEvent | undefined;
         try {
           const parsed = JSON.parse(frame.data) as unknown;
           const payload: Record<string, unknown> = isRecord(parsed) ? parsed : { data: parsed };
@@ -484,8 +484,8 @@ export class CodemanHttpAdapter implements CodemanInstanceAdapter {
   private toSession(
     raw: Record<string, unknown>,
     workspaceId?: string,
-    agent?: CodemanAgentProfile,
-  ): CodemanSession {
+    agent?: AgentProfile,
+  ): HostSession {
     const id = String(raw.id ?? "");
     if (!id) throw new Error("Codeman returned a session without an ID");
     const resolvedWorkspaceId = workspaceId
@@ -508,7 +508,7 @@ export class CodemanHttpAdapter implements CodemanInstanceAdapter {
     };
   }
 
-  private toEvent(raw: Record<string, unknown>): CodemanSessionEvent | undefined {
+  private toEvent(raw: Record<string, unknown>): HostSessionEvent | undefined {
     const sessionId = codemanEventSessionId(raw);
     if (!sessionId) return undefined;
     const kind = codemanEventKind(String(raw.type ?? raw.event ?? ""));
@@ -530,10 +530,10 @@ export class CodemanHttpAdapter implements CodemanInstanceAdapter {
 
   private event(
     sessionId: string,
-    event: CodemanSessionEvent["event"],
+    event: HostSessionEvent["event"],
     data: unknown,
     createdAt: string,
-  ): CodemanSessionEvent {
+  ): HostSessionEvent {
     return {
       instanceId: this.instance.id,
       sessionId,
@@ -545,7 +545,7 @@ export class CodemanHttpAdapter implements CodemanInstanceAdapter {
     };
   }
 
-  private emit(event: CodemanSessionEvent): void {
+  private emit(event: HostSessionEvent): void {
     for (const listener of this.listeners) listener(event);
   }
 
@@ -597,13 +597,13 @@ export class CodemanHttpAdapter implements CodemanInstanceAdapter {
  * channel. The operation enum is deliberately allowlisted; callers cannot
  * turn the connector into an arbitrary HTTP proxy.
  */
-export class CodemanConnectorAdapter implements CodemanInstanceAdapter {
-  readonly instance: CodemanInstance;
+export class CodemanConnectorAdapter implements HostAdapter {
+  readonly instance: HostInstance;
   private readonly request: CodemanConnectorAdapterOptions["request"];
   private readonly subscribe: CodemanConnectorAdapterOptions["subscribeEvents"];
 
   constructor(options: CodemanConnectorAdapterOptions) {
-    this.instance = validateCodemanInstance(options.instance);
+    this.instance = validateHostInstance(options.instance);
     if (this.instance.connectionMode !== "connector") {
       throw new Error("Codeman connector adapter requires connector mode");
     }
@@ -615,7 +615,7 @@ export class CodemanConnectorAdapter implements CodemanInstanceAdapter {
     return this.request("status") as Promise<CodemanStatus>;
   }
 
-  async listCapabilities(): Promise<CodemanAgentProfile[]> {
+  async listCapabilities(): Promise<AgentProfile[]> {
     const data = await this.request("capabilities");
     const agents = isRecord(data) && Array.isArray(data.agents) ? data.agents : data;
     if (!Array.isArray(agents)) return this.instance.agents.map((agent) => ({ ...agent }));
@@ -632,7 +632,7 @@ export class CodemanConnectorAdapter implements CodemanInstanceAdapter {
     return Array.isArray(data) ? data.map((suggestion) => suggestion as WorkspacePathSuggestion) : [];
   }
 
-  async listSessions(): Promise<CodemanSession[]> {
+  async listSessions(): Promise<HostSession[]> {
     const data = await this.request("sessions.list");
     const sessions = isRecord(data) && Array.isArray(data.sessions) ? data.sessions : data;
     if (!Array.isArray(sessions)) return [];
@@ -641,9 +641,9 @@ export class CodemanConnectorAdapter implements CodemanInstanceAdapter {
 
   async createSession(
     workspace: WorkspaceDescriptor,
-    agent: CodemanAgentProfile,
+    agent: AgentProfile,
     title = `${agent.name} · ${workspace.name}`,
-  ): Promise<CodemanSession> {
+  ): Promise<HostSession> {
     const knownWorkspace = this.instance.workspaces.some(
       (candidate) => candidate.id === workspace.id
         || candidate.canonicalPath === workspace.canonicalPath,
@@ -675,15 +675,15 @@ export class CodemanConnectorAdapter implements CodemanInstanceAdapter {
     await this.request("sessions.stop", { sessionId });
   }
 
-  subscribeEvents(onEvent: (event: CodemanSessionEvent) => void): () => void {
+  subscribeEvents(onEvent: (event: HostSessionEvent) => void): () => void {
     return this.subscribe(onEvent);
   }
 
   private toSession(
     raw: unknown,
     workspaceId?: string,
-    agent?: CodemanAgentProfile,
-  ): CodemanSession {
+    agent?: AgentProfile,
+  ): HostSession {
     if (!isRecord(raw)) throw new Error("Connector returned an invalid session");
     const id = String(raw.id ?? "");
     if (!id) throw new Error("Connector returned a session without an ID");
@@ -708,15 +708,15 @@ export class CodemanConnectorAdapter implements CodemanInstanceAdapter {
   }
 }
 
-function normalizeAgents(raw: unknown[]): CodemanAgentProfile[] {
+function normalizeAgents(raw: unknown[]): AgentProfile[] {
   return dedupeAgents(
     raw
       .map((agent) => normalizeCodemanAgent(agent))
-      .filter((agent): agent is CodemanAgentProfile => agent !== undefined),
+      .filter((agent): agent is AgentProfile => agent !== undefined),
   );
 }
 
-function shellAgent(): CodemanAgentProfile {
+function shellAgent(): AgentProfile {
   return { id: "shell", name: "Shell (raw CLI)", mode: "shell", ready: true };
 }
 

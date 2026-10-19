@@ -26,9 +26,9 @@ dashboard per backend.
 
 | Area | Coupling |
 | --- | --- |
-| `packages/protocol/src/index.ts` | `CodemanInstance`, `CodemanSession`, `CodemanAgentMode`, `CodemanConnector*` messages; no backend discriminator on instances |
-| `packages/codeman-bridge` | `CodemanInstanceAdapter` is the only adapter contract; the generic HTTP proxy, WebSocket relay, and HTML switcher injection live inside `CodemanHttpAdapter` |
-| `apps/control-plane/src/hub.ts` | `CodemanHub` constructs Codeman adapters directly; `prepareNativeUi` → Codeman "cases"; Codeman-specific error text |
+| `packages/protocol/src/index.ts` | `HostInstance`, `HostSession`, `CodemanAgentMode`, `CodemanConnector*` messages; no backend discriminator on instances |
+| `packages/codeman-bridge` | `HostAdapter` is the only adapter contract; the generic HTTP proxy, WebSocket relay, and HTML switcher injection live inside `CodemanHttpAdapter` |
+| `apps/control-plane/src/hub.ts` | `FleetHub` constructs Codeman adapters directly; `prepareNativeUi` → Codeman "cases"; Codeman-specific error text |
 | `apps/control-plane/src/server.ts` | `cloudagentfleet_instance` cookie; `/api/fleet/select` only for `tailscale-url`; connector enrollment requires the `codeman` node capability; `publicInstance` hides the endpoint (fine for proxying, blocks a "link" mode) |
 | `apps/node-agent` | `CodemanClient`/`CodemanWorkerRuntime`/`codeman-supervisor` are the only runtime; config assumes one backend per Worker (`CLOUDAGENTFLEET_CODEMAN_URL`, `CLOUDAGENTFLEET_CODEMAN_MODE`) |
 | `apps/cli/bin/setup.mjs` | Codeman install/start, mode prompts, `:3000` default, registration payload has no backend field |
@@ -76,8 +76,8 @@ export interface AgentProfile {
 }
 ```
 
-- `CodemanInstance` → `HostInstance`, `CodemanSession` → `HostSession`,
-  `CodemanSessionEvent` → `HostSessionEvent`. `CodemanAgentMode` moves into the
+- `HostInstance` → `HostInstance`, `HostSession` → `HostSession`,
+  `HostSessionEvent` → `HostSessionEvent`. `CodemanAgentMode` moves into the
   Codeman adapter; the protocol only carries `launch: string`.
 - Validation of `launch` belongs to the backend definition, not the protocol.
 - **Wire compatibility:** Hub and Worker ship as separate npm packages, so the
@@ -139,7 +139,7 @@ Rules:
 
 ### Hub (`apps/control-plane`)
 
-- `CodemanHub` → `FleetHub`; builds adapters through the registry only.
+- `FleetHub` → `FleetHub`; builds adapters through the registry only.
 - `requireFeature(instanceId, feature)` throws `UnsupportedError` (HTTP 409,
   in `errors.ts` beside `NotFoundError`/`UnavailableError`).
 - `prepareNativeUi` → `adapter.nativeUi?.prepare?.()` (Codeman seeds cases;

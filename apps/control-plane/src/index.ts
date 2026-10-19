@@ -6,7 +6,7 @@ import type {
   CodemanConnectorRequest,
   CodemanConnectorSessionEvent,
   CodemanConnectorResponse,
-  CodemanSessionEvent,
+  HostSessionEvent,
   CreateJobRequest,
   HostedNode,
   NodeMessage,
@@ -40,7 +40,7 @@ export class ControlPlane {
   private readonly connectorRequests = new Map<string, PendingConnectorRequest>();
   private readonly connectorEventListeners = new Map<
     string,
-    Set<(event: CodemanSessionEvent) => void>
+    Set<(event: HostSessionEvent) => void>
   >();
 
   constructor() {
@@ -169,7 +169,7 @@ export class ControlPlane {
   subscribeConnectorEvents(
     nodeId: string,
     instanceId: string,
-    listener: (event: CodemanSessionEvent) => void,
+    listener: (event: HostSessionEvent) => void,
   ): () => void {
     const key = connectorKey(nodeId, instanceId);
     const listeners = this.connectorEventListeners.get(key) ?? new Set();

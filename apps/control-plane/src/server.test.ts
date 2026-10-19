@@ -1,14 +1,14 @@
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import test from "node:test";
-import { CodemanHub } from "./hub.ts";
+import { FleetHub } from "./hub.ts";
 import { createControllerServer } from "./server.ts";
-import type { CodemanInstanceAdapter } from "../../../packages/codeman-bridge/src/index.ts";
+import type { HostAdapter } from "../../../packages/codeman-bridge/src/index.ts";
 import type {
-  CodemanAgentProfile,
-  CodemanInstance,
-  CodemanSession,
-  CodemanSessionEvent,
+  AgentProfile,
+  HostInstance,
+  HostSession,
+  HostSessionEvent,
   CodemanStatus,
   ControlMessage,
   NodeRegistration,
@@ -225,16 +225,16 @@ test("routes the Hub instance, workspace, and session APIs", async () => {
     health: "ready",
     providers: { codeman: "ready" },
   };
-  const agent: CodemanAgentProfile = {
+  const agent: AgentProfile = {
     id: "claude",
     name: "Claude Code",
     mode: "claude",
     ready: true,
   };
-  const sessions: CodemanSession[] = [];
-  const hub = new CodemanHub({
-    adapterFactory: (instance: CodemanInstance) => {
-      const createdAdapter: CodemanInstanceAdapter = {
+  const sessions: HostSession[] = [];
+  const hub = new FleetHub({
+    adapterFactory: (instance: HostInstance) => {
+      const createdAdapter: HostAdapter = {
         instance,
         getStatus: async (): Promise<CodemanStatus> => ({ version: "test" }),
         listCapabilities: async () => [agent],
@@ -247,7 +247,7 @@ test("routes the Hub instance, workspace, and session APIs", async () => {
           title = "session",
         ) => {
           const now = new Date().toISOString();
-          const session: CodemanSession = {
+          const session: HostSession = {
             id: "session-route",
             instanceId: instance.id,
             workspaceId: selectedWorkspace.id,
@@ -267,7 +267,7 @@ test("routes the Hub instance, workspace, and session APIs", async () => {
         sendInput: async () => undefined,
         resize: async () => undefined,
         stopSession: async () => undefined,
-        subscribeEvents: (_listener: (event: CodemanSessionEvent) => void) => () => undefined,
+        subscribeEvents: (_listener: (event: HostSessionEvent) => void) => () => undefined,
       };
       return createdAdapter;
     },
@@ -347,7 +347,7 @@ test("routes connector RPCs through the enrolled Worker and forwards session eve
   const app = createControllerServer({ statePath: "" });
   const baseUrl = await listen(app);
   let connectorRequest: ControlMessage | undefined;
-  const received: CodemanSessionEvent[] = [];
+  const received: HostSessionEvent[] = [];
   const unsubscribe = app.hub.subscribeEvents((event) => received.push(event));
   app.controlPlane.enrollNode(registration);
   app.controlPlane.registerConnection({
@@ -393,7 +393,7 @@ test("routes connector RPCs through the enrolled Worker and forwards session eve
     const capabilities = await json(await capabilitiesPromise);
     assert.equal(capabilities.agents[0].id, "claude");
 
-    const event: CodemanSessionEvent = {
+    const event: HostSessionEvent = {
       instanceId: "codeman-connector",
       sessionId: "session-connector",
       event: "output",

@@ -1,6 +1,31 @@
 export type Provider = "codeman" | "cursor" | "claude";
-export type CodemanConnectionMode = "connector" | "tailscale-url";
-export type CodemanInstanceStatus = "online" | "offline" | "unhealthy" | "revoked";
+export type ConnectionMode = "connector" | "tailscale-url";
+
+/** The per-machine execution plane behind an instance. */
+export const HOST_BACKENDS = ["codeman"] as const;
+export type HostBackend = (typeof HOST_BACKENDS)[number];
+
+/**
+ * What the Hub may do with an instance. Routes and the dashboard gate on
+ * these; adapters advertise them and the Hub stores them on the instance.
+ */
+export const BACKEND_FEATURES = [
+  "sessions",
+  "terminal",
+  "native-ui-proxy",
+  "native-ui-link",
+  "workspace-suggest",
+] as const;
+export type BackendFeature = (typeof BACKEND_FEATURES)[number];
+
+export function isHostBackend(value: unknown): value is HostBackend {
+  return (HOST_BACKENDS as readonly unknown[]).includes(value);
+}
+
+export function isBackendFeature(value: unknown): value is BackendFeature {
+  return (BACKEND_FEATURES as readonly unknown[]).includes(value);
+}
+export type HostInstanceStatus = "online" | "offline" | "unhealthy" | "revoked";
 export const CODEMAN_AGENT_MODES = [
   "claude",
   "shell",
@@ -62,31 +87,35 @@ export interface WorkspacePathSuggestion {
   name: string;
 }
 
-export interface CodemanAgentProfile {
+export interface AgentProfile {
   id: string;
   name: string;
-  mode: CodemanAgentMode;
+  /** Backend-specific launch key (a Codeman mode for Codeman instances). */
+  mode: string;
   ready: boolean;
 }
 
-export interface CodemanInstance {
+export interface HostInstance {
   id: string;
   label: string;
-  connectionMode: CodemanConnectionMode;
+  backend: HostBackend;
+  connectionMode: ConnectionMode;
   /**
    * Connector instances are reached through this enrolled Worker. It remains
    * optional for persisted/direct instances to preserve the existing schema.
    */
   nodeId?: string;
   endpoint: string | null;
-  status: CodemanInstanceStatus;
+  status: HostInstanceStatus;
+  /** Set by the Hub from the attached adapter; empty until one is attached. */
+  features: BackendFeature[];
   capabilities: string[];
   /**
    * Optional metadata for direct registrations. Connector instances also
    * inherit the authoritative policy from their enrolled Worker.
    */
   workspacePolicy?: WorkspacePolicy;
-  agents: CodemanAgentProfile[];
+  agents: AgentProfile[];
   workspaces: WorkspaceDescriptor[];
   lastSeenAt: string | null;
   createdAt: string;
@@ -94,20 +123,22 @@ export interface CodemanInstance {
 
 export interface CodemanStatus {
   version?: string;
-  agents?: CodemanAgentProfile[];
+  agents?: AgentProfile[];
   capabilities?: string[];
   sessions?: number;
 }
 
-export interface CodemanInstanceRegistration {
+export interface HostInstanceRegistration {
   id: string;
   label: string;
-  connectionMode: CodemanConnectionMode;
+  /** Defaults to "codeman" so older Workers and CLIs keep registering. */
+  backend?: HostBackend;
+  connectionMode: ConnectionMode;
   nodeId?: string;
   endpoint?: string;
   capabilities?: string[];
   workspacePolicy?: WorkspacePolicy;
-  agents?: CodemanAgentProfile[];
+  agents?: AgentProfile[];
   workspaces?: WorkspaceDescriptor[];
 }
 
@@ -115,11 +146,11 @@ export interface CodemanInstanceRegistration {
  * A session identifier is only unique within a Codeman instance. Callers that
  * persist or route sessions outside an adapter must retain both parts.
  */
-export interface CodemanSession {
+export interface HostSession {
   id: string;
   instanceId: string;
   workspaceId: string;
-  agent: CodemanAgentProfile;
+  agent: AgentProfile;
   title: string;
   status: SessionStatus;
   terminalBuffer: string;
@@ -130,12 +161,12 @@ export interface CodemanSession {
   lastEventAt: string;
 }
 
-export function isCodemanSession(value: unknown): value is CodemanSession {
+export function isHostSession(value: unknown): value is HostSession {
   return isRecord(value)
     && isNonEmptyString(value.id)
     && isNonEmptyString(value.instanceId)
     && isNonEmptyString(value.workspaceId)
-    && isCodemanAgentProfile(value.agent)
+    && isAgentProfile(value.agent)
     && isNonEmptyString(value.title)
     && (value.status === "starting"
       || value.status === "working"
@@ -152,14 +183,14 @@ export function isCodemanSession(value: unknown): value is CodemanSession {
     && typeof value.lastEventAt === "string";
 }
 
-export function validateCodemanSession(value: unknown): CodemanSession {
-  if (!isCodemanSession(value)) {
-    throw new TypeError("Invalid namespaced Codeman session");
+export function validateHostSession(value: unknown): HostSession {
+  if (!isHostSession(value)) {
+    throw new TypeError("Invalid namespaced host session");
   }
   return value;
 }
 
-export interface CodemanSessionEvent {
+export interface HostSessionEvent {
   instanceId: string;
   sessionId: string;
   event:
@@ -175,7 +206,7 @@ export interface CodemanSessionEvent {
   createdAt: string;
 }
 
-export function isCodemanSessionEvent(value: unknown): value is CodemanSessionEvent {
+export function isHostSessionEvent(value: unknown): value is HostSessionEvent {
   return isRecord(value)
     && isNonEmptyString(value.instanceId)
     && isNonEmptyString(value.sessionId)
@@ -191,21 +222,24 @@ export function isCodemanSessionEvent(value: unknown): value is CodemanSessionEv
     && isNonEmptyString(value.createdAt);
 }
 
-export function validateCodemanSessionEvent(value: unknown): CodemanSessionEvent {
-  if (!isCodemanSessionEvent(value)) {
-    throw new TypeError("Invalid Codeman session event");
+export function validateHostSessionEvent(value: unknown): HostSessionEvent {
+  if (!isHostSessionEvent(value)) {
+    throw new TypeError("Invalid host session event");
   }
   return value;
 }
 
-export function isCodemanInstance(value: unknown): value is CodemanInstance {
+export function isHostInstance(value: unknown): value is HostInstance {
   return isRecord(value)
     && isNonEmptyString(value.id)
     && isNonEmptyString(value.label)
+    && isHostBackend(value.backend)
     && (value.connectionMode === "connector" || value.connectionMode === "tailscale-url")
+    && Array.isArray(value.features)
+    && value.features.every(isBackendFeature)
     && (value.nodeId === undefined || isNonEmptyString(value.nodeId))
     && (value.endpoint === null
-      || (typeof value.endpoint === "string" && isSafeCodemanEndpoint(value.endpoint)))
+      || (typeof value.endpoint === "string" && isSafeEndpoint(value.endpoint)))
     && (value.connectionMode !== "tailscale-url" || typeof value.endpoint === "string")
     && (value.workspacePolicy === undefined || isWorkspacePolicy(value.workspacePolicy))
     && (value.status === "online"
@@ -215,44 +249,45 @@ export function isCodemanInstance(value: unknown): value is CodemanInstance {
     && Array.isArray(value.capabilities)
     && value.capabilities.every((capability) => typeof capability === "string")
     && Array.isArray(value.agents)
-    && value.agents.every(isCodemanAgentProfile)
+    && value.agents.every(isAgentProfile)
     && Array.isArray(value.workspaces)
     && value.workspaces.every(isWorkspaceDescriptor)
     && (value.lastSeenAt === null || typeof value.lastSeenAt === "string")
     && typeof value.createdAt === "string";
 }
 
-export function validateCodemanInstance(value: unknown): CodemanInstance {
-  if (!isCodemanInstance(value)) {
-    throw new TypeError("Invalid Codeman instance");
+export function validateHostInstance(value: unknown): HostInstance {
+  if (!isHostInstance(value)) {
+    throw new TypeError("Invalid host instance");
   }
   return value;
 }
 
-export function validateCodemanInstanceRegistration(
+export function validateHostInstanceRegistration(
   value: unknown,
-): CodemanInstanceRegistration {
+): HostInstanceRegistration {
   if (!isRecord(value)
     || !isNonEmptyString(value.id)
     || !isNonEmptyString(value.label)
+    || (value.backend !== undefined && !isHostBackend(value.backend))
     || (value.connectionMode !== "connector" && value.connectionMode !== "tailscale-url")
     || (value.connectionMode === "connector" && !isNonEmptyString(value.nodeId))
     || (value.endpoint !== undefined
-      && (typeof value.endpoint !== "string" || !isSafeCodemanEndpoint(value.endpoint)))
+      && (typeof value.endpoint !== "string" || !isSafeEndpoint(value.endpoint)))
     || (value.workspacePolicy !== undefined && !isWorkspacePolicy(value.workspacePolicy))
     || (value.connectionMode === "tailscale-url" && typeof value.endpoint !== "string")) {
-    throw new TypeError("Invalid Codeman instance registration");
+    throw new TypeError("Invalid host instance registration");
   }
   if ((value.capabilities !== undefined
       && (!Array.isArray(value.capabilities)
         || !value.capabilities.every((capability) => typeof capability === "string")))
     || (value.agents !== undefined
-      && (!Array.isArray(value.agents) || !value.agents.every(isCodemanAgentProfile)))
+      && (!Array.isArray(value.agents) || !value.agents.every(isAgentProfile)))
     || (value.workspaces !== undefined
       && (!Array.isArray(value.workspaces) || !value.workspaces.every(isWorkspaceDescriptor)))) {
-    throw new TypeError("Invalid Codeman instance registration");
+    throw new TypeError("Invalid host instance registration");
   }
-  return value as unknown as CodemanInstanceRegistration;
+  return value as unknown as HostInstanceRegistration;
 }
 
 export interface NodeRegistration {
@@ -397,7 +432,7 @@ export interface CodemanConnectorResponse {
 export interface CodemanConnectorSessionEvent {
   type: "codeman.session.event";
   instanceId: string;
-  event: CodemanSessionEvent;
+  event: HostSessionEvent;
 }
 
 export type NodeMessage =
@@ -488,7 +523,7 @@ export function isCodemanConnectorSessionEvent(
   return isRecord(value)
     && value.type === "codeman.session.event"
     && isNonEmptyString(value.instanceId)
-    && isCodemanSessionEvent(value.event)
+    && isHostSessionEvent(value.event)
     && value.event.instanceId === value.instanceId;
 }
 
@@ -537,7 +572,7 @@ function isCodemanConnectorOperation(
     || value === "sessions.stop";
 }
 
-function isSafeCodemanEndpoint(value: string): boolean {
+function isSafeEndpoint(value: string): boolean {
   try {
     const endpoint = new URL(value);
     const hasNoEmbeddedCredentials = endpoint.username === "" && endpoint.password === "";
@@ -554,11 +589,11 @@ function isSafeCodemanEndpoint(value: string): boolean {
   }
 }
 
-function isCodemanAgentProfile(value: unknown): value is CodemanAgentProfile {
+function isAgentProfile(value: unknown): value is AgentProfile {
   return isRecord(value)
     && isNonEmptyString(value.id)
     && isNonEmptyString(value.name)
-    && isCodemanAgentMode(value.mode)
+    && isNonEmptyString(value.mode)
     && typeof value.ready === "boolean";
 }
 

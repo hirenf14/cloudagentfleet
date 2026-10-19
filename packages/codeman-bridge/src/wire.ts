@@ -1,7 +1,7 @@
 import type {
-  CodemanAgentProfile,
-  CodemanSession,
-  CodemanSessionEvent,
+  AgentProfile,
+  HostSession,
+  HostSessionEvent,
 } from "../../../packages/protocol/src/index.ts";
 import {
   codemanAgentName,
@@ -26,7 +26,7 @@ export interface SseFrame {
   data: string;
 }
 
-export function codemanSessionStatus(status: string): CodemanSession["status"] {
+export function codemanSessionStatus(status: string): HostSession["status"] {
   if (status === "running" || status === "working" || status === "busy") return "working";
   if (status === "starting" || status === "created") return "starting";
   if (status === "completed") return "completed";
@@ -36,7 +36,7 @@ export function codemanSessionStatus(status: string): CodemanSession["status"] {
   return "idle";
 }
 
-export function codemanEventKind(type: string): CodemanSessionEvent["event"] | undefined {
+export function codemanEventKind(type: string): HostSessionEvent["event"] | undefined {
   const normalized = type.toLowerCase();
   if (normalized.includes("terminal") || normalized.includes("output")) return "output";
   if (
@@ -79,7 +79,7 @@ export function codemanTimestamp(value: unknown): string {
  * Opaque capability strings that would collapse into duplicate shell entries
  * are dropped.
  */
-export function normalizeCodemanAgent(raw: unknown): CodemanAgentProfile | undefined {
+export function normalizeCodemanAgent(raw: unknown): AgentProfile | undefined {
   if (typeof raw === "string") {
     if (!isCodemanAgentMode(raw)) return undefined;
     return { id: raw, name: codemanAgentName(raw, raw), mode: raw, ready: true };
@@ -97,7 +97,7 @@ export function normalizeCodemanAgent(raw: unknown): CodemanAgentProfile | undef
   };
 }
 
-export function dedupeAgents(agents: CodemanAgentProfile[]): CodemanAgentProfile[] {
+export function dedupeAgents(agents: AgentProfile[]): AgentProfile[] {
   const seen = new Set<string>();
   return agents.filter((agent) => {
     if (seen.has(agent.id)) return false;

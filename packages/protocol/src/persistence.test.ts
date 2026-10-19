@@ -1,18 +1,20 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { HubStateStore } from "./persistence.ts";
 import {
-  isCodemanInstance,
-  validateCodemanInstance,
+  isHostInstance,
+  validateHostInstance,
 } from "./index.ts";
-import type { CodemanInstance, CodemanSession } from "./index.ts";
+import type { HostInstance, HostSession } from "./index.ts";
 
-const instance: CodemanInstance = {
+const instance: HostInstance = {
   id: "pc-a",
   label: "PC A",
+  backend: "codeman",
+  features: [],
   connectionMode: "tailscale-url",
   endpoint: "https://pc-a.tailnet.ts.net",
   status: "online",
@@ -23,7 +25,7 @@ const instance: CodemanInstance = {
   createdAt: new Date().toISOString(),
 };
 
-const session: CodemanSession = {
+const session: HostSession = {
   id: "session-1",
   instanceId: "pc-a",
   workspaceId: "workspace-1",
@@ -67,9 +69,23 @@ test("HubStateStore reloads instances, sessions, and audit events", () => {
 
 test("Codeman contracts require safe endpoints and preserve instance-scoped sessions", () => {
   assert.equal(session.instanceId, "pc-a");
-  assert.equal(isCodemanInstance(instance), true);
+  assert.equal(isHostInstance(instance), true);
   assert.throws(
-    () => validateCodemanInstance({ ...instance, endpoint: "http://remote.example" }),
-    /Invalid Codeman instance/,
+    () => validateHostInstance({ ...instance, endpoint: "http://remote.example" }),
+    /Invalid host instance/,
   );
+});
+
+test("HubStateStore migrates instances saved before the backend field", () => {
+  const directory = mkdtempSync(join(tmpdir(), "cloudagentfleet-"));
+  try {
+    const path = join(directory, "hub.json");
+    const { backend: _backend, features: _features, ...legacy } = instance;
+    writeFileSync(path, JSON.stringify({ instances: [legacy], sessions: [], audit: [] }));
+    const migrated = new HubStateStore(path).snapshot().instances[0];
+    assert.equal(migrated?.backend, "codeman");
+    assert.deepEqual(migrated?.features, []);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
 });
