@@ -2,7 +2,7 @@ export type Provider = "codeman" | "cursor" | "claude";
 export type ConnectionMode = "connector" | "tailscale-url";
 
 /** The per-machine execution plane behind an instance. */
-export const HOST_BACKENDS = ["codeman"] as const;
+export const HOST_BACKENDS = ["codeman", "cptr"] as const;
 export type HostBackend = (typeof HOST_BACKENDS)[number];
 
 /**

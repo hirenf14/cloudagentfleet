@@ -610,3 +610,64 @@ async function closeHttp(server: ReturnType<typeof createServer>): Promise<void>
     server.close((error) => (error ? reject(error) : resolve()));
   });
 }
+
+test("links to cptr hosts directly and keeps Codeman endpoints server-side", async () => {
+  const app = createControllerServer({ statePath: "" });
+  const baseUrl = await listen(app);
+  const register = (body: Record<string, unknown>) => fetch(`${baseUrl}/api/instances`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+
+  try {
+    assert.equal((await register({
+      id: "codeman-tailnet",
+      label: "Tailnet Codeman",
+      connectionMode: "tailscale-url",
+      endpoint: "https://codeman-tailnet.example.ts.net",
+    })).status, 201);
+    const cptr = await register({
+      id: "laptop-cptr",
+      label: "Laptop",
+      backend: "cptr",
+      connectionMode: "tailscale-url",
+      endpoint: "https://laptop.example.ts.net",
+    });
+    assert.equal(cptr.status, 201);
+
+    const { instances } = await (await fetch(`${baseUrl}/api/instances`)).json() as {
+      instances: Array<{ id: string; endpoint: unknown; launchUrl?: string; features: string[] }>;
+    };
+    const codeman = instances.find((instance) => instance.id === "codeman-tailnet");
+    const laptop = instances.find((instance) => instance.id === "laptop-cptr");
+    assert.equal(codeman?.endpoint, null);
+    assert.equal(codeman?.launchUrl, undefined);
+    assert.deepEqual(laptop?.features, ["native-ui-link"]);
+    assert.equal(laptop?.endpoint, null);
+    assert.equal(laptop?.launchUrl, "https://laptop.example.ts.net");
+
+    const select = await fetch(`${baseUrl}/api/fleet/select/laptop-cptr`, { redirect: "manual" });
+    assert.equal(select.status, 400);
+    const sessions = await fetch(`${baseUrl}/api/instances/laptop-cptr/sessions`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ agentId: "claude", workspacePath: "/tmp" }),
+    });
+    assert.equal(sessions.status, 409);
+
+    const connector = await register({
+      id: "cptr-connector",
+      label: "Nope",
+      backend: "cptr",
+      connectionMode: "connector",
+      nodeId: "worker-1",
+    });
+    assert.equal(connector.status, 400);
+    assert.match((await connector.json() as { error: string }).error, /Open WebUI Computer supports only: tailscale-url/);
+  } finally {
+    await new Promise<void>((resolve, reject) => {
+      app.server.close((error) => (error ? reject(error) : resolve()));
+    });
+  }
+});

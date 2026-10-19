@@ -121,6 +121,26 @@ Explicit paths must fall inside the instance's configured folder roots; use
 `--workspace-mode system` during enrollment only when whole-system path
 selection is intentional.
 
+## Link an Open WebUI Computer host
+
+[Open WebUI Computer](https://openwebui.com/computer) (`cptr`) can sit next to
+Codeman as an optional per-machine backend. Install and run it yourself on that
+machine, reachable over the tailnet (for example behind Tailscale Serve), then:
+
+```bash
+cloudagentfleet enroll tailscale-url \
+  --backend cptr \
+  --controller-url http://<hub-host>:8787 \
+  --instance-id laptop-cptr \
+  --name "Laptop (Open WebUI Computer)" \
+  --url https://laptop.tailnet.ts.net
+```
+
+The Hub health-checks `/api/health`, and the dashboard opens cptr in a new
+tab, where you sign in with cptr's own account. Hub folder policy does not
+apply inside cptr. Cloud Agent Fleet does not bundle cptr; its use is governed
+by the Open WebUI Computer license.
+
 ## Worker service
 
 ```bash

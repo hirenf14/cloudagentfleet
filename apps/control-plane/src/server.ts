@@ -10,10 +10,13 @@ import { FleetHub } from "./hub.ts";
 import { resolveUiAuth, type UiAuth, type UiAuthRequest } from "./auth.ts";
 import { HttpError } from "./errors.ts";
 import {
+  backendDefinition,
   describeBackends,
   rejectSocket,
 } from "../../../packages/host-adapters/src/index.ts";
+import { isHostBackend } from "../../../packages/protocol/src/index.ts";
 import type {
+  HostInstance,
   HostInstanceRegistration,
   NodeCapability,
   CreateJobRequest,
@@ -384,13 +387,21 @@ async function route(
         )
       )
     ) {
-      throw new HttpError(400, "Codeman endpoint must be a Tailscale HTTPS hostname or loopback development URL");
+      throw new HttpError(400, "Instance endpoint must be a Tailscale HTTPS hostname or loopback development URL");
+    }
+    const backend = registration.backend ?? "codeman";
+    if (!isHostBackend(backend)) throw new HttpError(400, `Unknown backend: ${String(backend)}`);
+    const definition = backendDefinition(backend);
+    if (!definition.connectionModes.includes(registration.connectionMode)) {
+      throw new HttpError(
+        400,
+        `${definition.label} supports only: ${definition.connectionModes.join(", ")}`,
+      );
     }
     if (registration.connectionMode === "connector") {
       const node = controlPlane.nodes.list().find((candidate) => candidate.id === registration.nodeId);
       if (!node) throw new HttpError(404, `Unknown node: ${registration.nodeId}`);
       if (node.status === "revoked") throw new HttpError(403, `Node is revoked: ${node.id}`);
-      const backend = registration.backend ?? "codeman";
       if (!node.capabilities.includes(backend as NodeCapability)) {
         throw new HttpError(400, `Node does not support ${backend}: ${node.id}`);
       }
@@ -852,8 +863,20 @@ function isTailscaleIpv4(hostname: string): boolean {
   return first === 100 && second >= 64 && second <= 127;
 }
 
-function publicInstance(instance: ReturnType<FleetHub["getInstance"]>): ReturnType<FleetHub["getInstance"]> {
-  return { ...instance, endpoint: null };
+/**
+ * Endpoints stay server-side, except for link-mode hosts: the browser opens
+ * those directly, so their tailnet URL is returned as `launchUrl`.
+ */
+function publicInstance(
+  instance: HostInstance,
+): HostInstance & { launchUrl?: string } {
+  return {
+    ...instance,
+    endpoint: null,
+    ...(instance.features.includes("native-ui-link") && instance.endpoint
+      ? { launchUrl: instance.endpoint }
+      : {}),
+  };
 }
 
 function isLoopback(host: string): boolean {

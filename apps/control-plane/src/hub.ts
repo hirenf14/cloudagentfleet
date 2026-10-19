@@ -139,7 +139,7 @@ export class FleetHub {
       endpoint: registration.endpoint ?? null,
       status: existing?.status ?? "offline",
       features: [],
-      capabilities: [...new Set(registration.capabilities ?? ["codeman"])],
+      capabilities: [...new Set(registration.capabilities ?? [backend])],
       ...(registration.workspacePolicy
         ? {
             workspacePolicy: {

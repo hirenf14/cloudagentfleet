@@ -6,10 +6,12 @@ import type {
 } from "../../../packages/protocol/src/index.ts";
 import type { AdapterDependencies, BackendDefinition, HostAdapter } from "./contract.ts";
 import { codemanBackend } from "./codeman/index.ts";
+import { cptrBackend } from "./cptr/index.ts";
 
 /** Every supported backend. Adding one is a new module plus an entry here. */
 const BACKENDS: Record<HostBackend, BackendDefinition> = {
   codeman: codemanBackend,
+  cptr: cptrBackend,
 };
 
 export function backendDefinition(backend: HostBackend): BackendDefinition {

@@ -79,6 +79,22 @@ logins, and keep Worker bearer credentials separate from the UI password.
 Tailscale ACLs remain the network boundary; the Hub password is the application
 boundary.
 
+### Link-mode hosts outside Hub policy
+
+Open WebUI Computer (`cptr`) instances are enrolled in link mode: the Hub
+health-checks them and returns their tailnet URL to authenticated dashboard
+users as `launchUrl` (Codeman endpoints are never returned). The browser
+then talks to cptr directly, using cptr's own login.
+
+- The URL is a tailnet address the operator already owns; Tailscale ACLs still
+  decide who can reach it.
+- Folder-root policy is **not** enforced inside cptr, and a signed-in cptr user
+  has full shell access on that machine. The dashboard says so on every
+  link-mode host. Run cptr in Docker with only approved folders mounted when
+  that matters.
+- The Hub never alters cptr's UI or branding (its license forbids it) and does
+  not bundle cptr.
+
 ## Release gates
 
 - Revoke and reconnect tests pass.

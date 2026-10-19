@@ -143,6 +143,13 @@ test("Hub serving reports missing Tailscale and refuses an unhealthy Hub", async
 test("enroll rejects an unknown backend before prompting", async () => {
   await assert.rejects(
     () => enrollInstance(["tailscale-url", "--backend", "unknown"]),
-    /--backend must be one of: codeman/,
+    /--backend must be one of: codeman, cptr/,
+  );
+});
+
+test("enroll keeps cptr to tailscale-url mode", async () => {
+  await assert.rejects(
+    () => enrollInstance(["connector", "--backend", "cptr"]),
+    /supports only tailscale-url mode/,
   );
 });

@@ -16,4 +16,5 @@ export {
   type BackendSummary,
 } from "./registry.ts";
 export { CodemanConnectorAdapter, CodemanHttpAdapter } from "./codeman/index.ts";
+export { CptrLinkAdapter } from "./cptr/index.ts";
 export { rejectSocket } from "./shared/ws-relay.ts";

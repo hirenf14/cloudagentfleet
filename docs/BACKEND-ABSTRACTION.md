@@ -1,7 +1,8 @@
 # Host backend abstraction and cptr support
 
-Status (2026-10-19): **Phases A and B are done.** Codeman is the only
-registered backend. Next comes Spike S, then cptr Phases C–E.
+Status (2026-10-19): **Phases A, B, Spike S, and C are done.** Codeman and
+cptr (link mode) are registered. Next is Phase D (proxied cptr), which first
+needs the Hub's own routes moved under one reserved prefix.
 
 The goal is to enroll a second per-machine backend, Open WebUI Computer
 (`cptr`), next to Codeman without forking the Hub, Worker, or dashboard per
@@ -162,7 +163,13 @@ but the supervisor must handle the first-run setup token.
 4. **Auth handoff:** can the Hub hold a cptr credential or token and inject
    it, so the user doesn't log in twice?
 
-## Phase C — cptr Level 1: link mode
+## Phase C — cptr Level 1: link mode (done)
+
+Shipped as described below: `packages/host-adapters/src/cptr/`, `launchUrl`
+for link-mode hosts only, the dashboard policy note, a THREAT-MODEL entry,
+`enroll --backend cptr`, and registration that rejects connection modes a
+backend does not support.
+
 
 - Add `"cptr"` to `HOST_BACKENDS`, `packages/host-adapters/src/cptr/` with a
   definition advertising `["native-ui-link"]`, and a registry entry. The

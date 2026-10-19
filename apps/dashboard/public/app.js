@@ -460,6 +460,11 @@
             h("span", { className: "eyebrow" }, "Selected instance"),
             h("div", { className: "instance-overview__title" }, h("h2", null, selectedInstance.label), h(StatusBadge, { status: selectedInstance.status })),
             h("p", null, `${backendLabel(backends, selectedInstance)} · ${connectionLabel(selectedInstance)}`),
+            hasFeature(selectedInstance, "native-ui-link") && h(
+              "p",
+              { className: "policy-note", role: "note" },
+              "This host's own UI is not mediated by the Hub: folder policy is not enforced there, and anyone signed in to it has full shell access.",
+            ),
             h(
               "div",
               { className: "overview-grid" },
@@ -479,12 +484,17 @@
                       window.location.assign(
                         `/api/fleet/select/${encodeURIComponent(selectedInstance.id)}`,
                       );
+                    } else if (hasFeature(selectedInstance, "native-ui-link") && selectedInstance.launchUrl) {
+                      window.open(selectedInstance.launchUrl, "_blank", "noopener,noreferrer");
                     }
                   },
-                  disabled: !hasFeature(selectedInstance, "native-ui-proxy"),
+                  disabled: !hasFeature(selectedInstance, "native-ui-proxy")
+                    && !(hasFeature(selectedInstance, "native-ui-link") && selectedInstance.launchUrl),
                   title: hasFeature(selectedInstance, "native-ui-proxy")
                     ? `Open ${backendLabel(backends, selectedInstance)}'s own UI for this host. Use Fleet dashboard in the top bar to return.`
-                    : "This host's UI is not available through the Hub",
+                    : hasFeature(selectedInstance, "native-ui-link")
+                      ? `Open ${backendLabel(backends, selectedInstance)} in a new tab (signs in separately)`
+                      : "This host's UI is not available through the Hub",
                 },
                 `Open ${backendLabel(backends, selectedInstance)} UI`,
               ),

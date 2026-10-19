@@ -20,7 +20,7 @@ const thisDir = dirname(thisFile);
 const configPath = join(homedir(), ".cloudagentfleet", "worker.json");
 const instancesConfigPath = join(homedir(), ".cloudagentfleet", "instances.json");
 /** Backends the Hub registry knows; keep in sync with packages/host-adapters. */
-const backends = ["codeman"];
+const backends = ["codeman", "cptr"];
 const modes = ["claude", "shell", "opencode", "codex", "gemini", "antigravity", "pi", "grok", "deepseek"];
 const defaultAgentNames = { claude: "Claude Code" };
 const tailscaleCommand = process.platform === "win32" ? "tailscale.exe" : "tailscale";
@@ -602,10 +602,10 @@ export function parseAgentProfiles(parsed) {
   return profiles.length > 0 ? profiles : undefined;
 }
 
-function parseCapabilities(parsed) {
+function parseCapabilities(parsed, backend = "codeman") {
   const values = optionValues(parsed, "capability").flatMap((value) => value.split(","));
   const capabilities = values.map((value) => value.trim()).filter(Boolean);
-  return [...new Set(capabilities.length > 0 ? capabilities : ["codeman"])];
+  return [...new Set(capabilities.length > 0 ? capabilities : [backend])];
 }
 
 async function jsonRequest(url, options, label) {
@@ -700,6 +700,9 @@ export async function enrollInstance(argv = process.argv.slice(3)) {
   if (selectedMode !== "connector" && selectedMode !== "tailscale-url") {
     throw new Error("--mode must be connector or tailscale-url");
   }
+  if (backend === "cptr" && selectedMode !== "tailscale-url") {
+    throw new Error("Open WebUI Computer (cptr) supports only tailscale-url mode");
+  }
 
   const controllerUrl = safeEndpoint(
     optionValue(parsed, "controller-url", "controller")
@@ -760,7 +763,7 @@ export async function enrollInstance(argv = process.argv.slice(3)) {
             true,
           ),
         }),
-    capabilities: parseCapabilities(parsed),
+    capabilities: parseCapabilities(parsed, backend),
     ...(agents ? { agents } : {}),
     ...(selectedMode === "connector" || workspaceOptions.length > 0
       ? {
@@ -805,13 +808,17 @@ export async function enrollInstance(argv = process.argv.slice(3)) {
     { method: "POST", headers: { ...authHeaders(), accept: "application/json" } },
     "Instance health verification",
   );
-  if (!health.response.ok) {
+  const healthStatus = health.body?.instance?.status;
+  if (!health.response.ok || healthStatus !== "online") {
     const hint = selectedMode === "connector"
       ? "The Worker must be online and configured with the same CLOUDAGENTFLEET_CODEMAN_INSTANCE_ID."
-      : "The Tailscale URL must be reachable and expose Codeman's /api/v1/status endpoint.";
-    throw new Error(
-      `Instance registered, but health verification failed: ${controllerError(health.body, health.response)}. ${hint}`,
-    );
+      : backend === "cptr"
+        ? "The Tailscale URL must reach Open WebUI Computer's /api/health (run cptr with --host 0.0.0.0 or behind Tailscale Serve)."
+        : "The Tailscale URL must be reachable and expose Codeman's /api/v1/status endpoint.";
+    const reason = health.response.ok
+      ? `instance is ${healthStatus ?? "unknown"}`
+      : controllerError(health.body, health.response);
+    throw new Error(`Instance registered, but health verification failed: ${reason}. ${hint}`);
   }
   if (!health.body?.instance) throw new Error("Health verification returned no instance");
   printHealth(health.body?.instance, selectedMode);
@@ -826,7 +833,7 @@ function printEnrollmentHelp() {
     "  cloudagentfleet enroll [connector|tailscale-url] [options]",
     "",
     "Options:",
-    "  --backend <codeman>                        default codeman",
+    "  --backend <codeman|cptr>                   default codeman; cptr = Open WebUI Computer (tailscale-url only)",
     "  --mode <connector|tailscale-url>",
     "  --instance-id <id> --name <name>",
     "  --node-id <enrolled-worker-id>             connector mode",
