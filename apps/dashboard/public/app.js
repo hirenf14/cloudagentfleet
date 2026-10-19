@@ -45,6 +45,21 @@
     brightWhite: "#ffffff",
   };
 
+  /** Instances advertise what the Hub can do with them; the UI never checks backend names. */
+  function hasFeature(instance, feature) {
+    return Array.isArray(instance?.features) && instance.features.includes(feature);
+  }
+
+  function backendLabel(backends, instance) {
+    return backends.find((backend) => backend.backend === instance?.backend)?.label || instance?.backend || "Host";
+  }
+
+  function connectionLabel(instance) {
+    return instance.connectionMode === "connector"
+      ? "Connected through the Worker connector"
+      : "Reached directly over Tailscale";
+  }
+
   function csrfToken() {
     const match = document.cookie.match(/(?:^|;\s*)cloudagentfleet_csrf=([^;]+)/);
     return match ? decodeURIComponent(match[1]) : "";
@@ -172,6 +187,13 @@
     const [streamStatus, setStreamStatus] = useState("connecting");
     const [showCreate, setShowCreate] = useState(false);
     const [refreshing, setRefreshing] = useState(false);
+    const [backends, setBackends] = useState([]);
+
+    useEffect(() => {
+      api("/api/backends")
+        .then((data) => setBackends(data.backends || []))
+        .catch(() => setBackends([]));
+    }, []);
 
     const refresh = useCallback(async (quiet = false) => {
       if (!quiet) setLoading(true);
@@ -180,9 +202,9 @@
         const instanceData = await api("/api/instances");
         const nextInstances = instanceData.instances || [];
         const sessionResponses = await Promise.all(
-          nextInstances.map((instance) =>
-            api(`/api/instances/${encodeURIComponent(instance.id)}/sessions`),
-          ),
+          nextInstances
+            .filter((instance) => hasFeature(instance, "sessions"))
+            .map((instance) => api(`/api/instances/${encodeURIComponent(instance.id)}/sessions`)),
         );
         const nextSessions = sessionResponses.flatMap((result) => result.sessions || []);
         setInstances(nextInstances);
@@ -307,7 +329,7 @@
           "div",
           { className: "brand" },
           h("span", { className: "brand__mark", "aria-hidden": "true" }, "✦"),
-          h("div", null, h("strong", null, "Codeman Fleet"), h("span", null, "Multi-host Hub")),
+          h("div", null, h("strong", null, "Cloud Agent Fleet"), h("span", null, "Multi-host Hub")),
         ),
         h(
           "div",
@@ -343,7 +365,7 @@
           loading
             ? h("div", { className: "skeleton-list", "aria-label": "Loading instances" }, h("span"), h("span"), h("span"))
             : instances.length === 0
-              ? h(EmptyState, { title: "No instances yet" }, "Connect a Codeman host to see it here.")
+              ? h(EmptyState, { title: "No instances yet" }, "Enroll a machine to see it here.")
               : h(
                 "nav",
                 { className: "instance-list" },
@@ -362,7 +384,7 @@
                       "span",
                       { className: "instance-card__copy" },
                       h("strong", null, instance.label),
-                      h("small", null, `${(sessionsByInstance.get(instance.id) || []).length} sessions`),
+                      h("small", null, `${backendLabel(backends, instance)} · ${(sessionsByInstance.get(instance.id) || []).length} sessions`),
                     ),
                     h("span", { className: "instance-card__chevron", "aria-hidden": "true" }, "›"),
                   ),
@@ -418,14 +440,14 @@
                 "div",
                 { className: "welcome-panel__content" },
                 h("span", { className: "eyebrow" }, "Control plane"),
-                h("h2", null, "Operate every Codeman host from one place."),
+                h("h2", null, "Operate every machine in your fleet from one place."),
                 h("p", null, "Choose an instance to inspect its work, or start a new session in a ready workspace."),
                 h(
                   "button",
                   {
                     className: "button button--primary",
                     onClick: () => setShowCreate(true),
-                    disabled: !selectedInstance,
+                    disabled: !hasFeature(selectedInstance, "sessions"),
                   },
                   "Start a session",
                 ),
@@ -437,7 +459,7 @@
             { className: "instance-overview" },
             h("span", { className: "eyebrow" }, "Selected instance"),
             h("div", { className: "instance-overview__title" }, h("h2", null, selectedInstance.label), h(StatusBadge, { status: selectedInstance.status })),
-            h("p", null, selectedInstance.endpoint || "Connected through worker connector"),
+            h("p", null, `${backendLabel(backends, selectedInstance)} · ${connectionLabel(selectedInstance)}`),
             h(
               "div",
               { className: "overview-grid" },
@@ -453,18 +475,18 @@
                 {
                   className: "button button--quiet",
                   onClick: () => {
-                    if (selectedInstance.connectionMode === "tailscale-url") {
+                    if (hasFeature(selectedInstance, "native-ui-proxy")) {
                       window.location.assign(
                         `/api/fleet/select/${encodeURIComponent(selectedInstance.id)}`,
                       );
                     }
                   },
-                  disabled: selectedInstance.connectionMode !== "tailscale-url",
-                  title: selectedInstance.connectionMode === "tailscale-url"
-                    ? "Open Codeman's native UI for this host. Use Fleet dashboard in the top bar to return."
-                    : "Native Codeman UI requires a Tailscale Codeman host",
+                  disabled: !hasFeature(selectedInstance, "native-ui-proxy"),
+                  title: hasFeature(selectedInstance, "native-ui-proxy")
+                    ? `Open ${backendLabel(backends, selectedInstance)}'s own UI for this host. Use Fleet dashboard in the top bar to return.`
+                    : "This host's UI is not available through the Hub",
                 },
-                "Open Codeman UI",
+                `Open ${backendLabel(backends, selectedInstance)} UI`,
               ),
               h(
                 "button",
@@ -991,11 +1013,11 @@
             allAgents.length > 0 && h(
               "small",
               null,
-              "Shell (raw CLI) is a bare Codeman terminal. CLI options launch a provider inside that shell.",
+              "Shell (raw CLI) is a bare terminal on the host. CLI options launch a provider inside that shell.",
             ),
           ),
           !readyAgents.length && allAgents.length > 0
-            && h("small", null, "No ready agents yet — check Worker Codeman mode, or install/authenticate a provider CLI."),
+            && h("small", null, "No ready agents yet — check the host's agent configuration, or install/authenticate a provider CLI."),
           !allAgents.length
             && h("small", null, "Run Check health on the instance after the Worker is online."),
           h(

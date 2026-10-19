@@ -28,6 +28,8 @@ const CODEMAN_INSTANCE_COOKIE = "cloudagentfleet_instance";
 function resolveDashboardRoot(): string {
   const here = dirname(fileURLToPath(import.meta.url));
   const candidates = [];
+  // Running from source (strip-types): serve the editable UI, not a stale build.
+  if (import.meta.url.endsWith(".ts")) candidates.push(resolve(here, "../../dashboard/public"));
   try {
     const require = createRequire(import.meta.url);
     const packageRoot = dirname(require.resolve("@cloudagentfleet/ui/package.json"));

@@ -23,7 +23,7 @@
   const label = document.createElement("strong");
   label.textContent = "Cloud Agent Fleet";
   const select = document.createElement("select");
-  select.setAttribute("aria-label", "Codeman host");
+  select.setAttribute("aria-label", "Fleet host");
   select.style.cssText = [
     "min-width:190px",
     "padding:4px 8px",
@@ -51,7 +51,9 @@
   fetch("/api/instances", { headers: { accept: "application/json" } })
     .then((response) => response.ok ? response.json() : Promise.reject(new Error("Unable to load hosts")))
     .then((payload) => {
-      const instances = Array.isArray(payload.instances) ? payload.instances : [];
+      // Only hosts whose UI the Hub can proxy are switchable from inside a native UI.
+      const instances = (Array.isArray(payload.instances) ? payload.instances : [])
+        .filter((instance) => Array.isArray(instance.features) && instance.features.includes("native-ui-proxy"));
       return fetch("/api/fleet/current")
         .then((response) => response.json())
         .then((current) => ({ instances, current }));
@@ -66,11 +68,11 @@
       }
       if (instances.length === 0) {
         select.disabled = true;
-        select.title = "No Codeman hosts are registered";
+        select.title = "No hosts with a proxied UI are registered";
       }
     })
     .catch(() => {
       select.disabled = true;
-      select.title = "Unable to load Codeman hosts";
+      select.title = "Unable to load fleet hosts";
     });
 })();

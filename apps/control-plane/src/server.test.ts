@@ -57,7 +57,7 @@ test("serves the single-origin dashboard assets without exposing provider endpoi
     const page = await fetch(`${baseUrl}/`);
     assert.equal(page.status, 200);
     assert.match(page.headers.get("content-type") ?? "", /^text\/html/);
-    assert.match(await page.text(), /Codeman Fleet/);
+    assert.match(await page.text(), /Cloud Agent Fleet/);
 
     const script = await fetch(`${baseUrl}/app.js`);
     assert.equal(script.status, 200);
@@ -465,7 +465,7 @@ test("protects the Hub UI with a password session and same-origin state changes"
       headers: { cookie },
     });
     assert.equal(page.status, 200);
-    assert.match(await page.text(), /Codeman Fleet/);
+    assert.match(await page.text(), /Cloud Agent Fleet/);
 
     const blocked = await fetch(`${baseUrl}/api/instances`, {
       method: "POST",
