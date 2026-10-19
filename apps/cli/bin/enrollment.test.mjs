@@ -53,8 +53,10 @@ test("enrollment endpoint validation rejects unsafe URLs", () => {
     () => safeEndpoint("https://user:pass@codeman.example.test", "URL"),
     /embedded credentials/,
   );
+  // Loopback is allowed in tailscale-url mode, like the Hub, for a Hub on the same machine.
+  assert.equal(safeEndpoint("http://127.0.0.1:8000", "URL", true), "http://127.0.0.1:8000");
   assert.throws(
-    () => safeEndpoint("http://127.0.0.1:3000", "URL", true),
+    () => safeEndpoint("http://100.100.10.20:3000", "URL", true),
     /must use HTTPS/,
   );
   assert.equal(

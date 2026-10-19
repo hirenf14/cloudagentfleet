@@ -212,7 +212,7 @@ function detectEnvironment() {
     codemanLocal,
     codemanWsl,
     cursorCli: cursorLocal || cursorWsl,
-    tmux: canRun("tmux") || (wsl && wslCanRun(["-e", "bash", "-lc", "command -v tmux"])),
+    tmux: canRun("tmux", ["-V"]) || (wsl && wslCanRun(["-e", "bash", "-lc", "command -v tmux"])),
     docker: canRun("docker"),
     claudeCli: canRun("claude") || (wsl && wslCanRun(["-e", "bash", "-lc", "command -v claude"])),
     cptr: windows && wsl && !inWsl
@@ -573,7 +573,9 @@ async function setup() {
       `  cloudagentfleet enroll tailscale-url --backend cptr --controller-url ${controllerUrl} \\`,
       `    --instance-id ${nodeId}-cptr --name "${name} (Open WebUI Computer)" \\`,
       `    --url ${tailnetUrl ?? "https://<this-machine>.<tailnet>.ts.net:<port>"}`,
-      "The Worker prints a one-time setup token on cptr's first start; open the host from the dashboard and visit /?token=<token>.",
+      ...(tailnetUrl ? [] : [`  (If the Hub runs on this machine, --url ${cptrUrl} also works.)`]),
+      "On cptr's first start the Worker writes its one-time setup token to ~/.cloudagentfleet/cptr-setup-token;",
+      "open the host from the dashboard and visit /?token=<token> to create cptr's admin account.",
     ].join("\n"));
   }
 
@@ -674,11 +676,13 @@ export function safeEndpoint(value, field, tailscale = false) {
   if (parsed.protocol !== "https:" && !(parsed.protocol === "http:" && loopback)) {
     throw new Error(`${field} must use HTTPS, or HTTP on loopback for local development`);
   }
-  if (tailscale && parsed.protocol !== "https:") {
+  // Matches the Hub: a tailnet HTTPS host, or a loopback URL when the Hub runs
+  // on the same machine (local development).
+  if (tailscale && !loopback && parsed.protocol !== "https:") {
     throw new Error(`${field} must use HTTPS in tailscale-url mode`);
   }
-  if (tailscale && !isTailnetHostname(parsed.hostname)) {
-    throw new Error(`${field} must use a *.ts.net or Tailscale 100.64.0.0/10 hostname`);
+  if (tailscale && !loopback && !isTailnetHostname(parsed.hostname)) {
+    throw new Error(`${field} must use a *.ts.net or Tailscale 100.64.0.0/10 hostname, or loopback when the Hub runs on this machine`);
   }
   return parsed.toString().replace(/\/+$/, "");
 }
@@ -925,7 +929,8 @@ export async function enrollInstance(argv = process.argv.slice(3)) {
   if (!instance) throw new Error("Instance registration returned no instance");
   saveInstanceRegistration(registration);
   const linked = selectedMode === "connector" ? linkWorkerInstance(registration.nodeId, registration.id) : false;
-  console.log(`Registered Codeman instance ${registration.label} (${registration.id}) in ${selectedMode} mode.`);
+  const backendLabel = backend === "cptr" ? "Open WebUI Computer" : "Codeman";
+  console.log(`Registered ${backendLabel} instance ${registration.label} (${registration.id}) in ${selectedMode} mode.`);
   if (linked) {
     console.log(`Updated Worker configuration with CLOUDAGENTFLEET_CODEMAN_INSTANCE_ID=${registration.id}. Restart the Worker to apply it.`);
   }

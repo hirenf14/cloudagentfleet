@@ -445,3 +445,57 @@ test("ControllerTransport correlates connector requests and rejects another inst
     errorCode: "connector_request_failed",
   });
 });
+
+test("ControllerTransport survives a Controller restart and re-enrolls", async () => {
+  let enrolled = false;
+  let enrollments = 0;
+  let restarted = false;
+  let connectedAfterRestart = false;
+  const fetchImpl: typeof fetch = async (input, init) => {
+    const url = String(input);
+    if (url.endsWith("/api/workers") && init?.method === "POST") {
+      enrollments += 1;
+      enrolled = true;
+      return Response.json({ worker: { id: "worker-1" } }, { status: 201 });
+    }
+    if (url.endsWith("/connect")) {
+      if (!enrolled) return Response.json({ error: "Worker not found" }, { status: 404 });
+      if (restarted) connectedAfterRestart = true;
+      // The first stream ends as if the Controller went away; later ones stay open.
+      return new Response(new ReadableStream<Uint8Array>({
+        start(controller) {
+          if (!restarted) {
+            restarted = true;
+            enrolled = false;
+            controller.close();
+            return;
+          }
+          // Like real fetch, an aborted request errors the open stream.
+          init?.signal?.addEventListener("abort", () => controller.error(new DOMException("aborted", "AbortError")));
+        },
+      }), { status: 200 });
+    }
+    // Heartbeats and messages fail with 400 while this node is unknown.
+    return enrolled
+      ? Response.json({ accepted: true }, { status: 202 })
+      : Response.json({ error: "Unknown node" }, { status: 400 });
+  };
+  const transport = new ControllerTransport({
+    nodeId: "worker-1",
+    name: "Worker",
+    platform: "linux",
+    capabilities: ["codeman"],
+    controlPlaneUrl: "http://127.0.0.1:8787",
+    fetchImpl,
+    heartbeatIntervalMs: 5,
+    reconnect: true,
+    reconnectDelayMs: 5,
+  });
+  const running = transport.start(async () => undefined).catch((error: unknown) => error);
+  await new Promise((resolve) => setTimeout(resolve, 150));
+  transport.stop();
+  const outcome = await running;
+  assert.ok(enrollments >= 2, `re-enrolled after the restart (enrollments=${enrollments})`);
+  assert.equal(connectedAfterRestart, true, "reconnected after re-enrolling");
+  assert.ok(!(outcome instanceof Error) || outcome.name === "AbortError", "only a requested stop ends the loop");
+});

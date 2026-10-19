@@ -34,6 +34,8 @@ export class ControllerTransport {
   private readonly handledConnectorRequests = new Set<string>();
   private readonly abortController = new AbortController();
   private heartbeatTimer: ReturnType<typeof setInterval> | undefined;
+  /** Set when the Controller stops recognising this node (for example after it restarted). */
+  private needsRegistration = false;
 
   constructor(options: ControllerTransportOptions) {
     this.config = options;
@@ -50,12 +52,17 @@ export class ControllerTransport {
   ): Promise<void> {
     await this.register();
     this.heartbeatTimer = setInterval(() => {
-      void this.sendHeartbeat();
+      void this.heartbeatTick();
     }, this.heartbeatIntervalMs);
 
+    let firstAttempt = true;
     try {
       do {
         try {
+          // A Controller restart forgets enrolled nodes (its registry is in
+          // memory), so every reconnect enrolls again before connecting.
+          if (!firstAttempt) await this.register();
+          firstAttempt = false;
           const response = await this.fetchImpl(
             `${this.baseUrl()}/api/workers/${encodeURIComponent(this.config.nodeId)}/connect`,
             {
@@ -155,6 +162,17 @@ export class ControllerTransport {
       signal: this.abortController.signal,
     });
     if (!response.ok) throw new Error(`Controller enrollment failed with HTTP ${response.status}`);
+    this.needsRegistration = false;
+  }
+
+  /** Never throws: a failed heartbeat schedules re-enrollment instead of crashing the Worker. */
+  private async heartbeatTick(): Promise<void> {
+    try {
+      if (this.needsRegistration) await this.register();
+      await this.sendHeartbeat();
+    } catch {
+      if (!this.abortController.signal.aborted) this.needsRegistration = true;
+    }
   }
 
   private async sendHeartbeat(): Promise<void> {

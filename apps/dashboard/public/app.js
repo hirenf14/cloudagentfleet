@@ -204,14 +204,19 @@
       try {
         const instanceData = await api("/api/instances");
         const nextInstances = instanceData.instances || [];
-        const sessionResponses = await Promise.all(
-          nextInstances
-            .filter((instance) => hasFeature(instance, "sessions"))
-            .map((instance) => api(`/api/instances/${encodeURIComponent(instance.id)}/sessions`)),
+        // One unreachable host (for example a Worker that went offline) must not
+        // blank the whole fleet: load each instance on its own and keep the
+        // last-known sessions for any that fail.
+        const sessionInstances = nextInstances.filter((instance) => hasFeature(instance, "sessions"));
+        const sessionResults = await Promise.allSettled(
+          sessionInstances.map((instance) => api(`/api/instances/${encodeURIComponent(instance.id)}/sessions`)),
         );
-        const nextSessions = sessionResponses.flatMap((result) => result.sessions || []);
         setInstances(nextInstances);
-        setSessions(nextSessions);
+        setSessions((previous) => sessionResults.flatMap((result, index) => (
+          result.status === "fulfilled"
+            ? result.value.sessions || []
+            : previous.filter((session) => session.instanceId === sessionInstances[index].id)
+        )));
         setSelectedInstanceId((current) =>
           current && nextInstances.some((instance) => instance.id === current)
             ? current
@@ -473,7 +478,8 @@
             h("span", { className: "eyebrow" }, "Selected instance"),
             h("div", { className: "instance-overview__title" }, h("h2", null, selectedInstance.label), h(StatusBadge, { status: selectedInstance.status })),
             h("p", null, `${backendLabel(backends, selectedInstance)} · ${connectionLabel(selectedInstance)}`),
-            hasFeature(selectedInstance, "native-ui-link") && h(
+            // The Hub mediates (and policy-checks) sessions only through the sessions feature.
+            !hasFeature(selectedInstance, "sessions") && h(
               "p",
               { className: "policy-note", role: "note" },
               "This host's own UI is not mediated by the Hub: folder policy is not enforced there, and anyone signed in to it has full shell access.",

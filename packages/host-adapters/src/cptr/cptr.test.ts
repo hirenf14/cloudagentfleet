@@ -84,6 +84,9 @@ test("CptrProxyAdapter bridges only cptr's session cookie and never alters its p
     assert.deepEqual(response.headers.getSetCookie(), [
       `${browserCookie}=new-jwt; HttpOnly; Path=/; SameSite=lax`,
     ]);
+    // A page cached while signed in must not be reused after Hub logout.
+    assert.equal(response.headers.get("vary"), "Cookie");
+    assert.equal(response.headers.get("cache-control"), "private, no-cache");
   } finally {
     hub.close();
     upstream.close();

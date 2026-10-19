@@ -79,6 +79,12 @@ export async function proxyHttpRequest(
       ) continue;
       responseHeaders[name] = value;
     }
+    // Every proxied response depends on the Hub session. Without this, the
+    // browser can reuse a page cached while signed in after Hub logout:
+    // key the cache on cookies, and revalidate responses that set no policy.
+    const vary = String(responseHeaders.vary ?? "");
+    if (!/(^|,)\s*(cookie|\*)\s*(,|$)/i.test(vary)) responseHeaders.vary = vary ? `${vary}, Cookie` : "Cookie";
+    if (responseHeaders["cache-control"] === undefined) responseHeaders["cache-control"] = "private, no-cache";
     const setCookies = options.cookies?.fromUpstream(upstreamResponse.headers["set-cookie"] ?? []);
     if (setCookies && setCookies.length > 0) responseHeaders["set-cookie"] = setCookies;
     const location = responseHeaders.location;
