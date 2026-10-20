@@ -7,8 +7,7 @@
     }
   ],
   "commit": false,
-  "fixed": [],
-  "linked": [
+  "fixed": [
     [
       "@cloudagentfleet/hub",
       "@cloudagentfleet/ui",
@@ -16,6 +15,7 @@
       "@cloudagentfleet/all-in-one"
     ]
   ],
+  "linked": [],
   "access": "public",
   "baseBranch": "master",
   "updateInternalDependencies": "patch",
