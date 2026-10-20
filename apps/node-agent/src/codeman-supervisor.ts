@@ -64,6 +64,9 @@ function defaultRunCommand(
   options?: { timeout?: number; inheritStdio?: boolean },
 ): SpawnSyncReturns<string> {
   return spawnSync(commandName, args, {
+    // Codeman's daemon outlives this call; started from the Worker's folder it
+    // would pin that folder (Windows then cannot replace or upgrade it).
+    cwd: homedir(),
     encoding: "utf8",
     timeout: options?.timeout ?? 30_000,
     stdio: options?.inheritStdio ? "inherit" : ["ignore", "pipe", "pipe"],

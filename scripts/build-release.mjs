@@ -43,10 +43,19 @@ async function stageUiPackage() {
   }
 }
 
-await rm(join(root, "dist"), { recursive: true, force: true });
-await rm(join(root, "apps", "control-plane", "dist"), { recursive: true, force: true });
-await rm(join(root, "apps", "node-agent", "dist"), { recursive: true, force: true });
-await rm(join(root, "apps", "dashboard", "dist"), { recursive: true, force: true });
+/**
+ * Empties an output folder but keeps the folder: on Windows a process using it
+ * as its working directory, or a file watcher, makes removing it fail (EBUSY).
+ */
+async function emptyDir(path) {
+  const entries = await readdir(path).catch(() => []);
+  await Promise.all(entries.map((entry) => rm(join(path, entry), { recursive: true, force: true })));
+}
+
+await emptyDir(join(root, "dist"));
+await emptyDir(join(root, "apps", "control-plane", "dist"));
+await emptyDir(join(root, "apps", "node-agent", "dist"));
+await emptyDir(join(root, "apps", "dashboard", "dist"));
 
 const hubDist = join(root, "apps", "control-plane", "dist");
 const workerDist = join(root, "apps", "node-agent", "dist");

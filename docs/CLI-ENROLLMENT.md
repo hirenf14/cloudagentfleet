@@ -101,8 +101,10 @@ registers a Task Scheduler task with a logon trigger for the current user (no
 administrator rights) that runs `cloudagentfleet run --restart --log` in a
 headless console: `--restart` restarts failed Workers after 5 seconds (the
 headless console does not pass exit codes to Task Scheduler) and `--log`
-appends their output to `~/.cloudagentfleet/worker.log`. `worker stop` ends
-the task, which closes the console and every Worker attached to it.
+appends their output to `~/.cloudagentfleet/worker.log`. The service records
+its pid in `~/.cloudagentfleet/worker.pid` and refuses to start a second copy;
+`worker stop` ends the task and that process tree (the Workers, cptr, and the
+WSL Worker), because ending the task alone stops only its console host.
 
 Official provider plan requirements, administrator approval, browser login, and
 one-time environment secrets remain provider-owned. Cloud Agent Fleet checks

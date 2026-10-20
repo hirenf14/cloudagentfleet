@@ -114,6 +114,8 @@ export async function ensureCptr(options: CptrSupervisorOptions = {}): Promise<S
     {
       stdio: ["ignore", "pipe", "pipe"],
       windowsHide: true,
+      // Keep cptr from pinning the Worker's install folder.
+      cwd: homedir(),
       // On Windows, Python writes piped output in the ANSI code page, and
       // cptr's startup banner then fails to encode and exits.
       env: { ...process.env, PYTHONUTF8: "1", PYTHONIOENCODING: "utf-8" },

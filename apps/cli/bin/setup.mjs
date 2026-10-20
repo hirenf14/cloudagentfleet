@@ -1180,18 +1180,63 @@ async function hubCommand(args) {
  */
 async function runSavedWorker({ restart = false, log = false } = {}) {
   const config = JSON.parse(readFileSync(configPath, "utf8"));
+  // The service records its pid: `worker stop` on Windows ends this process
+  // tree with it, and a second service start must not run duplicate Workers.
+  if (restart) {
+    const running = readWorkerPid();
+    if (running && running !== process.pid && processAlive(running)) {
+      console.error(`The Worker service is already running (pid ${running}).`);
+      return;
+    }
+    writeFileSync(workerPidPath, String(process.pid), { mode: 0o600 });
+  }
   const logPath = join(dirname(configPath), "worker.log");
   const output = log ? createWriteStream(logPath, { flags: "a", mode: 0o600 }) : undefined;
   if (output) console.log(`Worker output: ${logPath}`);
-  for (;;) {
-    output?.write(`
---- ${new Date().toISOString()} starting Worker ---
-`);
-    const exitCode = await superviseChildren(workerProcesses(config).map((entry) => runWorker(entry, output)));
-    if (!restart || stopRequested || exitCode === 0) return;
-    (output ?? process.stderr).write(`A Worker exited with code ${exitCode}; restarting in 5 seconds.
-`);
-    await new Promise((resolveDelay) => setTimeout(resolveDelay, 5000));
+  try {
+    for (;;) {
+      output?.write(`\n--- ${new Date().toISOString()} starting Worker ---\n`);
+      const exitCode = await superviseChildren(workerProcesses(config).map((entry) => runWorker(entry, output)));
+      if (!restart || stopRequested || exitCode === 0) return;
+      (output ?? process.stderr).write(`A Worker exited with code ${exitCode}; restarting in 5 seconds.\n`);
+      await new Promise((resolveDelay) => setTimeout(resolveDelay, 5000));
+    }
+  } finally {
+    if (restart && readWorkerPid() === process.pid) unlinkSync(workerPidPath);
+  }
+}
+
+const workerPidPath = join(dirname(configPath), "worker.pid");
+
+function readWorkerPid() {
+  try {
+    return Number.parseInt(readFileSync(workerPidPath, "utf8"), 10) || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function processAlive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Ending the Windows task stops only its console host; the Worker processes
+ * (and cptr and the WSL Worker under them) keep running, so end the tree.
+ */
+function stopWindowsWorkerTree() {
+  const pid = readWorkerPid();
+  if (!pid) return;
+  if (processAlive(pid)) command("taskkill.exe", ["/PID", String(pid), "/T", "/F"], { timeout: 15_000 });
+  try {
+    unlinkSync(workerPidPath);
+  } catch {
+    // Already gone.
   }
 }
 
@@ -1450,7 +1495,11 @@ function workerServiceAction(action) {
     if (result.status !== 0) console.log(`Worker service ${service.name} is not running or not installed.`);
     return;
   }
+  if (service.kind === "schtasks" && action === "remove") {
+    command("schtasks.exe", ["/End", "/TN", service.name]);
+  }
   serviceCommand(executable, args);
+  if (service.kind === "schtasks" && (action === "stop" || action === "remove")) stopWindowsWorkerTree();
   if (action === "remove" && service.path && existsSync(service.path)) {
     unlinkSync(service.path);
     if (service.kind === "systemd") serviceCommand("systemctl", ["--user", "daemon-reload"]);
