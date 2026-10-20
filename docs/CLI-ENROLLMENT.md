@@ -58,9 +58,16 @@ starting.
    whole-system access), and each backend's local URL (plus the Codeman mode).
    For cptr, setup shows its license, offers to install it with pipx, uv, or
    pip, and can publish it on the tailnet with `tailscale serve --https=8444`.
+   Setup also asks how the Hub reaches cptr: through the Worker connector
+   (the default; `enroll connector --backend cptr`, no inbound port) or over
+   the tailnet (`enroll tailscale-url --backend cptr`), and prints the matching
+   enroll command. Each connector instance names its driver, `codeman` or
+   `cptr`; the Worker serves the cptr driver only for its own cptr instance
+   (`CLOUDAGENTFLEET_CPTR_INSTANCE_ID`, default `<node>-cptr`).
 4. Save the configuration to `~/.cloudagentfleet/worker.json` (user-only, mode
-   `0600`). When `CLOUDAGENTFLEET_AUTH_TOKEN` is set, the Controller token is
-   stored there so the Worker service can authenticate.
+   `0600`). The Controller token comes from `CLOUDAGENTFLEET_AUTH_TOKEN` or the
+   "Hub Worker token" prompt (the contents of the Hub's `hub-worker-token`
+   file) and is stored there so the Worker service can authenticate.
 5. Optionally start Codeman now, and with `--run` start the Worker. The Worker
    installs or starts Codeman itself unless `manageCodeman` is `false`.
 
@@ -79,7 +86,10 @@ cloudagentfleet worker remove    # stops and unregisters the service
 ```
 
 `worker remove` does not revoke the node on the Controller and never deletes
-project workspaces.
+project workspaces. `worker install` records the installing shell's PATH in
+the service so Codeman sessions and cptr find the agent CLIs (`claude`,
+`codex`, `agent`); `cloudagentfleet run` exits with the Worker's own exit code
+so the service manager restarts a failed Worker.
 
 Official provider plan requirements, administrator approval, browser login, and
 one-time environment secrets remain provider-owned. Cloud Agent Fleet checks

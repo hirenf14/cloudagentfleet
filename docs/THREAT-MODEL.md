@@ -55,7 +55,9 @@ Provider keys or authorization headers could enter job payloads, output, or
 audit records.
 
 Controls: machine-local secret references, payload validation, output redaction,
-no secret echoing, and secret scanning in CI.
+no secret echoing, and secret scanning in CI. A generated Hub Worker token
+lives only in the owner-only `hub-worker-token` file and the Worker's `0600`
+`worker.json`; the Hub logs its path, never its value.
 
 ### Accidental Hub publication
 
@@ -97,6 +99,13 @@ upstream TLS certificates for every non-loopback host.
 cptr prints a one-time setup token on each start; the Worker writes it to
 `~/.cloudagentfleet/cptr-setup-token` (owner-only), redacts it from
 `cptr.log`, and never prints it to service logs.
+
+A cptr instance enrolled through the Worker connector is reached over a
+byte-stream tunnel on the Worker's outbound connection, so the cptr machine
+opens no inbound port. The Hub can only name an instance id: the Worker opens
+streams solely to its own configured loopback cptr URL for its own cptr
+instance id and rejects anything else, so a compromised Hub cannot use the
+tunnel to reach other local ports. Streams close when the Worker disconnects.
 
 Instances enrolled with `--link-only` are health-checked only; their tailnet
 URL is returned to authenticated dashboard users as `launchUrl` (Codeman

@@ -63,6 +63,16 @@ export CLOUDAGENTFLEET_UI_PASSWORD='use-a-long-random-password'
 export CLOUDAGENTFLEET_UI_PASSWORD_HASH='scrypt$N$r$p$salt$hash'
 ```
 
+### Worker token
+
+Workers authenticate with a bearer token, separate from the UI password. When
+`CLOUDAGENTFLEET_AUTH_TOKEN` is unset and the Hub has a durable data
+directory, the Hub generates one in `<data dir>/hub-worker-token` (owner-only)
+and logs only that path. Give its contents to `cloudagentfleet setup` (it asks
+for the Hub Worker token) or set `CLOUDAGENTFLEET_AUTH_TOKEN` on both sides.
+Delete the file and restart the Hub to rotate it, then rerun setup on each
+Worker.
+
 Codeman Basic credentials stay server-side (`CLOUDAGENTFLEET_CODEMAN_CREDENTIALS`
 or enroll-time `--username` / `--password`). They are never returned to the
 browser.

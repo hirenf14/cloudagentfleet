@@ -126,10 +126,27 @@ selection is intentional.
 [Open WebUI Computer](https://openwebui.com/computer) (`cptr`) can sit next to
 Codeman as an optional per-machine backend. In `cloudagentfleet setup`, answer
 `cptr` or `codeman,cptr` at the backends prompt. Setup shows cptr's license,
-offers to install it with pipx, uv, or pip (with your confirmation), and can
-publish it privately on your tailnet with Tailscale Serve. The Worker then
-keeps it running on loopback and prints the one-time setup token on its first
-start. You can also install and run cptr yourself. Either way, enroll it:
+offers to install it with pipx, uv, or pip (with your confirmation; with
+`claude-agent-sdk` when Claude Code is installed), and asks how the Hub should
+reach it. The Worker then keeps it running on loopback and writes the one-time
+setup token to `~/.cloudagentfleet/cptr-setup-token` on its first start.
+
+Each Worker connector instance names a **driver**: `codeman` (the default) or
+`cptr`. With the cptr driver (setup's default), the Hub reaches cptr through
+the Worker's existing outbound connection, so the cptr machine needs no
+inbound port:
+
+```bash
+cloudagentfleet enroll connector \
+  --backend cptr \
+  --controller-url http://<hub-host>:8787 \
+  --node-id laptop \
+  --instance-id laptop-cptr \
+  --name "Laptop (Open WebUI Computer)"
+```
+
+To reach cptr over the tailnet instead (you can also install and run cptr
+yourself this way), publish it with Tailscale Serve and enroll its URL:
 
 ```bash
 cloudagentfleet enroll tailscale-url \
@@ -143,10 +160,12 @@ cloudagentfleet enroll tailscale-url \
 The Hub health-checks `/api/health`. **Open Open WebUI Computer UI** opens it in
 a new tab through the Hub's host-UI origin, so it is reachable wherever the Hub
 is; sign in once with cptr's own account (the Hub keeps that session separate
-from its own cookies). Add `--link-only` to have the dashboard open cptr's URL
-directly instead. Hub folder policy does not apply inside cptr. Cloud Agent
-Fleet does not bundle or modify cptr; its use is governed by the Open WebUI
-Computer license.
+from its own cookies). cptr's editor, terminal, port previews, and agent chat
+(Claude Code, Codex, Cursor, and others it detects on the machine) all work
+through the Hub. Add `--link-only` to a tailscale-url instance to have the
+dashboard open cptr's URL directly instead. Hub folder policy does not apply
+inside cptr. Cloud Agent Fleet does not bundle or modify cptr; its use is
+governed by the Open WebUI Computer license.
 
 The Hub has two origins: the dashboard (`/_fleet/`, port 8787, served on 443)
 and host UIs (port 8788, served on 8443). Backend UIs never run on the
@@ -161,6 +180,10 @@ cloudagentfleet worker status
 cloudagentfleet worker stop
 cloudagentfleet worker remove
 ```
+
+`worker install` records the PATH of the shell that runs it, so Codeman
+sessions and cptr find `claude`, `codex`, and `agent` the way your shell does.
+Reinstall the service after installing a new agent CLI somewhere else.
 
 ## Private Hub access with Tailscale Serve
 

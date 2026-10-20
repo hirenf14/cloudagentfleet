@@ -1,8 +1,10 @@
 # Host backend abstraction and cptr support
 
-Status (2026-10-19): **All phases (A–E) are done.** Codeman and cptr (proxied
-by default, link mode with `--link-only`) are registered, and setup and the
-Worker can install and supervise cptr.
+Status (2026-10-20): **All phases (A–F) are done.** Codeman and cptr (proxied
+by default, link mode with `--link-only`) are registered, setup and the
+Worker can install and supervise cptr, and a Worker connector instance can
+use the cptr driver (Phase F). Verified end to end on a real WSL Worker
+service through a tailnet Hub, including cptr's own agent chat.
 
 The goal is to enroll a second per-machine backend, Open WebUI Computer
 (`cptr`), next to Codeman without forking the Hub, Worker, or dashboard per
@@ -21,8 +23,6 @@ backend.
 ## Non-goals
 
 - Forking or modifying cptr. We only talk to an unmodified cptr instance.
-- cptr behind the Worker connector (outbound-only); direct tailnet only at
-  first.
 - Enforcing our folder-root policy inside cptr. cptr's own file browser,
   editor, and terminal are not mediated by the Hub, and the dashboard must say
   so.
@@ -243,7 +243,30 @@ Original sketch:
 - cptr sessions are still not listed in the fleet view: cptr has no
   documented session API (Spike S).
 
-Original sketch:
+## Phase F — cptr driver on the Worker connector (done)
+
+- Each connector instance names its driver (`codeman` or `cptr`).
+  `enroll connector --backend cptr` links the Worker's cptr instance; setup
+  asks whether the Hub reaches cptr through the connector (default) or the
+  tailnet.
+- The connector carries a byte-stream tunnel: `tunnel.open` / `opened` /
+  `data` (base64, 256 KiB chunks) / `close`. The Hub's `TunnelBroker` exposes
+  each stream as a `Duplex`, which the shared HTTP proxy and WebSocket relay
+  use as their upstream connection (`connect` option). Connector cptr
+  therefore gets the same host-UI origin, cookie bridge, and cache rules as
+  tailnet cptr, and health checks run through the tunnel too.
+- The Worker's `WorkerTunnels` opens streams only for its configured cptr
+  instance id, to its loopback cptr URL; sends are ordered per stream. Old
+  Workers ignore the new messages.
+- The Worker transport dispatches connector requests, jobs, and tunnel
+  messages without awaiting each other, and re-registers after a Hub restart.
+- Agent chat stays cptr's own: the Worker service records the installer's
+  PATH so cptr detects Claude Code, Codex, and Cursor, and setup installs
+  `claude-agent-sdk` next to cptr when Claude Code is present.
+- The dashboard offers Hub sessions only on hosts with the `sessions` feature,
+  so a cptr host cannot be picked in the start-session dialog.
+
+Original Phase E sketch:
 
 - `setup` offers "Codeman / cptr / both". The cptr option installs via pip or
   Docker (Docker mounts only the approved roots) and adds a user service.
