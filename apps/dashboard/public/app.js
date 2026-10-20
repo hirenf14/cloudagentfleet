@@ -107,6 +107,34 @@
     }).format(date);
   }
 
+  /** "5m ago" style age for sidebar rows. */
+  function timeAgo(value) {
+    const time = new Date(value).getTime();
+    if (Number.isNaN(time)) return "";
+    const seconds = Math.max(0, Math.round((Date.now() - time) / 1000));
+    if (seconds < 60) return "just now";
+    if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+    if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
+    return `${Math.floor(seconds / 86400)}d ago`;
+  }
+
+  /** Sessions that have ended stay listed only on request. */
+  const ENDED_STATUSES = new Set(["completed", "failed", "stopped"]);
+  const LIVE_SESSIONS_SHOWN = 3;
+  const RECENT_SESSIONS_SHOWN = 5;
+
+  function byLastActivity(left, right) {
+    return new Date(right.lastEventAt || right.createdAt).getTime()
+      - new Date(left.lastEventAt || left.createdAt).getTime();
+  }
+
+  function instanceSummary(label, instanceSessions) {
+    const live = instanceSessions.filter((session) => !ENDED_STATUSES.has(session.status)).length;
+    return instanceSessions.length === 0
+      ? `${label} · no sessions`
+      : `${label} · ${live} active · ${instanceSessions.length} total`;
+  }
+
   function normalizeTerminalText(value) {
     if (!value) return "";
     return cleanLegacyTerminalBuffer(String(value))
@@ -193,6 +221,9 @@
     const [backends, setBackends] = useState([]);
     // A host UI shown inside the dashboard (an iframe on the host-UI origin).
     const [embeddedInstanceId, setEmbeddedInstanceId] = useState(null);
+    // Instances whose every live session, or whose ended sessions, are listed.
+    const [expandedLive, setExpandedLive] = useState(() => new Set());
+    const [expandedEnded, setExpandedEnded] = useState(() => new Set());
     const [hostUiOrigin, setHostUiOrigin] = useState(null);
 
     useEffect(() => {
@@ -315,8 +346,71 @@
         if (!groups.has(session.instanceId)) groups.set(session.instanceId, []);
         groups.get(session.instanceId).push(session);
       }
+      for (const group of groups.values()) group.sort(byLastActivity);
       return groups;
     }, [instances, sessions]);
+    const recentSessions = useMemo(
+      () => [...sessions].sort(byLastActivity).slice(0, RECENT_SESSIONS_SHOWN),
+      [sessions],
+    );
+    const instanceLabels = useMemo(
+      () => new Map(instances.map((instance) => [instance.id, instance.label])),
+      [instances],
+    );
+    const toggle = (setter, id) => setter((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+    const sessionKey = (session) => `${session.instanceId}/${session.id}`;
+    const sessionRow = (session, detail) => h(
+      "button",
+      {
+        className: `session-row ${selectedSessionKey === sessionKey(session) ? "session-row--selected" : ""}`,
+        key: sessionKey(session),
+        onClick: () => {
+          setSelectedInstanceId(session.instanceId);
+          setSelectedSessionKey(sessionKey(session));
+        },
+      },
+      h("span", { className: `session-row__indicator session-row__indicator--${session.status}` }),
+      h("span", { className: "session-row__copy" }, h("strong", null, session.title), h("small", null, detail)),
+      session.needsInput && h("span", { className: "needs-input-dot", title: "Needs input" }),
+    );
+    // Under each machine: live sessions first (capped), ended ones folded,
+    // and the selected session always visible.
+    const instanceSessionRows = (instanceId) => {
+      const all = sessionsByInstance.get(instanceId) || [];
+      const live = all.filter((session) => !ENDED_STATUSES.has(session.status));
+      const ended = all.filter((session) => ENDED_STATUSES.has(session.status));
+      const showAllLive = expandedLive.has(instanceId);
+      const showEnded = expandedEnded.has(instanceId);
+      const shownLive = showAllLive ? live : live.slice(0, LIVE_SESSIONS_SHOWN);
+      const hiddenSelected = [...live.slice(shownLive.length), ...(showEnded ? [] : ended)]
+        .filter((session) => selectedSessionKey === sessionKey(session));
+      const detail = (session) => `${session.agent.name} · ${STATUS_LABELS[session.status] || session.status} · ${timeAgo(session.lastEventAt || session.createdAt)}`;
+      return [
+        ...shownLive.map((session) => sessionRow(session, detail(session))),
+        ...hiddenSelected.map((session) => sessionRow(session, detail(session))),
+        live.length > LIVE_SESSIONS_SHOWN && h(
+          "button",
+          { className: "session-toggle", key: "more", onClick: () => toggle(setExpandedLive, instanceId) },
+          showAllLive ? "Show fewer" : `Show ${live.length - LIVE_SESSIONS_SHOWN} more`,
+        ),
+        ended.length > 0 && h(
+          "button",
+          {
+            className: "session-toggle",
+            key: "ended",
+            "aria-expanded": showEnded,
+            onClick: () => toggle(setExpandedEnded, instanceId),
+          },
+          `${showEnded ? "▾" : "▸"} ${ended.length} ended`,
+        ),
+        ...(showEnded ? ended.map((session) => sessionRow(session, detail(session))) : []),
+      ];
+    };
 
     async function stopSession() {
       if (!selectedSession || !selectedInstance) return;
@@ -396,6 +490,16 @@
               : h(
                 "nav",
                 { className: "instance-list" },
+                recentSessions.length > 0 && h(
+                  "section",
+                  { className: "sidebar-section", "aria-label": "Recent sessions" },
+                  h("span", { className: "sidebar-section__title" }, "Recent"),
+                  recentSessions.map((session) => sessionRow(
+                    session,
+                    `${instanceLabels.get(session.instanceId) || session.instanceId} · ${STATUS_LABELS[session.status] || session.status} · ${timeAgo(session.lastEventAt || session.createdAt)}`,
+                  )),
+                ),
+                h("span", { className: "sidebar-section__title" }, "Machines"),
                 instances.map((instance) => h(
                   "div",
                   { className: "instance-group", key: instance.id },
@@ -416,29 +520,11 @@
                       "span",
                       { className: "instance-card__copy" },
                       h("strong", null, instance.label),
-                      h("small", null, `${backendLabel(backends, instance)} · ${(sessionsByInstance.get(instance.id) || []).length} sessions`),
+                      h("small", null, instanceSummary(backendLabel(backends, instance), sessionsByInstance.get(instance.id) || [])),
                     ),
                     h("span", { className: "instance-card__chevron", "aria-hidden": "true" }, "›"),
                   ),
-                  (sessionsByInstance.get(instance.id) || []).map((session) => h(
-                    "button",
-                    {
-                      className: `session-row ${selectedSessionKey === `${session.instanceId}/${session.id}` ? "session-row--selected" : ""}`,
-                      key: session.id,
-                      onClick: () => {
-                        setSelectedInstanceId(instance.id);
-                        setSelectedSessionKey(`${session.instanceId}/${session.id}`);
-                      },
-                    },
-                    h("span", { className: `session-row__indicator session-row__indicator--${session.status}` }),
-                    h(
-                      "span",
-                      { className: "session-row__copy" },
-                      h("strong", null, session.title),
-                      h("small", null, `${session.agent.name} · ${shortId(session.id)} · ${STATUS_LABELS[session.status] || session.status}`),
-                    ),
-                    session.needsInput && h("span", { className: "needs-input-dot", title: "Needs input" }),
-                  )),
+                  instanceSessionRows(instance.id),
                 )),
               ),
           h(
