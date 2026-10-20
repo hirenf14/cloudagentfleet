@@ -362,11 +362,22 @@ function runWhereWorkerRuns(environment, script, options = {}) {
 }
 
 /** Prefers isolated installers (pipx, uv) over a user-level pip install. */
-export function cptrInstallCommand(available) {
-  if (available("pipx --version")) return "pipx install cptr";
-  if (available("uv --version")) return "uv tool install cptr";
+/**
+ * Prefers isolated installers (pipx, uv) over a user-level pip install. With
+ * Claude Code present, also installs claude-agent-sdk into cptr's
+ * environment so cptr can use it as a chat agent.
+ */
+export function cptrInstallCommand(available, { withClaude = false } = {}) {
+  if (available("pipx --version")) {
+    return withClaude ? "pipx install cptr && pipx inject cptr claude-agent-sdk" : "pipx install cptr";
+  }
+  if (available("uv --version")) {
+    return withClaude ? "uv tool install cptr --with claude-agent-sdk" : "uv tool install cptr";
+  }
   for (const python of ["python3", "python", "py"]) {
-    if (available(`${python} -m pip --version`)) return `${python} -m pip install --user cptr`;
+    if (available(`${python} -m pip --version`)) {
+      return `${python} -m pip install --user cptr${withClaude ? " claude-agent-sdk" : ""}`;
+    }
   }
   return undefined;
 }
@@ -379,6 +390,7 @@ async function installCptr(environment) {
   );
   const installCommand = cptrInstallCommand(
     (probe) => runWhereWorkerRuns(environment, probe).status === 0,
+    { withClaude: environment.claudeCli },
   );
   if (!installCommand) {
     console.log("No pipx, uv, or pip was found where the Worker runs. Install Python 3.10+ (and pipx), then rerun setup.");
@@ -442,6 +454,7 @@ export function workerEnvironment(config) {
           CLOUDAGENTFLEET_CPTR_URL: config.cptrUrl,
           CLOUDAGENTFLEET_MANAGE_CPTR: config.manageCptr === false ? "false" : "true",
           CLOUDAGENTFLEET_CPTR_INSTANCE_ID: config.cptrInstanceId ?? `${config.nodeId}-cptr`,
+          ...(config.cptrCommand ? { CLOUDAGENTFLEET_CPTR_COMMAND: config.cptrCommand } : {}),
         }
       : {}),
     CLOUDAGENTFLEET_NODE_ID: config.nodeId,
@@ -515,6 +528,10 @@ async function setup() {
   if (useCptr && !environment.cptr) {
     environment.cptr = await installCptr(environment);
   }
+  // Record cptr's absolute path: Worker services run with a minimal PATH.
+  const cptrCommand = useCptr && environment.cptr
+    ? runWhereWorkerRuns(environment, "command -v cptr").stdout?.trim().split("\n").at(-1)
+    : undefined;
 
   const controllerUrl = await ask("\nController URL", "http://127.0.0.1:8787");
   const nodeId = await ask("Worker ID", hostname().toLowerCase().replaceAll(/[^a-z0-9-]/g, "-"));
@@ -534,7 +551,10 @@ async function setup() {
     "How should the Hub reach Open WebUI Computer (connector, tailnet)",
     "connector",
   )) : undefined;
-  const authToken = process.env.CLOUDAGENTFLEET_AUTH_TOKEN;
+  // The Hub stores a generated Worker token in its data folder (hub-worker-token).
+  const authToken = process.env.CLOUDAGENTFLEET_AUTH_TOKEN
+    || (await ask("Hub Worker token (from the Hub's hub-worker-token file; Enter to skip)", "")).trim()
+    || undefined;
   const config = {
     nodeId,
     name,
@@ -554,6 +574,7 @@ async function setup() {
     manageCodeman: useCodeman,
     installCodeman: useCodeman,
     ...(cptrUrl ? { cptrUrl, manageCptr: true, cptrAccess, cptrInstanceId: `${nodeId}-cptr` } : {}),
+    ...(cptrCommand ? { cptrCommand } : {}),
   };
 
   mkdirSync(dirname(configPath), { recursive: true });
@@ -604,7 +625,7 @@ async function setup() {
     if (useCodeman && !environment.codeman) {
       console.log("Worker will install/start Codeman under the hood …");
     }
-    runWorker(config);
+    superviseChild(runWorker(config));
   } else {
     console.log("Run `cloudagentfleet run` to start the Worker.");
   }
@@ -926,7 +947,9 @@ export async function enrollInstance(argv = process.argv.slice(3)) {
         }),
     capabilities: [...new Set([...parseCapabilities(parsed, backend), ...(linkOnly ? ["link"] : [])])],
     ...(agents ? { agents } : {}),
-    ...(selectedMode === "connector" || workspaceOptions.length > 0
+    // cptr manages its own workspaces; the Hub never mediates them, so there
+    // is no folder policy to ask for.
+    ...((selectedMode === "connector" && backend !== "cptr") || workspaceOptions.length > 0
       ? {
           workspacePolicy: selectedMode === "connector" && workspaceOptions.length === 0
             ? await selectFolders()
@@ -1051,7 +1074,27 @@ async function hubCommand(args) {
 
 function runSavedWorker() {
   const config = JSON.parse(readFileSync(configPath, "utf8"));
-  runWorker(config);
+  superviseChild(runWorker(config));
+}
+
+/**
+ * Makes `cloudagentfleet run` stand in for the Worker process: stop signals
+ * reach the Worker, and its exit status becomes ours, so a service manager
+ * (systemd Restart=on-failure, launchd KeepAlive) sees a failed Worker as failed.
+ */
+function superviseChild(child) {
+  const forward = (signal) => {
+    if (child.exitCode === null && child.signalCode === null) child.kill(signal);
+  };
+  process.on("SIGINT", () => forward("SIGINT"));
+  process.on("SIGTERM", () => forward("SIGTERM"));
+  child.once("error", (error) => {
+    console.error(`Could not start the Worker: ${error.message}`);
+    process.exitCode = 1;
+  });
+  child.once("exit", (code, signal) => {
+    process.exitCode = code ?? (signal === "SIGINT" || signal === "SIGTERM" ? 0 : 1);
+  });
 }
 
 function workerServicePaths() {

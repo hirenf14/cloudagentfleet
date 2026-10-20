@@ -1,5 +1,6 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
-import { existsSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { randomBytes } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
@@ -94,6 +95,8 @@ export interface ControllerServer {
   hub: FleetHub;
   /** Auto-generated Hub password still in bootstrap form (print on each start). */
   revealPassword?: string;
+  /** Where the generated Worker token is stored, when the Hub generated one. */
+  workerTokenPath?: string;
 }
 
 export function startControllerServer(
@@ -109,6 +112,11 @@ export function startControllerServer(
       console.log(`Hub UI password: ${controller.revealPassword}`);
       console.log(
         "Shown on every start until you set CLOUDAGENTFLEET_UI_PASSWORD or CLOUDAGENTFLEET_UI_PASSWORD_HASH.",
+      );
+    }
+    if (controller.workerTokenPath) {
+      console.log(
+        `Worker token: ${controller.workerTokenPath} (give it to \`cloudagentfleet setup\`, or set CLOUDAGENTFLEET_AUTH_TOKEN)`,
       );
     }
   });
@@ -127,9 +135,13 @@ export function createControllerServer(
     hubUrl: options.publicUrl ?? process.env.CLOUDAGENTFLEET_PUBLIC_URL,
     hostUrl: options.hostUiUrl ?? process.env.CLOUDAGENTFLEET_HOST_UI_URL,
   };
-  const authToken = options.authToken ?? process.env.CLOUDAGENTFLEET_AUTH_TOKEN;
   const statePath = options.statePath ?? process.env.CLOUDAGENTFLEET_DATA_PATH ?? "data/hub.json";
   const dataDir = statePath ? dirname(resolve(statePath)) : undefined;
+  // With a UI password on, Workers must present a token. Without a configured
+  // one, a durable Hub generates and keeps its own, like the UI password.
+  const configuredToken = options.authToken ?? process.env.CLOUDAGENTFLEET_AUTH_TOKEN;
+  const workerTokenPath = !configuredToken && dataDir ? join(dataDir, "hub-worker-token") : undefined;
+  const authToken = configuredToken ?? (workerTokenPath ? readOrCreateWorkerToken(workerTokenPath) : undefined);
   const resolvedAuth = resolveUiAuth({
     dataDir,
     password: options.uiPassword,
@@ -224,6 +236,7 @@ export function createControllerServer(
     hostPort,
     origins,
     revealPassword: resolvedAuth.revealPassword,
+    ...(workerTokenPath ? { workerTokenPath } : {}),
   };
 }
 
@@ -769,6 +782,19 @@ function contentType(filePath: string): string {
   if (filePath.endsWith(".js")) return "application/javascript; charset=utf-8";
   if (filePath.endsWith(".css")) return "text/css; charset=utf-8";
   return "application/octet-stream";
+}
+
+/** Reads the Hub-generated Worker token, creating it (owner-only) on first use. */
+function readOrCreateWorkerToken(path: string): string {
+  if (existsSync(path)) {
+    const stored = readFileSync(path, "utf8").trim();
+    if (stored) return stored;
+  }
+  const token = randomBytes(32).toString("base64url");
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, `${token}\n`, { mode: 0o600 });
+  chmodSync(path, 0o600);
+  return token;
 }
 
 function isWorkerOrJobRoute(pathname: string): boolean {

@@ -188,6 +188,10 @@ test("cptrInstallCommand prefers isolated installers over user pip", () => {
   assert.equal(cptrInstallCommand(only("uv", "python3")), "uv tool install cptr");
   assert.equal(cptrInstallCommand(only("py ")), "py -m pip install --user cptr");
   assert.equal(cptrInstallCommand(only()), undefined);
+  // With Claude Code present, cptr gets the SDK it needs to drive it as a chat agent.
+  assert.equal(cptrInstallCommand(only("uv"), { withClaude: true }), "uv tool install cptr --with claude-agent-sdk");
+  assert.equal(cptrInstallCommand(only("pipx"), { withClaude: true }), "pipx install cptr && pipx inject cptr claude-agent-sdk");
+  assert.equal(cptrInstallCommand(only("python3"), { withClaude: true }), "python3 -m pip install --user cptr claude-agent-sdk");
 });
 
 test("workerEnvironment turns off Codeman management on a cptr-only machine", () => {

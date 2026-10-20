@@ -1,5 +1,5 @@
 import { spawn, type ChildProcess, type SpawnOptions } from "node:child_process";
-import { appendFileSync, chmodSync, mkdirSync, writeFileSync } from "node:fs";
+import { appendFileSync, chmodSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { envFlagFrom } from "./codeman-supervisor.ts";
@@ -26,6 +26,22 @@ export interface CptrSupervisorOptions {
   spawnImpl?: (command: string, args: string[], options: SpawnOptions) => ChildProcess;
   sleep?: (ms: number) => Promise<void>;
   log?: (message: string) => void;
+}
+
+/**
+ * The cptr executable. Service managers (systemd, launchd) start the Worker
+ * with a minimal PATH that lacks ~/.local/bin, where uv and pipx install cptr,
+ * so prefer the path setup recorded, then that default location.
+ */
+export function resolveCptrCommand(
+  env: NodeJS.ProcessEnv = process.env,
+  pathExists: (path: string) => boolean = existsSync,
+  home: string = homedir(),
+): string {
+  const configured = env.CLOUDAGENTFLEET_CPTR_COMMAND?.trim();
+  if (configured) return configured;
+  const userBin = join(home, ".local", "bin", "cptr");
+  return pathExists(userBin) ? userBin : "cptr";
 }
 
 export function manageCptrEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
@@ -92,7 +108,7 @@ export async function ensureCptr(options: CptrSupervisorOptions = {}): Promise<S
   let exitCode: number | null | undefined;
   let spawnError: Error | undefined;
   const child = (options.spawnImpl ?? spawn)(
-    options.command ?? "cptr",
+    options.command ?? resolveCptrCommand(),
     ["run", "--headless", "--host", target.hostname.replace(/^\[|\]$/g, ""), "--port", port],
     { stdio: ["ignore", "pipe", "pipe"], windowsHide: true },
   );

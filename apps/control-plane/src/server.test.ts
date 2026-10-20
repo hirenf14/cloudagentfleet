@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { createServer } from "node:http";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 import { FleetHub } from "./hub.ts";
 import { createControllerServer } from "./server.ts";
@@ -756,5 +759,43 @@ test("host UIs cannot drive the Hub API, and the host-UI origin requires a Hub s
   } finally {
     await close();
     await closeHttp(upstream.server);
+  }
+});
+
+test("a durable Hub generates a Worker token and requires it", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "cloudagentfleet-token-"));
+  const statePath = join(directory, "hub.json");
+  try {
+    const first = createControllerServer({ statePath, uiPassword: "correct horse battery staple" });
+    assert.ok(first.workerTokenPath, "the Hub reports where it stored the token");
+    const token = readFileSync(first.workerTokenPath!, "utf8").trim();
+    assert.ok(token.length >= 32);
+    const baseUrl = await listen(first);
+    const registration = {
+      nodeId: "worker-1",
+      name: "Worker",
+      platform: "linux",
+      capabilities: ["codeman"],
+    };
+    const anonymous = await fetch(`${baseUrl}/api/workers`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(registration),
+    });
+    assert.equal(anonymous.status, 401);
+    const enrolled = await fetch(`${baseUrl}/api/workers`, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+      body: JSON.stringify(registration),
+    });
+    assert.equal(enrolled.status, 201);
+    await new Promise<void>((resolve) => first.server.close(() => resolve()));
+
+    const second = createControllerServer({ statePath, uiPassword: "correct horse battery staple" });
+    assert.equal(readFileSync(second.workerTokenPath!, "utf8").trim(), token, "the token survives a restart");
+    const configured = createControllerServer({ statePath, authToken: "explicit-token" });
+    assert.equal(configured.workerTokenPath, undefined, "a configured token is used as is");
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
   }
 });

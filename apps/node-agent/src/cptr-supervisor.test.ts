@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
 import test from "node:test";
-import { ensureCptr } from "./cptr-supervisor.ts";
+import { ensureCptr, resolveCptrCommand } from "./cptr-supervisor.ts";
 import { backendSupervisors, workerBackends } from "./supervisor.ts";
 
 const TOKEN = "ab".repeat(32);
@@ -122,4 +122,11 @@ test("workerBackends parses the backend list and supervisors honour manage flags
       .map((supervisor) => supervisor.backend),
     ["cptr"],
   );
+});
+
+test("resolveCptrCommand finds cptr outside a service's minimal PATH", () => {
+  assert.equal(resolveCptrCommand({ CLOUDAGENTFLEET_CPTR_COMMAND: "/opt/cptr/bin/cptr" }), "/opt/cptr/bin/cptr");
+  const userBin = join("/home/op", ".local", "bin", "cptr");
+  assert.equal(resolveCptrCommand({}, (path) => path === userBin, "/home/op"), userBin);
+  assert.equal(resolveCptrCommand({}, () => false, "/home/op"), "cptr");
 });
