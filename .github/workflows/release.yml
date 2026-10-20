@@ -42,8 +42,14 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # setup-node's registry-url writes the npm auth line; publish supplies
-      # NODE_AUTH_TOKEN below.
+      # npm 11.5+ publishes through npm trusted publishing (GitHub OIDC, no
+      # token to expire) when the packages are configured for this workflow on
+      # npmjs.com, and falls back to NODE_AUTH_TOKEN otherwise. setup-node's
+      # registry-url writes the npm auth line for that fallback.
+      - name: Use npm 11 for trusted publishing
+        run: npm install --global npm@11.6.2
+
+
 
       - name: Typecheck
         run: pnpm typecheck

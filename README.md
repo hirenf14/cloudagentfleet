@@ -227,6 +227,18 @@ pnpm --filter @cloudagentfleet/hub dev   # Hub from source on 127.0.0.1:8787
 - `packages/protocol` — private shared messages, domain types, and workspace policy
 - `packages/host-adapters` — private backend adapter contract, registry, shared proxy/relay code, and the Codeman adapters
 
+## Credits
+
+Cloud Agent Fleet builds on [Codeman](https://github.com/Ark0N/Codeman) by Ark0N
+and the Codeman contributors (MIT) and
+[Open WebUI Computer](https://openwebui.com/computer) by Open WebUI, Inc.
+([Open Use License](https://github.com/open-webui/computer/blob/main/LICENSE);
+commercial or organizational use falls under
+[Open WebUI's terms](https://openwebui.com/terms)). Neither is bundled or
+modified: `init` installs them with their official installers when you pick
+them. Cloud Agent Fleet is independent and not affiliated with either project.
+See [Credits and third-party software](docs/ACKNOWLEDGEMENTS.md).
+
 ## Contributing
 
 See [`CONTRIBUTING.md`](CONTRIBUTING.md).

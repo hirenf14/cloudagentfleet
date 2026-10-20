@@ -124,7 +124,8 @@
   const RECENT_SESSIONS_SHOWN = 5;
   const MACHINES_SHOWN = 6;
 
-  const GUIDE_URL = "https://github.com/hirenf14/cloudagentfleet/blob/master/docs/GETTING-STARTED.md";
+  const GUIDE_URL = "https://hirenf14.github.io/cloudagentfleet/docs/getting-started.html";
+  const CREDITS_URL = "https://hirenf14.github.io/cloudagentfleet/docs/credits.html";
 
   /** Per-browser conveniences (guide hidden, host UI opened); never required state. */
   function readLocal(key) {
@@ -1129,8 +1130,8 @@
           h("dl", { className: "help-terms" },
             ...term("Hub", "This dashboard. It keeps the list of machines and connects you to them; run one per fleet."),
             ...term("Worker", "A small service on each machine. It connects out to the Hub, so the machine needs no open ports."),
-            ...term("Codeman", "Runs agent sessions in terminals. Start them here, watch them, and type into them."),
-            ...term("Open WebUI Computer", "A full workspace on the machine: files, editor, terminal, previews, and agent chat. Opens inside the dashboard."),
+            ...term("Codeman", "Runs agent sessions in terminals. Start them here, watch them, and type into them. An open-source project by Ark0N (MIT)."),
+            ...term("Open WebUI Computer", "A full workspace on the machine: files, editor, terminal, previews, and agent chat. Opens inside the dashboard. By Open WebUI, Inc., under its own license."),
             ...term("Session", "One agent (or shell) working in one workspace on one machine."),
           ),
           h("span", { className: "home-label" }, "Shortcuts"),
@@ -1144,6 +1145,7 @@
             { className: "guide__footer" },
             h("button", { className: "home-action", onClick: onShowGuide }, "Show the getting-started guide"),
             h("a", { href: GUIDE_URL, target: "_blank", rel: "noopener noreferrer" }, "Read the full guide"),
+            h("a", { href: CREDITS_URL, target: "_blank", rel: "noopener noreferrer" }, "Credits"),
           ),
         ),
       ),

@@ -593,7 +593,7 @@ export const BACKEND_INTRO = [
     lines: [
       "Agent sessions in terminals. Start them from the dashboard, watch their output",
       "live, and type into them. Light, and good for running many agents side by side.",
-      "(On Windows it runs in WSL.)",
+      "(On Windows it runs in WSL.) Open source by Ark0N, MIT: github.com/Ark0N/Codeman",
     ],
   },
   {
@@ -601,8 +601,8 @@ export const BACKEND_INTRO = [
     label: "Open WebUI Computer",
     lines: [
       "A full workspace in the browser: files, editor, terminal, previews of running",
-      "apps, and chat with coding agents. Opens inside the dashboard. Third-party",
-      "software under its own license.",
+      "apps, and chat with coding agents. Opens inside the dashboard. By Open WebUI, Inc.,",
+      "under its own license; company use falls under openwebui.com/terms.",
     ],
   },
 ];
@@ -1979,7 +1979,7 @@ async function init() {
   console.log([
     "",
     "Next: open the dashboard, pick a machine, and start a session or open its own UI.",
-    "Guide: https://github.com/hirenf14/cloudagentfleet/blob/master/docs/GETTING-STARTED.md",
+    "Guide: https://hirenf14.github.io/cloudagentfleet/docs/getting-started.html",
   ].join("\n"));
 }
 

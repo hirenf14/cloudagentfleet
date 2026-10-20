@@ -49,6 +49,20 @@ const FIRST_STEPS = {
   worker: "Start here: run `cloudagentfleet init` on this machine. It asks for your Hub's address and Worker token (run `cloudagentfleet hub token` on the Hub machine).",
 };
 
+/** The license of the Node.js being bundled: from its install, else its tagged source. */
+async function nodeLicense() {
+  for (const candidate of [join(dirname(process.execPath), "LICENSE"), join(dirname(process.execPath), "..", "LICENSE")]) {
+    try {
+      return await readFile(candidate, "utf8");
+    } catch {
+      // Not in this layout.
+    }
+  }
+  const response = await fetch(`https://raw.githubusercontent.com/nodejs/node/v${process.versions.node}/LICENSE`);
+  if (!response.ok) throw new Error(`Could not get the Node.js license (HTTP ${response.status})`);
+  return response.text();
+}
+
 async function filesIn(directory) {
   const entries = await readdir(directory, { withFileTypes: true });
   const files = [];
@@ -67,6 +81,8 @@ async function packageEdition({ name, edition, files, binaries }) {
   await mkdir(artifactRoot, { recursive: true });
   for (const file of files) await cp(join(cliBundle, file), join(artifactRoot, file), { recursive: true });
   await cp(process.execPath, join(artifactRoot, nodeName));
+  // Node.js is MIT-licensed; redistributing its binary means shipping its notice.
+  await writeFile(join(artifactRoot, "NODE-LICENSE.txt"), await nodeLicense());
   for (const binary of binaries) {
     const launcherName = platform === "win32" ? `${binary}.cmd` : binary;
     await writeFile(join(artifactRoot, launcherName), launcher(`${binary}.mjs`));
@@ -92,7 +108,11 @@ async function packageEdition({ name, edition, files, binaries }) {
     "",
     FIRST_STEPS[edition],
     "",
-    "Guide: https://github.com/hirenf14/cloudagentfleet/blob/master/docs/GETTING-STARTED.md",
+    "Guide: https://hirenf14.github.io/cloudagentfleet/docs/getting-started.html",
+    "",
+    "The bundled Node.js runtime is MIT-licensed (NODE-LICENSE.txt). Codeman, Open WebUI Computer,",
+    "and the coding agents are not included; init installs the ones you pick with their official",
+    "installers, under their own licenses. Credits: https://hirenf14.github.io/cloudagentfleet/docs/credits.html",
     "",
   ].join(platform === "win32" ? "\r\n" : "\n"));
 
