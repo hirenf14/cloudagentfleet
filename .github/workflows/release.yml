@@ -106,14 +106,14 @@ jobs:
       - name: Build release runtime
         run: pnpm build:release
 
-      - name: Package standalone archive
+      - name: Package standalone archives (hub, worker, all-in-one)
         run: pnpm package:standalone
 
       - name: Upload standalone artifacts
         uses: actions/upload-artifact@v4
         with:
           name: cloudagentfleet-${{ matrix.name }}
-          path: dist/standalone/*
+          path: dist/standalone/*.tar.gz
 
       - name: Attach archives to the latest GitHub Release
         shell: bash

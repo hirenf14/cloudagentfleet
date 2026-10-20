@@ -8,25 +8,29 @@ provider tools remain user-authenticated integrations.
 
 ## Human setup journey
 
-1. Install the npm package (`npm install --global cloudagentfleet`) or extract
-   a platform archive and put its `cloudagentfleet` launcher on `PATH`.
-2. Run `cloudagentfleet setup`.
-3. Choose the machine name and workspace access:
-   - approved folders
-   - explicit whole-system scope
-4. Choose capabilities:
-   - Cloud Agent Fleet Worker
-   - Codeman integration
-   - preview relay
-   - remote browser
-5. Review a plain-language checklist of required changes.
-6. Confirm each privileged or network-affecting change.
-7. Let setup check dependencies, including WSL/tmux/Codeman when Codeman is
-   selected. Provider installation and login remain explicit user actions.
-8. Enroll the Worker with the Controller.
-9. Install and start the user-level Worker service with
-   `cloudagentfleet worker install` and `cloudagentfleet worker start`.
-10. Run `cloudagentfleet doctor` and show the dashboard link.
+1. Install one of three standalone installs per machine, from npm or a
+   release archive with its own Node runtime: **all-in-one** (Hub and Worker),
+   **Hub**, or **Worker**.
+2. Run `cloudagentfleet init`. In one pass it:
+   - offers the roles the install contains (hub, worker, both);
+   - for the Hub: installs it as a user service on the first free port pair,
+     waits for it, and offers Tailscale Serve;
+   - shows one checklist of what the machine offers (Codeman, Open WebUI
+     Computer, Claude Code CLI, Cursor Agent CLI), lists every install command
+     (official installers; `uv` first when cptr has no Python tool), and runs
+     them after a single confirmation, each where it will run (WSL or
+     Windows);
+   - asks only for the Hub address and Worker token (when the Hub is
+     elsewhere), a machine name, and approved folders;
+   - installs the Worker service, waits for it to connect, enrolls its
+     instances, and waits until they are online;
+   - prints the dashboard address and password, how to add machines, and the
+     provider login commands to run yourself.
+3. In the dashboard, **Getting started** tracks the remaining first steps,
+   **+ Add machine** shows the commands with this Hub's address, and **?**
+   explains the parts and shortcuts.
+4. `cloudagentfleet setup` remains the step-by-step Worker configuration for
+   people who want every option.
 
 ## Required UX behaviors
 
@@ -57,12 +61,14 @@ manual step. The user should not need to understand the internal WSL commands.
 
 ## Distribution artifacts
 
-`pnpm build:release` creates a source-free Worker/CLI runtime. The web Hub and
-dashboard are deployed separately on the Controller host.
-`pnpm package:standalone` adds the current platform's Node runtime,
-`cloudagentfleet` launcher, manifest, and checksum file, then creates a
-`.tar.gz` archive. The release workflow runs these commands on Windows, macOS,
-and Linux so each archive contains a native runtime.
+`pnpm build:release` builds the npm package contents: `@cloudagentfleet/hub`
+(Hub, bundled UI, CLI), `@cloudagentfleet/worker` (Worker, CLI),
+`@cloudagentfleet/all-in-one` (all of them), and `@cloudagentfleet/ui` (the UI
+files alone). `pnpm package:standalone` then builds this platform's three
+archives (`cloudagentfleet-hub-*`, `cloudagentfleet-worker-*`,
+`cloudagentfleet-*`), each with the Node runtime, launchers, a README with
+first steps, a manifest, and SHA-256 checksums. The release workflow runs these
+on Windows, macOS, and Linux.
 
 The current release does not implement pairing codes, OS credential-store
 integration, automatic updates, or signed artifact publication. These are

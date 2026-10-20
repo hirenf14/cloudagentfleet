@@ -31,12 +31,16 @@ credentials to the Controller.
 
 ## Configure and start with the CLI
 
-Install or link the CLI (`npm install --global cloudagentfleet`, or
-`pnpm --filter @cloudagentfleet/cli link --global` from a clone), then run:
+Install the Worker (`npm install --global @cloudagentfleet/worker`, or the
+worker release archive), then run the guided setup, which installs Codeman
+when you pick it and runs the Worker as a service:
 
 ```bash
-cloudagentfleet setup --run
+cloudagentfleet init
 ```
+
+`cloudagentfleet setup --run` is the step-by-step alternative that runs the
+Worker in the terminal.
 
 The guided flow detects WSL/Codeman, asks before installing Codeman on first
 setup, lets you choose approved folders or whole-system access, discovers
