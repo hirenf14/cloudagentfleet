@@ -67,12 +67,12 @@ and expected evidence output.
 ## Releases
 
 Public packages, always released together on one version (Changesets
-`fixed`): the Hub, Worker, and all-in-one packages each ship the same
-`cloudagentfleet` CLI, so they must not drift apart.
+`fixed`): the Hub and Worker packages ship the same `cloudagentfleet` CLI
+and Worker, so they must not drift apart.
 
-- `@cloudagentfleet/hub`: Hub, bundled dashboard, CLI
+- `@cloudagentfleet/hub`: Hub, bundled dashboard, CLI, and the Worker (runs only
+  if `init` is told to, for the Hub's own machine)
 - `@cloudagentfleet/worker`: Worker, CLI
-- `@cloudagentfleet/all-in-one`: Hub, dashboard, Worker, CLI
 - `@cloudagentfleet/ui`: dashboard files only (optional; for custom hosting)
 
 ### Draft a changelog entry
@@ -93,9 +93,8 @@ Every public package gets the highest bump anyway.
 One-time setup:
 
 1. Repository secret `NPM_TOKEN`: an npm automation (or granular) token with
-   publish rights for the whole `@cloudagentfleet` scope. A granular token
-   limited to existing packages cannot publish a new one, such as
-   `@cloudagentfleet/all-in-one` on its first release.
+   publish rights for the whole `@cloudagentfleet` scope (a granular token
+   limited to existing packages cannot publish a new package later).
 2. Actions may open pull requests (Settings → Actions → Workflow permissions:
    read and write, allow creating pull requests).
 
@@ -105,10 +104,10 @@ Each release:
 2. The **Release** workflow typechecks, tests, builds, and verifies the npm
    packs, then opens or updates the **Version Packages** PR (version bumps,
    `CHANGELOG.md` entries, changeset files removed).
-3. Merge that PR. The workflow publishes all four packages to npm with build
+3. Merge that PR. The workflow publishes all three packages to npm with build
    provenance, creates a GitHub Release per package, and marks the Worker's
    release as **Latest**.
-4. Standalone archives (hub, worker, all-in-one for Windows, macOS, and Linux)
+4. Standalone archives (hub and worker for Windows, macOS, and Linux)
    are built and attached to that Latest release, which is what the
    `releases/latest/download/…` links in the docs and dashboard use.
 
@@ -129,15 +128,15 @@ pnpm release            # build:release + changeset publish
 
 `build:release` writes ignored build outputs only:
 
-- Hub → `apps/control-plane/dist/`: Hub bundle, CLI, and `public/` (the UI)
+- Hub → `apps/control-plane/dist/`: Hub bundle, CLI, Worker bundle, and
+  `public/` (the UI)
 - Worker → `apps/node-agent/dist/`: Worker bundle and CLI
-- All-in-one → `apps/all-in-one/dist/`: all of the above
 - UI → `apps/dashboard/dist/public/` (drafts excluded)
 - `dist/cli-bundle/` for the standalone archives
 
 `pnpm verify:packs` fails the pipeline if an npm tarball would miss its
 bundles or UI, or include `src/`, `bin/`, TypeScript, tests, or draft UI files.
-`pnpm package:standalone` builds this platform's three archives from
+`pnpm package:standalone` builds this platform's two archives from
 `dist/cli-bundle/` with a private Node runtime.
 
 ## Branch and pull request workflow

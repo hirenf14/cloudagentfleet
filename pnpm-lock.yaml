@@ -24,8 +24,6 @@ importers:
         specifier: ^7.0.2
         version: 7.0.2
 
-  apps/all-in-one: {}
-
   apps/cli: {}
 
   apps/control-plane: {}

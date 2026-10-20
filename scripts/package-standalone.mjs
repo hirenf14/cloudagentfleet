@@ -6,12 +6,12 @@ import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 
 /**
- * Builds the three standalone archives for this platform. Each one carries a
+ * Builds the two standalone archives for this platform. Each one carries a
  * private Node runtime and launchers, so nothing else needs installing:
  *
- *   cloudagentfleet-hub-<platform>-<arch>     the Hub with its dashboard, and the CLI
+ *   cloudagentfleet-hub-<platform>-<arch>     the Hub with its dashboard, the CLI, and the
+ *                                             Worker (it runs only if `init` is told to)
  *   cloudagentfleet-worker-<platform>-<arch>  the Worker and the CLI
- *   cloudagentfleet-<platform>-<arch>         all-in-one: Hub, dashboard, Worker, CLI
  *
  * Run `pnpm build:release` first.
  */
@@ -27,7 +27,7 @@ const EDITIONS = [
   {
     name: `cloudagentfleet-hub-${platform}-${architecture}`,
     edition: "hub",
-    files: ["cloudagentfleet.mjs", "cloudagentfleet-hub.mjs", "public"],
+    files: ["cloudagentfleet.mjs", "cloudagentfleet-hub.mjs", "cloudagentfleet-worker.mjs", "public"],
     binaries: ["cloudagentfleet", "cloudagentfleet-hub"],
   },
   {
@@ -35,12 +35,6 @@ const EDITIONS = [
     edition: "worker",
     files: ["cloudagentfleet.mjs", "cloudagentfleet-worker.mjs"],
     binaries: ["cloudagentfleet"],
-  },
-  {
-    name: `cloudagentfleet-${platform}-${architecture}`,
-    edition: "all-in-one",
-    files: ["cloudagentfleet.mjs", "cloudagentfleet-worker.mjs", "cloudagentfleet-hub.mjs", "public"],
-    binaries: ["cloudagentfleet", "cloudagentfleet-hub"],
   },
 ];
 
@@ -51,9 +45,8 @@ function launcher(entry) {
 }
 
 const FIRST_STEPS = {
-  hub: "Start here: run `cloudagentfleet init` and choose hub. It installs the Hub as a user service and prints the dashboard address and password.",
+  hub: "Start here: run `cloudagentfleet init`. It installs the Hub as a user service, asks whether this machine should also run a Worker, and prints the dashboard address and password.",
   worker: "Start here: run `cloudagentfleet init` on this machine. It asks for your Hub's address and Worker token (run `cloudagentfleet hub token` on the Hub machine).",
-  "all-in-one": "Start here: run `cloudagentfleet init` and choose both. It sets up the Hub and this machine's Worker, enrolls it, and prints the dashboard address and password.",
 };
 
 async function filesIn(directory) {

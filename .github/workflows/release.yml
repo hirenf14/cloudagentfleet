@@ -122,7 +122,7 @@ jobs:
       - name: Build release runtime
         run: pnpm build:release
 
-      - name: Package standalone archives (hub, worker, all-in-one)
+      - name: Package standalone archives (hub, worker)
         run: pnpm package:standalone
 
       - name: Upload standalone artifacts

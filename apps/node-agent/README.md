@@ -23,8 +23,8 @@ token` on the Hub machine), installs the Worker as a user service (no
 administrator rights), and enrolls the machine. Rerun it any time to change
 your choices. Provider logins (`claude`, `agent login`) stay yours.
 
-Running the Hub on this machine too? Install `@cloudagentfleet/all-in-one`
-instead.
+This is the machine that hosts the dashboard? Install `@cloudagentfleet/hub`
+instead: it includes the Worker, and its `init` asks whether to run one.
 
 ## Commands
 

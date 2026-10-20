@@ -8,13 +8,14 @@ provider tools remain user-authenticated integrations.
 
 ## Human setup journey
 
-1. Install one of three standalone installs per machine, from npm or a
-   release archive with its own Node runtime: **all-in-one** (Hub and Worker),
-   **Hub**, or **Worker**.
+1. Install one of two standalone installs per machine, from npm or a release
+   archive with its own Node runtime: the **Hub** (dashboard, CLI, and a Worker
+   that runs only if chosen) on the machine or server hosting the dashboard,
+   and the **Worker** on each machine whose agents you want to reach.
 2. Run `cloudagentfleet init`. In one pass it:
-   - offers the roles the install contains (hub, worker, both);
-   - for the Hub: installs it as a user service on the first free port pair,
-     waits for it, and offers Tailscale Serve;
+   - on a Hub install: installs the Hub as a user service on the first free
+     port pair, waits for it, offers Tailscale Serve, and asks whether this
+     machine should also run a Worker (default no);
    - shows one checklist of what the machine offers (Codeman, Open WebUI
      Computer, Claude Code CLI, Cursor Agent CLI), lists every install command
      (official installers; `uv` first when cptr has no Python tool), and runs
@@ -62,11 +63,10 @@ manual step. The user should not need to understand the internal WSL commands.
 ## Distribution artifacts
 
 `pnpm build:release` builds the npm package contents: `@cloudagentfleet/hub`
-(Hub, bundled UI, CLI), `@cloudagentfleet/worker` (Worker, CLI),
-`@cloudagentfleet/all-in-one` (all of them), and `@cloudagentfleet/ui` (the UI
-files alone). `pnpm package:standalone` then builds this platform's three
-archives (`cloudagentfleet-hub-*`, `cloudagentfleet-worker-*`,
-`cloudagentfleet-*`), each with the Node runtime, launchers, a README with
+(Hub, bundled UI, CLI, and the Worker for the Hub's own machine),
+`@cloudagentfleet/worker` (Worker, CLI), and `@cloudagentfleet/ui` (the UI files
+alone). `pnpm package:standalone` then builds this platform's two archives
+(`cloudagentfleet-hub-*`, `cloudagentfleet-worker-*`), each with the Node runtime, launchers, a README with
 first steps, a manifest, and SHA-256 checksums. The release workflow runs these
 on Windows, macOS, and Linux.
 

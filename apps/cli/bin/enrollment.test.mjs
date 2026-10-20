@@ -12,7 +12,6 @@ import {
   wslWorkerCommandLine,
   parseBackendChoice,
   parseAgentPicks,
-  parseInitRole,
   defaultHubConfig,
   hubEnvironment,
   parseAgentProfiles,
@@ -312,12 +311,6 @@ test("init lets you pick Codeman, Open WebUI Computer, or both, then optional ag
   assert.deepEqual(parseAgentPicks("2, 1"), ["claude", "cursor"]);
   assert.deepEqual(parseAgentPicks("cursor"), ["cursor"]);
   assert.throws(() => parseAgentPicks("codex"), /Unknown agent/);
-});
-
-test("init offers only the roles this install contains", () => {
-  assert.equal(parseInitRole("Both", ["hub", "worker", "both"]), "both");
-  assert.equal(parseInitRole("worker", ["worker"]), "worker");
-  assert.throws(() => parseInitRole("hub", ["worker"]), /Choose one of: worker/);
 });
 
 test("the Hub service keeps its state in the user's folder", () => {

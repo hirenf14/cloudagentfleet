@@ -960,20 +960,28 @@
    * carries its own Node, and `init` installs whatever the machine offers.
    */
   function installSteps({ target, os, method }) {
-    const edition = target === "hub-machine" ? "all-in-one" : "worker";
-    if (method === "npm") {
-      return edition === "worker"
-        ? { commands: ["npm install --global @cloudagentfleet/worker", "cloudagentfleet init"] }
-        : {
-          commands: [
-            "npm uninstall --global @cloudagentfleet/hub",
-            "npm install --global @cloudagentfleet/all-in-one",
-            "cloudagentfleet init",
-          ],
-          note: "The Hub and Worker packages share the cloudagentfleet command, so the all-in-one package replaces the Hub package. Your Hub's settings and data stay.",
-        };
+    // The Hub install already contains the Worker: nothing to add, just
+    // rerun init there and say yes to running a Worker.
+    if (target === "hub-machine") {
+      const hubFolder = `cloudagentfleet-hub-${ARCHIVE_PLATFORM[os]}`;
+      const command = method === "npm"
+        ? "cloudagentfleet init"
+        : os === "windows"
+          ? `$HOME\\cloudagentfleet\\${hubFolder}\\cloudagentfleet.cmd init`
+          : `~/cloudagentfleet/${hubFolder}/cloudagentfleet init`;
+      return {
+        commands: [command],
+        note: [
+          "The Hub install includes the Worker, so there is nothing new to install.",
+          method === "npm" ? "" : "Use the folder you extracted the Hub into.",
+          "Answer yes to \"Also run a Worker on this machine\"; the Hub keeps its settings and data.",
+        ].filter(Boolean).join(" "),
+      };
     }
-    const asset = `${edition === "worker" ? "cloudagentfleet-worker" : "cloudagentfleet"}-${ARCHIVE_PLATFORM[os]}`;
+    if (method === "npm") {
+      return { commands: ["npm install --global @cloudagentfleet/worker", "cloudagentfleet init"] };
+    }
+    const asset = `cloudagentfleet-worker-${ARCHIVE_PLATFORM[os]}`;
     const url = `${RELEASE_DOWNLOAD}/${asset}.tar.gz`;
     const commands = os === "windows"
       ? [
@@ -994,7 +1002,6 @@
         "Keep this folder: the services run from it. Node.js is included.",
         os === "windows" ? "Run these in PowerShell (not inside WSL)." : "",
         os === "macos" ? "This archive is for Apple silicon; on an Intel Mac use npm." : "",
-        edition === "all-in-one" ? "Choose both when init asks; your Hub's settings and data stay." : "",
       ].filter(Boolean).join(" "),
     };
   }

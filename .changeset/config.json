@@ -11,8 +11,7 @@
     [
       "@cloudagentfleet/hub",
       "@cloudagentfleet/ui",
-      "@cloudagentfleet/worker",
-      "@cloudagentfleet/all-in-one"
+      "@cloudagentfleet/worker"
     ]
   ],
   "linked": [],

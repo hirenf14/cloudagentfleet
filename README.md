@@ -14,26 +14,29 @@ uses the `CLOUDAGENTFLEET_` prefix (see [`.env.example`](.env.example)).
 
 ## Get started
 
-Pick one install per machine. Each is standalone, and its guided setup also
-installs Codeman, Open WebUI Computer, and the coding agents you choose.
+There are two installs, each standalone (its guided setup also installs
+Codeman, Open WebUI Computer, and the coding agents you choose):
 
-| You want | npm (Node.js 22.6+) | Or a [release archive](https://github.com/hirenf14/cloudagentfleet/releases/latest) (Node.js included) |
+| Install on | npm (Node.js 22.6+) | Or a [release archive](https://github.com/hirenf14/cloudagentfleet/releases/latest) (Node.js included) |
 | --- | --- | --- |
-| Everything on one machine | `npm install --global @cloudagentfleet/all-in-one` | `cloudagentfleet-<os>-<arch>` |
-| The Hub (dashboard) | `npm install --global @cloudagentfleet/hub` | `cloudagentfleet-hub-<os>-<arch>` |
-| A machine to add | `npm install --global @cloudagentfleet/worker` | `cloudagentfleet-worker-<os>-<arch>` |
+| The machine or server that hosts the dashboard | `npm install --global @cloudagentfleet/hub` | `cloudagentfleet-hub-<os>-<arch>` |
+| Each machine whose agents you want to reach | `npm install --global @cloudagentfleet/worker` | `cloudagentfleet-worker-<os>-<arch>` |
 
-Then:
+The Hub includes the dashboard, and the Worker too: if the Hub's machine
+should also offer its own agents, say yes when `init` asks.
+
+Then, on each machine:
 
 ```bash
 cloudagentfleet init
 ```
 
-`init` asks what this machine runs (Hub, Worker, or both) and what it should
-offer (Codeman, Open WebUI Computer, Claude Code CLI, Cursor Agent CLI), shows
-every install command, installs them after one confirmation, runs the Hub and
-Worker as user services (no administrator rights), enrolls the machine, and
-prints the dashboard address and password. It is safe to rerun.
+On the Hub it installs the Hub as a user service (no administrator rights),
+offers Tailscale Serve, and asks whether to also run a Worker there. On a
+Worker machine it asks what the machine offers (Codeman, Open WebUI Computer,
+or both, plus optional coding agents), shows every install command, installs
+them after one confirmation, connects to your Hub, and enrolls the machine.
+It is safe to rerun.
 
 **[Read the getting-started guide](docs/GETTING-STARTED.md)** for the full
 walkthrough, Windows notes, everyday commands, and troubleshooting. The
@@ -189,12 +192,12 @@ see [`docs/MULTIHOST-E2E.md`](docs/MULTIHOST-E2E.md).
 
 ## Release archives and packages
 
-Maintainers publish `@cloudagentfleet/hub`, `@cloudagentfleet/worker`,
-`@cloudagentfleet/all-in-one`, and `@cloudagentfleet/ui` (the dashboard files
-alone, for custom hosting; the Hub already includes them) through Changesets
+Maintainers publish `@cloudagentfleet/hub` (Hub, dashboard, CLI, and an
+optional Worker), `@cloudagentfleet/worker`, and `@cloudagentfleet/ui` (the
+dashboard files alone, for custom hosting; the Hub already includes them) through Changesets
 (see [`CONTRIBUTING.md`](CONTRIBUTING.md#releases)).
 
-Each release attaches three archives per platform (hub, worker, all-in-one).
+Each release attaches two archives per platform (hub, worker).
 Each carries a private Node runtime, its launchers (`cloudagentfleet`, and
 `cloudagentfleet-hub` where included), a `README.txt` with first steps, a
 `release-manifest.json`, and `SHA256SUMS`. Extract, put the folder on your
@@ -209,16 +212,15 @@ From a clone (developers):
 ```bash
 pnpm install
 pnpm build:release        # npm package contents
-pnpm package:standalone   # this platform's three archives in dist/standalone/
+pnpm package:standalone   # this platform's two archives in dist/standalone/
 pnpm --filter @cloudagentfleet/hub dev   # Hub from source on 127.0.0.1:8787
 ```
 
 ## Project shape
 
-- `@cloudagentfleet/hub` (`apps/control-plane`) — API, scheduler, persistence, proxies; ships the UI and the CLI
+- `@cloudagentfleet/hub` (`apps/control-plane`) — API, scheduler, persistence, proxies; ships the UI, the CLI, and an optional Worker
 - `@cloudagentfleet/ui` (`apps/dashboard`) — fleet launcher and host context overlay
 - `@cloudagentfleet/worker` (`apps/node-agent` + CLI) — machine companion and operator CLI
-- `@cloudagentfleet/all-in-one` (`apps/all-in-one`) — the Hub, UI, Worker, and CLI in one install
 - `apps/cli` — private CLI sources (`init`, `setup`, services) packaged into every install
 - `packages/protocol` — private shared messages, domain types, and workspace policy
 - `packages/host-adapters` — private backend adapter contract, registry, shared proxy/relay code, and the Codeman adapters

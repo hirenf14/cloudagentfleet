@@ -8,33 +8,32 @@ each machine's own workspace, from any device on your tailnet.
 
 | Part | What it is | How many |
 | --- | --- | --- |
-| **Hub** | The dashboard and the list of machines. | One per fleet |
-| **Worker** | A small service on a machine. It connects out to the Hub, so the machine needs no open ports. | One per machine |
+| **Hub** | The dashboard and the list of machines. It can run on a server. | One per fleet |
+| **Worker** | A small service on a machine. It connects out to the Hub, so the machine needs no open ports. | One per machine you add |
 | **Codeman** | Runs agent sessions in terminals; the dashboard starts, shows, and types into them. | Optional, per machine |
 | **Open WebUI Computer** | A full workspace on the machine (files, editor, terminal, previews, agent chat), shown inside the dashboard. | Optional, per machine |
 | **Coding agents** | Claude Code CLI and Cursor Agent CLI, used by Codeman and Open WebUI Computer. | Optional, per machine |
 
-One machine can run the Hub and a Worker. Every machine you add later runs a
-Worker only.
+The Hub can also run a Worker on its own machine when you want that
+machine's agents in the dashboard too.
 
-## 1. Pick an install
+## 1. Install
 
-Each install is standalone: it brings everything for its role, and the guided
-setup installs Codeman and/or Open WebUI Computer and the coding agents you
-pick. Install one per machine (they share command names).
+Two installs, each standalone (the guided setup installs Codeman, Open WebUI
+Computer, and the coding agents you pick):
 
-| You want | Edition |
+| Install on | Edition |
 | --- | --- |
-| A new fleet on one machine (dashboard and its agents) | **all-in-one** |
-| A new fleet whose dashboard runs on a machine without agents | **hub** |
-| To add a machine to an existing fleet | **worker** |
+| The machine or server that hosts the dashboard | **hub** (includes the dashboard, and the Worker if you want it there) |
+| Each machine whose agents you want to reach | **worker** |
+
+Start with the Hub, then add machines.
 
 ### With a download (nothing else needed)
 
 Release archives carry their own Node runtime. Extract into a folder you keep
 (the services run from it), then run `init` from it. Replace `EDITION` with
-`cloudagentfleet` (all-in-one), `cloudagentfleet-hub`, or
-`cloudagentfleet-worker`.
+`cloudagentfleet-hub` or `cloudagentfleet-worker`.
 
 Linux (x64):
 
@@ -69,19 +68,14 @@ Each archive has a `SHA256SUMS` file and a `README.txt`. Add the folder to your
 ### With npm (Node.js 22.6+)
 
 ```bash
-npm install --global @cloudagentfleet/all-in-one   # or /hub, or /worker
+npm install --global @cloudagentfleet/hub      # on the Hub's machine
+npm install --global @cloudagentfleet/worker   # on each machine you add
 cloudagentfleet init
 ```
 
-To add a Worker to a machine that already runs the Hub from npm, swap the Hub
-package for all-in-one (its settings and data stay), then run `init` and
-choose both:
-
-```bash
-npm uninstall --global @cloudagentfleet/hub
-npm install --global @cloudagentfleet/all-in-one
-cloudagentfleet init
-```
+Install one of the two per machine (they share the `cloudagentfleet` command).
+To add the Hub's own machine to the fleet later, run `cloudagentfleet init`
+there again and answer yes to running a Worker; nothing else to install.
 
 The dashboard's **+ Add machine** shows these commands for the system you
 pick, with your Hub's address.
@@ -94,10 +88,12 @@ cloudagentfleet init
 
 It walks through everything once and is safe to run again:
 
-1. **Role.** Hub, Worker, or both, depending on the edition.
-2. **Hub** (if chosen). Installs the Hub as a user service that starts when you
-   sign in (no administrator rights), and offers to publish it privately on
-   your tailnet with Tailscale Serve so your other devices can reach it.
+1. **Hub** (hub install). Installs the Hub as a user service that starts when
+   you sign in (no administrator rights), offers to publish it privately on
+   your tailnet with Tailscale Serve so your other devices can reach it, then
+   asks whether this machine should also run a Worker (default no: a server
+   usually has no agents). The steps below are the Worker's.
+2. **Worker.** On a worker install, or when you said yes on the Hub.
 3. **What this machine offers: one or both.**
 
    ```text

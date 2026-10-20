@@ -2,7 +2,7 @@
   "name": "@cloudagentfleet/hub",
   "version": "0.1.8",
   "private": false,
-  "description": "Cloud Agent Fleet Hub — private control plane and dashboard (UI included), with the cloudagentfleet CLI to run it as a service.",
+  "description": "Cloud Agent Fleet Hub: the private dashboard (included) and fleet API, with the cloudagentfleet CLI; can also run a Worker on the same machine.",
   "type": "module",
   "bin": {
     "cloudagentfleet-hub": "./dist/cloudagentfleet-hub.mjs",

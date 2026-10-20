@@ -1,15 +1,14 @@
 # Changesets
 
 This repo uses [Changesets](https://github.com/changesets/changesets) to draft
-version bumps and changelogs for the four public packages:
+version bumps and changelogs for the three public packages:
 
 - `@cloudagentfleet/hub`
 - `@cloudagentfleet/worker`
-- `@cloudagentfleet/all-in-one`
 - `@cloudagentfleet/ui`
 
-They are **fixed**: every release bumps all four to the same version, because
-the Hub, Worker, and all-in-one packages ship the same CLI.
+They are **fixed**: every release bumps all three to the same version, because
+the Hub and Worker packages ship the same CLI and Worker.
 
 ## Add a changeset on your PR
 

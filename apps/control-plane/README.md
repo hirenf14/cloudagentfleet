@@ -1,22 +1,23 @@
 # @cloudagentfleet/hub
 
 The Cloud Agent Fleet **Hub**: the private dashboard (included) and the fleet
-API, with the `cloudagentfleet` CLI to run it as a service. Requires Node.js
-22.6+; nothing else.
+API, with the `cloudagentfleet` CLI to run it as a service. It also carries
+the Worker, for when the Hub's own machine should offer its agents too.
+Requires Node.js 22.6+; nothing else. Host it on a server or your main
+machine.
 
 ```bash
 npm install --global @cloudagentfleet/hub
-cloudagentfleet init        # choose "hub"
+cloudagentfleet init
 ```
 
 `init` installs the Hub as a user service that starts when you sign in (no
 administrator rights), offers to publish it privately on your tailnet with
-Tailscale Serve, and prints the dashboard address and password.
+Tailscale Serve, asks whether this machine should also run a Worker (default
+no), and prints the dashboard address and password.
 
 Add machines with `@cloudagentfleet/worker` and `cloudagentfleet init` on each;
-`cloudagentfleet hub token` prints the Worker token they ask for. Want the Hub
-and a Worker on the same machine? Install `@cloudagentfleet/all-in-one`
-instead (the packages share command names).
+`cloudagentfleet hub token` prints the Worker token they ask for.
 
 ## Commands
 

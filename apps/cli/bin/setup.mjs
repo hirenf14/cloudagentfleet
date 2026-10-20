@@ -1842,7 +1842,7 @@ export function hubEnvironment(config) {
   };
 }
 
-/** The Hub beside this CLI (Hub and all-in-one installs), or from a source checkout. */
+/** The Hub beside this CLI (the Hub install), or from a source checkout. */
 function resolveHubScript() {
   return [
     join(thisDir, "cloudagentfleet-hub.mjs"),
@@ -1861,7 +1861,7 @@ function workerInstalled() {
 
 function runHub(config, log) {
   const script = resolveHubScript();
-  if (!script) throw new Error("The Hub is not part of this install. Install @cloudagentfleet/hub or @cloudagentfleet/all-in-one.");
+  if (!script) throw new Error("The Hub is not part of this install. Install @cloudagentfleet/hub on the machine that should run it.");
   const child = spawn(
     process.execPath,
     [script.endsWith(".ts") ? "--experimental-strip-types" : "", script].filter(Boolean),
@@ -1925,14 +1925,6 @@ function tailnetName() {
 
 // ── Guided setup ────────────────────────────────────────────
 
-export function parseInitRole(value, available) {
-  const role = String(value).trim().toLowerCase();
-  if (!["hub", "worker", "both"].includes(role) || !available.includes(role)) {
-    throw new Error(`Choose one of: ${available.join(", ")}`);
-  }
-  return role;
-}
-
 /**
  * `cloudagentfleet init`: one guided flow for a new machine. It offers the
  * roles this install contains (Hub, Worker, or both), sets them up as user
@@ -1942,23 +1934,27 @@ export function parseInitRole(value, available) {
 async function init() {
   const hasHub = Boolean(resolveHubScript());
   const hasWorker = workerInstalled();
-  const available = [...(hasHub ? ["hub"] : []), ...(hasWorker ? ["worker"] : []), ...(hasHub && hasWorker ? ["both"] : [])];
-  if (available.length === 0) throw new Error("This install contains neither the Hub nor the Worker.");
+  if (!hasHub && !hasWorker) throw new Error("This install contains neither the Hub nor the Worker.");
   console.log([
     "Cloud Agent Fleet",
     "=================",
     "",
     "A fleet has one Hub (the dashboard you sign in to) and a Worker on every machine",
-    "whose agents you want to reach. One machine can run both.",
+    "whose agents you want to reach.",
     "",
   ].join("\n"));
-  const role = available.length === 1
-    ? available[0]
-    : parseInitRole(await ask(`What should this machine run? (${available.join(", ")})`, available.includes("both") ? "both" : available[0]), available);
-  console.log(`\nSetting up: ${role === "both" ? "the Hub and a Worker" : `the ${role === "hub" ? "Hub" : "Worker"}`}\n`);
 
-  const hub = role === "hub" || role === "both" ? await initHub() : undefined;
-  const worker = role === "worker" || role === "both" ? await initWorker(hub) : undefined;
+  // A Hub install sets up the Hub, and runs a Worker on the same machine only
+  // when asked (a server usually has no agents). A Worker install is a Worker.
+  const hub = hasHub ? await initHub() : undefined;
+  const addWorker = !hasHub || (hasWorker && await confirm(
+    "\nAlso run a Worker on this machine, so its own agents show up in the dashboard?",
+    existsSync(configPath),
+  ));
+  const worker = addWorker ? await initWorker(hub) : undefined;
+  if (hub && !worker) {
+    console.log("\nNo Worker on this machine. Run `cloudagentfleet init` again any time to add one.");
+  }
 
   console.log(["", "Done.", ""].join("\n"));
   if (hub) {
