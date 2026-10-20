@@ -10,7 +10,8 @@ import {
   workerProcesses,
   windowsWorkerTaskXml,
   wslWorkerCommandLine,
-  parseComponentPicks,
+  parseBackendChoice,
+  parseAgentPicks,
   parseInitRole,
   defaultHubConfig,
   hubEnvironment,
@@ -299,12 +300,18 @@ test("the WSL Worker command exports its settings to node", () => {
   );
 });
 
-test("init's checklist accepts numbers or names and needs a backend", () => {
-  assert.deepEqual(parseComponentPicks("1,2"), ["codeman", "cptr"]);
-  assert.deepEqual(parseComponentPicks("cptr, claude 1"), ["codeman", "cptr", "claude"]);
-  assert.deepEqual(parseComponentPicks("2,4"), ["cptr", "cursor"]);
-  assert.throws(() => parseComponentPicks("3,4"), /needs at least one/);
-  assert.throws(() => parseComponentPicks("9"), /Unknown choice/);
+test("init lets you pick Codeman, Open WebUI Computer, or both, then optional agents", () => {
+  assert.deepEqual(parseBackendChoice("1"), ["codeman"]);
+  assert.deepEqual(parseBackendChoice("2"), ["cptr"]);
+  assert.deepEqual(parseBackendChoice("3"), ["codeman", "cptr"]);
+  assert.deepEqual(parseBackendChoice(" Both "), ["codeman", "cptr"]);
+  assert.deepEqual(parseBackendChoice("cptr"), ["cptr"]);
+  assert.throws(() => parseBackendChoice("4"), /Answer 1/);
+  assert.deepEqual(parseAgentPicks(""), []);
+  assert.deepEqual(parseAgentPicks("none"), []);
+  assert.deepEqual(parseAgentPicks("2, 1"), ["claude", "cursor"]);
+  assert.deepEqual(parseAgentPicks("cursor"), ["cursor"]);
+  assert.throws(() => parseAgentPicks("codex"), /Unknown agent/);
 });
 
 test("init offers only the roles this install contains", () => {

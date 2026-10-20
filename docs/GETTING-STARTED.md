@@ -20,19 +20,71 @@ Worker only.
 ## 1. Pick an install
 
 Each install is standalone: it brings everything for its role, and the guided
-setup installs Codeman, Open WebUI Computer, and the coding agents you pick.
+setup installs Codeman and/or Open WebUI Computer and the coding agents you
+pick. Install one per machine (they share command names).
 
-| You want | npm (Node.js 22.6+) | Or a release archive (no Node.js needed) |
-| --- | --- | --- |
-| Everything on one machine | `npm install --global @cloudagentfleet/all-in-one` | `cloudagentfleet-<os>-<arch>` |
-| The Hub on a machine | `npm install --global @cloudagentfleet/hub` | `cloudagentfleet-hub-<os>-<arch>` |
-| A machine to add to a fleet | `npm install --global @cloudagentfleet/worker` | `cloudagentfleet-worker-<os>-<arch>` |
+| You want | Edition |
+| --- | --- |
+| A new fleet on one machine (dashboard and its agents) | **all-in-one** |
+| A new fleet whose dashboard runs on a machine without agents | **hub** |
+| To add a machine to an existing fleet | **worker** |
 
-Archives are on the [latest release](https://github.com/hirenf14/cloudagentfleet/releases/latest).
-Extract one, put the folder on your `PATH` (or run its launchers by path); it
-carries its own Node runtime and a `SHA256SUMS` file to check.
+### With a download (nothing else needed)
 
-Install one of the three per machine; they share command names.
+Release archives carry their own Node runtime. Extract into a folder you keep
+(the services run from it), then run `init` from it. Replace `EDITION` with
+`cloudagentfleet` (all-in-one), `cloudagentfleet-hub`, or
+`cloudagentfleet-worker`.
+
+Linux (x64):
+
+```bash
+mkdir -p ~/cloudagentfleet && cd ~/cloudagentfleet
+curl -fsSLO https://github.com/hirenf14/cloudagentfleet/releases/latest/download/EDITION-linux-x64.tar.gz
+tar -xzf EDITION-linux-x64.tar.gz
+./EDITION-linux-x64/cloudagentfleet init
+```
+
+macOS (Apple silicon; on an Intel Mac use npm):
+
+```bash
+mkdir -p ~/cloudagentfleet && cd ~/cloudagentfleet
+curl -fsSLO https://github.com/hirenf14/cloudagentfleet/releases/latest/download/EDITION-darwin-arm64.tar.gz
+tar -xzf EDITION-darwin-arm64.tar.gz
+./EDITION-darwin-arm64/cloudagentfleet init
+```
+
+Windows (PowerShell, not inside WSL):
+
+```powershell
+mkdir -Force $HOME\cloudagentfleet; cd $HOME\cloudagentfleet
+curl.exe -fsSLO https://github.com/hirenf14/cloudagentfleet/releases/latest/download/EDITION-win32-x64.tar.gz
+tar -xzf EDITION-win32-x64.tar.gz
+.\EDITION-win32-x64\cloudagentfleet.cmd init
+```
+
+Each archive has a `SHA256SUMS` file and a `README.txt`. Add the folder to your
+`PATH` to type `cloudagentfleet` without its path.
+
+### With npm (Node.js 22.6+)
+
+```bash
+npm install --global @cloudagentfleet/all-in-one   # or /hub, or /worker
+cloudagentfleet init
+```
+
+To add a Worker to a machine that already runs the Hub from npm, swap the Hub
+package for all-in-one (its settings and data stay), then run `init` and
+choose both:
+
+```bash
+npm uninstall --global @cloudagentfleet/hub
+npm install --global @cloudagentfleet/all-in-one
+cloudagentfleet init
+```
+
+The dashboard's **+ Add machine** shows these commands for the system you
+pick, with your Hub's address.
 
 ## 2. Run the guided setup
 
@@ -42,29 +94,42 @@ cloudagentfleet init
 
 It walks through everything once and is safe to run again:
 
-1. **Role.** Hub, Worker, or both, depending on what you installed.
+1. **Role.** Hub, Worker, or both, depending on the edition.
 2. **Hub** (if chosen). Installs the Hub as a user service that starts when you
    sign in (no administrator rights), and offers to publish it privately on
    your tailnet with Tailscale Serve so your other devices can reach it.
-3. **What this machine offers.** One checklist:
+3. **What this machine offers: one or both.**
 
    ```text
-   1. Codeman — terminal sessions you start and watch from the dashboard
-   2. Open WebUI Computer — a full workspace UI: files, editor, terminal, previews, agent chat
-   3. Claude Code CLI — Anthropic's coding agent, used by both
-   4. Cursor Agent CLI — Cursor's coding agent, used by both
+   1. Codeman
+      Agent sessions in terminals. Start them from the dashboard, watch their output
+      live, and type into them. Light, and good for running many agents side by side.
+      (On Windows it runs in WSL.)
+
+   2. Open WebUI Computer
+      A full workspace in the browser: files, editor, terminal, previews of running
+      apps, and chat with coding agents. Opens inside the dashboard. Third-party
+      software under its own license.
+
+   3. Both
    ```
 
-   It then shows every install command it will run, asks once, and installs
-   them (using each project's official installer; for Open WebUI Computer it
-   first installs `uv` if there is no Python tool).
-4. **Hub address and token** (Worker only, when the Hub is elsewhere). Use the
+   Pick Codeman if you mostly run agents and watch them; Open WebUI Computer if
+   you also want to browse and edit the code and preview apps; both to have
+   each.
+4. **Coding agents** (optional). Claude Code CLI and Cursor Agent CLI; already
+   installed ones are marked. Nothing is uninstalled.
+5. **One install pass.** It lists every install command (each project's
+   official installer; for Open WebUI Computer it first installs `uv` if there
+   is no Python tool), asks once, and installs them where they run.
+6. **Hub address and token** (Worker only, when the Hub is elsewhere). Use the
    address you open the dashboard at, and the token from
    `cloudagentfleet hub token` on the Hub machine.
-5. **Name and folders.** A name for the machine, and which folders the Hub may
+7. **Name and folders.** A name for the machine, and which folders the Hub may
    start sessions in.
-6. **Done.** It installs the Worker service, waits for it to connect, enrolls
-   the machine, and prints the dashboard address and password.
+8. **Done.** It installs the Worker service, waits for it to connect, enrolls
+   the machine, waits until it is online, and prints the dashboard address and
+   password.
 
 Sign in to your coding agents yourself (`claude`, `agent login`); Cloud Agent
 Fleet never handles provider logins.

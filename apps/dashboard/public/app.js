@@ -125,7 +125,6 @@
   const MACHINES_SHOWN = 6;
 
   const GUIDE_URL = "https://github.com/hirenf14/cloudagentfleet/blob/master/docs/GETTING-STARTED.md";
-  const RELEASES_URL = "https://github.com/hirenf14/cloudagentfleet/releases/latest";
 
   /** Per-browser conveniences (guide hidden, host UI opened); never required state. */
   function readLocal(key) {
@@ -945,9 +944,86 @@
     );
   }
 
-  /** How to add a machine, with this Hub's address; the token stays on the Hub machine. */
+  const RELEASE_DOWNLOAD = "https://github.com/hirenf14/cloudagentfleet/releases/latest/download";
+  // Release archives are built on each platform's standard runner.
+  const ARCHIVE_PLATFORM = { windows: "win32-x64", macos: "darwin-arm64", linux: "linux-x64" };
+
+  function detectOs() {
+    const platform = `${navigator.userAgentData?.platform || navigator.platform || ""} ${navigator.userAgent}`.toLowerCase();
+    if (platform.includes("win")) return "windows";
+    if (platform.includes("mac")) return "macos";
+    return "linux";
+  }
+
+  /**
+   * The commands for one install. Every install is standalone: the archive
+   * carries its own Node, and `init` installs whatever the machine offers.
+   */
+  function installSteps({ target, os, method }) {
+    const edition = target === "hub-machine" ? "all-in-one" : "worker";
+    if (method === "npm") {
+      return edition === "worker"
+        ? { commands: ["npm install --global @cloudagentfleet/worker", "cloudagentfleet init"] }
+        : {
+          commands: [
+            "npm uninstall --global @cloudagentfleet/hub",
+            "npm install --global @cloudagentfleet/all-in-one",
+            "cloudagentfleet init",
+          ],
+          note: "The Hub and Worker packages share the cloudagentfleet command, so the all-in-one package replaces the Hub package. Your Hub's settings and data stay.",
+        };
+    }
+    const asset = `${edition === "worker" ? "cloudagentfleet-worker" : "cloudagentfleet"}-${ARCHIVE_PLATFORM[os]}`;
+    const url = `${RELEASE_DOWNLOAD}/${asset}.tar.gz`;
+    const commands = os === "windows"
+      ? [
+        "mkdir -Force $HOME\\cloudagentfleet; cd $HOME\\cloudagentfleet",
+        `curl.exe -fsSLO ${url}`,
+        `tar -xzf ${asset}.tar.gz`,
+        `.\\${asset}\\cloudagentfleet.cmd init`,
+      ]
+      : [
+        "mkdir -p ~/cloudagentfleet && cd ~/cloudagentfleet",
+        `curl -fsSLO ${url}`,
+        `tar -xzf ${asset}.tar.gz`,
+        `./${asset}/cloudagentfleet init`,
+      ];
+    return {
+      commands,
+      note: [
+        "Keep this folder: the services run from it. Node.js is included.",
+        os === "windows" ? "Run these in PowerShell (not inside WSL)." : "",
+        os === "macos" ? "This archive is for Apple silicon; on an Intel Mac use npm." : "",
+        edition === "all-in-one" ? "Choose both when init asks; your Hub's settings and data stay." : "",
+      ].filter(Boolean).join(" "),
+    };
+  }
+
+  function Segmented({ label, value, options, onChange }) {
+    return h(
+      "div",
+      { className: "segmented", role: "radiogroup", "aria-label": label },
+      options.map(([id, text]) => h(
+        "button",
+        {
+          key: id,
+          role: "radio",
+          "aria-checked": value === id,
+          className: `segmented__option ${value === id ? "segmented__option--active" : ""}`,
+          onClick: () => onChange(id),
+        },
+        text,
+      )),
+    );
+  }
+
+  /** Every way to add a machine, with this Hub's address; the token stays on the Hub machine. */
   function AddMachineDialog({ onboarding, onClose }) {
     const hubUrl = onboarding?.hubUrl || window.location.origin;
+    const [target, setTarget] = useState("other");
+    const [os, setOs] = useState(detectOs);
+    const [method, setMethod] = useState("archive");
+    const { commands, note } = installSteps({ target, os, method });
     return h(
       "div",
       { className: "dialog-backdrop", role: "presentation", onMouseDown: (event) => event.target === event.currentTarget && onClose() },
@@ -963,41 +1039,62 @@
         h(
           "div",
           { className: "dialog__body" },
-          h("span", { className: "home-label" }, "1. On that machine, install the Worker"),
-          h(CopyLine, { text: "npm install --global @cloudagentfleet/worker" }),
+          h("span", { className: "home-label" }, "Which machine"),
+          h(Segmented, {
+            label: "Which machine",
+            value: target,
+            onChange: setTarget,
+            options: [["other", "Another machine"], ["hub-machine", "This Hub's machine"]],
+          }),
+          h("span", { className: "home-label" }, "Its system"),
+          h(Segmented, {
+            label: "Its system",
+            value: os,
+            onChange: setOs,
+            options: [["windows", "Windows"], ["macos", "macOS"], ["linux", "Linux"]],
+          }),
+          h("span", { className: "home-label" }, "Install with"),
+          h(Segmented, {
+            label: "Install with",
+            value: method,
+            onChange: setMethod,
+            options: [["archive", "Download (nothing else needed)"], ["npm", "npm (Node.js 22.6+)"]],
+          }),
+          h("span", { className: "home-label" }, "Run on that machine"),
+          h("div", { className: "copy-lines" }, commands.map((line) => h(CopyLine, { key: line, text: line }))),
+          note && h("p", { className: "dialog__note" }, note),
+          h("span", { className: "home-label" }, "init then asks what the machine offers: one or both"),
           h(
-            "p",
-            { className: "dialog__note" },
-            "No Node.js there? Download the cloudagentfleet-worker archive for its system from the ",
-            h("a", { href: RELEASES_URL, target: "_blank", rel: "noopener noreferrer" }, "latest release"),
-            "; it includes everything it needs.",
+            "dl",
+            { className: "help-terms" },
+            h("dt", null, "Codeman"),
+            h("dd", null, "Agent sessions in terminals: start, watch, and type into them from here. Light; good for many agents at once. Runs in WSL on Windows."),
+            h("dt", null, "Open WebUI Computer"),
+            h("dd", null, "A full workspace: files, editor, terminal, app previews, and agent chat, inside the dashboard."),
           ),
-          h("span", { className: "home-label" }, "2. Run the guided setup"),
-          h(CopyLine, { text: "cloudagentfleet init" }),
-          h(
-            "p",
-            { className: "dialog__note" },
-            "It asks what the machine should offer (Codeman, Open WebUI Computer, Claude Code, Cursor) and installs the ones you pick, then connects to this Hub.",
-          ),
-          h("span", { className: "home-label" }, "3. When it asks, give it"),
-          h("dl", { className: "dialog__facts" },
+          h("p", { className: "dialog__note" }, "It also offers Claude Code and Cursor's agent CLI, installs what you pick in one go, and runs everything as services."),
+          target === "other" && h("span", { className: "home-label" }, "And asks for"),
+          target === "other" && h(
+            "dl",
+            { className: "dialog__facts" },
             h("dt", null, "Hub URL"),
             h("dd", null, h(CopyLine, { text: hubUrl })),
             h("dt", null, "Worker token"),
             h(
               "dd",
               null,
-              h("p", { className: "dialog__note" }, "On the Hub machine, run:"),
+              h("p", { className: "dialog__note" }, "On this Hub's machine, run:"),
               h(CopyLine, { text: "cloudagentfleet hub token" }),
               onboarding?.workerTokenPath && h("p", { className: "dialog__note" }, `It is stored there in ${onboarding.workerTokenPath}.`),
             ),
           ),
-          !onboarding?.reachableBeyondThisMachine && h(
+          target === "other" && !onboarding?.reachableBeyondThisMachine && h(
             "p",
             { className: "policy-note" },
             "This Hub is only reachable on its own machine. To add other machines, run cloudagentfleet hub serve on it first (Tailscale), then use the address it prints.",
           ),
-          h("p", { className: "dialog__note" }, "The machine appears on the left within a few seconds of finishing."),
+          h("p", { className: "dialog__note" }, "The machine appears on the left within a few seconds of init finishing. "),
+          h("a", { className: "dialog__link", href: GUIDE_URL, target: "_blank", rel: "noopener noreferrer" }, "Full guide, including starting a new Hub"),
         ),
       ),
     );

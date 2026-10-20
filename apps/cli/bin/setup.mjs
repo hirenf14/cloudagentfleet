@@ -582,28 +582,55 @@ export function wslWorkerCommandLine(workerScript, env) {
   ].join(" && ");
 }
 
-/** What a machine can offer through the fleet; `init` installs the picked ones in one pass. */
-export const COMPONENTS = [
-  { id: "codeman", label: "Codeman", what: "terminal sessions you start and watch from the dashboard" },
-  { id: "cptr", label: "Open WebUI Computer", what: "a full workspace UI: files, editor, terminal, previews, agent chat" },
-  { id: "claude", label: "Claude Code CLI", what: "Anthropic's coding agent, used by both" },
-  { id: "cursor", label: "Cursor Agent CLI", what: "Cursor's coding agent, used by both" },
+/**
+ * What a machine can offer through the fleet. `init` introduces both, lets
+ * the operator pick one or both, then optionally the coding agents they use.
+ */
+export const BACKEND_INTRO = [
+  {
+    id: "codeman",
+    label: "Codeman",
+    lines: [
+      "Agent sessions in terminals. Start them from the dashboard, watch their output",
+      "live, and type into them. Light, and good for running many agents side by side.",
+      "(On Windows it runs in WSL.)",
+    ],
+  },
+  {
+    id: "cptr",
+    label: "Open WebUI Computer",
+    lines: [
+      "A full workspace in the browser: files, editor, terminal, previews of running",
+      "apps, and chat with coding agents. Opens inside the dashboard. Third-party",
+      "software under its own license.",
+    ],
+  },
 ];
 
-/** Accepts "1,2", "codeman, cptr", or a mix; at least one of Codeman or cptr. */
-export function parseComponentPicks(value) {
+export const AGENT_CHOICES = [
+  { id: "claude", label: "Claude Code CLI", what: "Anthropic's coding agent" },
+  { id: "cursor", label: "Cursor Agent CLI", what: "Cursor's coding agent" },
+];
+
+/** "1", "2", "3"/"both", or names: one or both backends. */
+export function parseBackendChoice(value) {
+  const choice = String(value).trim().toLowerCase();
+  if (["1", "codeman"].includes(choice)) return ["codeman"];
+  if (["2", "cptr", "open webui computer", "computer"].includes(choice)) return ["cptr"];
+  if (["3", "both", "codeman,cptr", "cptr,codeman", "codeman, cptr"].includes(choice)) return ["codeman", "cptr"];
+  throw new Error("Answer 1 (Codeman), 2 (Open WebUI Computer), or 3 (both).");
+}
+
+/** Optional coding agents: numbers or names, or empty / "none". */
+export function parseAgentPicks(value) {
   const picks = new Set();
   for (const raw of String(value).split(/[\s,]+/).filter(Boolean)) {
-    const byNumber = COMPONENTS[Number(raw) - 1];
-    const byName = COMPONENTS.find((component) => component.id === raw.toLowerCase());
-    const component = byNumber ?? byName;
-    if (!component) throw new Error(`Unknown choice: ${raw} (use numbers 1-${COMPONENTS.length} or names)`);
-    picks.add(component.id);
+    if (raw.toLowerCase() === "none") continue;
+    const agent = AGENT_CHOICES[Number(raw) - 1] ?? AGENT_CHOICES.find((choice) => choice.id === raw.toLowerCase());
+    if (!agent) throw new Error(`Unknown agent: ${raw} (use ${AGENT_CHOICES.map((choice, index) => `${index + 1} ${choice.id}`).join(", ")}, or none)`);
+    picks.add(agent.id);
   }
-  if (!picks.has("codeman") && !picks.has("cptr")) {
-    throw new Error("Pick Codeman, Open WebUI Computer, or both: a Worker needs at least one of them.");
-  }
-  return COMPONENTS.map((component) => component.id).filter((id) => picks.has(id));
+  return AGENT_CHOICES.map((choice) => choice.id).filter((id) => picks.has(id));
 }
 
 /** Official installers, per place (`wsl`/unix shells, or native Windows). */
@@ -733,13 +760,21 @@ async function setup(options = {}) {
       claude: environment.claudeCli,
       cursor: environment.cursorCli,
     };
-    console.log("What should this machine offer? (installed items are marked)");
-    COMPONENTS.forEach((component, index) => {
-      console.log(`  ${index + 1}. ${component.label}${installedMark[component.id] ? " (installed)" : ""} — ${component.what}`);
+    console.log("This machine can offer one or both of:\n");
+    BACKEND_INTRO.forEach((backend, index) => {
+      console.log(`  ${index + 1}. ${backend.label}${installedMark[backend.id] ? " (installed)" : ""}`);
+      for (const line of backend.lines) console.log(`     ${line}`);
+      console.log("");
     });
-    const defaults = ["codeman", "cptr", ...(environment.claudeCli ? ["claude"] : []), ...(environment.cursorCli ? ["cursor"] : [])];
-    picks = parseComponentPicks(await ask("Pick numbers or names, separated by commas", defaults.join(",")));
-    selectedBackends = picks.filter((id) => id === "codeman" || id === "cptr");
+    console.log("  3. Both\n");
+    selectedBackends = parseBackendChoice(await ask("Which should this machine offer? (1, 2, or 3)", "3"));
+    console.log("\nCoding agents (optional; Codeman and Open WebUI Computer launch them):");
+    AGENT_CHOICES.forEach((agent, index) => {
+      console.log(`  ${index + 1}. ${agent.label}${installedMark[agent.id] ? " (installed)" : ""} — ${agent.what}`);
+    });
+    const agentDefaults = AGENT_CHOICES.filter((agent) => installedMark[agent.id]).map((agent) => agent.id);
+    const agents = parseAgentPicks(await ask("Which do you want? (numbers, or none; nothing is uninstalled)", agentDefaults.join(",") || "none"));
+    picks = [...selectedBackends, ...agents];
     if (selectedBackends.includes("cptr")) cptrExecution = await chooseCptrExecution(environment);
     const { steps, notes } = planInstalls(environment, picks, cptrExecution ?? environment.execution);
     for (const note of notes) console.log(`Note: ${note}`);

@@ -146,11 +146,19 @@ h1, h2, p, dl, dd { margin: 0; }
 .guide__footer { display: flex; flex-wrap: wrap; align-items: center; gap: 18px; margin-top: 22px; }
 .guide__footer a { color: var(--muted); }
 .guide__footer a:hover { color: var(--strong); }
-.copy-line { display: flex; align-items: center; gap: 8px; min-width: 0; height: 30px; padding: 0 4px 0 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
-.copy-line code { flex: 1; min-width: 0; overflow: hidden; color: var(--text); font-family: var(--mono); font-size: 11px; white-space: nowrap; text-overflow: ellipsis; }
+/* Commands wrap so they can be read in full before running them. */
+.copy-line { display: flex; align-items: center; gap: 8px; min-width: 0; min-height: 30px; padding: 5px 4px 5px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
+.copy-line code { flex: 1; min-width: 0; color: var(--text); font-family: var(--mono); font-size: 11px; line-height: 16px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .copy-line__button { height: 22px; border: 0; padding: 0 8px; border-radius: 6px; color: var(--muted); background: transparent; font-size: 11px; }
 .copy-line__button:hover { color: var(--text); background: var(--hover); }
-.dialog--wide { width: min(100%, 520px); }
+.dialog--wide { width: min(100%, 560px); max-height: calc(100vh - 40px); overflow-y: auto; }
+.segmented { display: inline-flex; flex-wrap: wrap; gap: 2px; padding: 2px; border-radius: 8px; background: var(--raised); }
+.segmented__option { height: 26px; border: 0; padding: 0 10px; border-radius: 6px; color: var(--muted); background: transparent; }
+.segmented__option:hover { color: var(--text); }
+.segmented__option--active, .segmented__option--active:hover { color: var(--strong); background: var(--active); }
+.copy-lines { display: grid; gap: 4px; }
+.dialog__link { display: inline-block; margin-top: 10px; color: var(--muted); font-size: 11px; }
+.dialog__link:hover { color: var(--strong); }
 .dialog__body { padding: 0 18px 18px; }
 .dialog__body .home-label:first-child { margin-top: 8px; }
 .dialog__note { margin: 6px 0 0; color: var(--muted); font-size: 11px; line-height: 16px; }
