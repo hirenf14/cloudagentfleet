@@ -20,6 +20,7 @@ const DOCS = [
   { file: "BACKEND-ABSTRACTION.md", slug: "backends", title: "How backends work" },
   { file: "CODEMAN-WORKER.md", slug: "codeman-worker", title: "Codeman Worker" },
   { file: "ROADMAP.md", slug: "roadmap", title: "Roadmap" },
+  { file: "ACKNOWLEDGEMENTS.md", slug: "credits", title: "Credits" },
 ];
 const pageFor = new Map(DOCS.map((doc) => [doc.file, `${doc.slug}.html`]));
 
@@ -86,8 +87,8 @@ function layout({ title, description, body, current }) {
   <main class="wrap">${body}</main>
   <footer class="site-footer">
     <div class="wrap">
-      <span>Cloud Agent Fleet · open source</span>
-      <span><a href="../">Home</a> · <a href="${REPO}">GitHub</a> · <a href="https://www.npmjs.com/package/@cloudagentfleet/hub">npm</a></span>
+      <span>Cloud Agent Fleet · independent, not affiliated with Codeman or Open WebUI</span>
+      <span><a href="../">Home</a> · <a href="credits.html">Credits</a> · <a href="${REPO}">GitHub</a> · <a href="https://www.npmjs.com/package/@cloudagentfleet/hub">npm</a></span>
     </div>
   </footer>
 </body>
