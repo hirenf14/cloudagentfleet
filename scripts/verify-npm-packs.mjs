@@ -9,9 +9,17 @@ const packages = [
   {
     name: "@cloudagentfleet/hub",
     dir: "apps/control-plane",
-    required: [/^package\.json$/, /^README\.md$/, /^dist\/cloudagentfleet-hub\.mjs$/],
-    optional: [/^CHANGELOG\.md$/],
-    forbidden: [/src\//, /\.ts$/, /^bin\//, /\.test\./],
+    // Standalone: the Hub ships its own UI and the CLI that runs it as a service.
+    required: [
+      /^package\.json$/,
+      /^README\.md$/,
+      /^dist\/cloudagentfleet-hub\.mjs$/,
+      /^dist\/cloudagentfleet\.mjs$/,
+      /^dist\/public\/index\.html$/,
+      /^dist\/public\/app\.js$/,
+    ],
+    optional: [/^CHANGELOG\.md$/, /^dist\/public\/[^/]+$/],
+    forbidden: [/src\//, /\.ts$/, /^bin\//, /\.test\./, /design-draft/],
   },
   {
     name: "@cloudagentfleet/ui",
@@ -31,6 +39,20 @@ const packages = [
     ],
     optional: [/^CHANGELOG\.md$/],
     forbidden: [/src\//, /\.ts$/, /^bin\//, /^cli\//, /\.test\./],
+  },
+  {
+    name: "@cloudagentfleet/all-in-one",
+    dir: "apps/all-in-one",
+    required: [
+      /^package\.json$/,
+      /^README\.md$/,
+      /^dist\/cloudagentfleet\.mjs$/,
+      /^dist\/cloudagentfleet-worker\.mjs$/,
+      /^dist\/cloudagentfleet-hub\.mjs$/,
+      /^dist\/public\/index\.html$/,
+    ],
+    optional: [/^CHANGELOG\.md$/, /^dist\/public\/[^/]+$/],
+    forbidden: [/src\//, /\.ts$/, /^bin\//, /\.test\./, /design-draft/],
   },
 ];
 

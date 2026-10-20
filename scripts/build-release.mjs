@@ -30,9 +30,9 @@ async function bundleCli(entryPoint, outfile, options = {}) {
   await chmod(outfile, 0o755);
 }
 
-async function stageUiPackage() {
+/** Copies the production UI files to `distPublic` (the UI package, and each Hub). */
+async function stageUi(distPublic) {
   const sourcePublic = join(root, "apps", "dashboard", "public");
-  const distPublic = join(root, "apps", "dashboard", "dist", "public");
   await mkdir(distPublic, { recursive: true });
   const entries = await readdir(sourcePublic, { withFileTypes: true });
   for (const entry of entries) {
@@ -56,27 +56,34 @@ await emptyDir(join(root, "dist"));
 await emptyDir(join(root, "apps", "control-plane", "dist"));
 await emptyDir(join(root, "apps", "node-agent", "dist"));
 await emptyDir(join(root, "apps", "dashboard", "dist"));
+await emptyDir(join(root, "apps", "all-in-one", "dist"));
 
 const hubDist = join(root, "apps", "control-plane", "dist");
 const workerDist = join(root, "apps", "node-agent", "dist");
+const allInOneDist = join(root, "apps", "all-in-one", "dist");
 const cliBundle = join(root, "dist", "cli-bundle");
 
-await bundleCli(
-  "apps/control-plane/src/server.ts",
-  join(hubDist, "cloudagentfleet-hub.mjs"),
-  { external: ["@cloudagentfleet/ui"] },
-);
+// The CLI (cloudagentfleet) runs whichever roles sit beside it: the Hub
+// install gets it for `init` and `hub service`, the Worker install for
+// `setup` and `worker`, and the all-in-one install for both.
+await bundleCli("apps/control-plane/src/server.ts", join(hubDist, "cloudagentfleet-hub.mjs"));
 await bundleCli("apps/node-agent/src/main.ts", join(workerDist, "cloudagentfleet-worker.mjs"));
 await bundleCli("apps/cli/bin/setup.mjs", join(workerDist, "cloudagentfleet.mjs"));
-await stageUiPackage();
+await cp(join(workerDist, "cloudagentfleet.mjs"), join(hubDist, "cloudagentfleet.mjs"));
+await stageUi(join(root, "apps", "dashboard", "dist", "public"));
+await stageUi(join(hubDist, "public"));
 
-await mkdir(cliBundle, { recursive: true });
-await cp(join(workerDist, "cloudagentfleet.mjs"), join(cliBundle, "cloudagentfleet.mjs"));
-await cp(join(workerDist, "cloudagentfleet-worker.mjs"), join(cliBundle, "cloudagentfleet-worker.mjs"));
-await cp(join(hubDist, "cloudagentfleet-hub.mjs"), join(cliBundle, "cloudagentfleet-hub.mjs"));
+for (const target of [allInOneDist, cliBundle]) {
+  await mkdir(target, { recursive: true });
+  await cp(join(workerDist, "cloudagentfleet.mjs"), join(target, "cloudagentfleet.mjs"));
+  await cp(join(workerDist, "cloudagentfleet-worker.mjs"), join(target, "cloudagentfleet-worker.mjs"));
+  await cp(join(hubDist, "cloudagentfleet-hub.mjs"), join(target, "cloudagentfleet-hub.mjs"));
+  await cp(join(hubDist, "public"), join(target, "public"), { recursive: true });
+}
 
 console.log("Compiled release packages:");
-console.log(`  hub:    ${hubDist}/cloudagentfleet-hub.mjs`);
+console.log(`  hub:    ${hubDist}/cloudagentfleet-hub.mjs (+ cloudagentfleet CLI, public/)`);
+console.log(`  all-in-one: ${allInOneDist}/`);
 console.log(`  worker: ${workerDist}/cloudagentfleet.mjs`);
 console.log(`  worker: ${workerDist}/cloudagentfleet-worker.mjs`);
 console.log(`  ui:     apps/dashboard/dist/public/`);

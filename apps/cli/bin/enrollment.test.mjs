@@ -10,6 +10,10 @@ import {
   workerProcesses,
   windowsWorkerTaskXml,
   wslWorkerCommandLine,
+  parseComponentPicks,
+  parseInitRole,
+  defaultHubConfig,
+  hubEnvironment,
   parseAgentProfiles,
   parseOptions,
   safeEndpoint,
@@ -293,4 +297,34 @@ test("the WSL Worker command exports its settings to node", () => {
     line,
     "cd '/mnt/e/caf/dist' && export CLOUDAGENTFLEET_NODE_ID='it'\"'\"'s-me' && exec node '/mnt/e/caf/dist/worker.mjs'",
   );
+});
+
+test("init's checklist accepts numbers or names and needs a backend", () => {
+  assert.deepEqual(parseComponentPicks("1,2"), ["codeman", "cptr"]);
+  assert.deepEqual(parseComponentPicks("cptr, claude 1"), ["codeman", "cptr", "claude"]);
+  assert.deepEqual(parseComponentPicks("2,4"), ["cptr", "cursor"]);
+  assert.throws(() => parseComponentPicks("3,4"), /needs at least one/);
+  assert.throws(() => parseComponentPicks("9"), /Unknown choice/);
+});
+
+test("init offers only the roles this install contains", () => {
+  assert.equal(parseInitRole("Both", ["hub", "worker", "both"]), "both");
+  assert.equal(parseInitRole("worker", ["worker"]), "worker");
+  assert.throws(() => parseInitRole("hub", ["worker"]), /Choose one of: worker/);
+});
+
+test("the Hub service keeps its state in the user's folder", () => {
+  const config = defaultHubConfig("/home/op");
+  assert.deepEqual(hubEnvironment(config), {
+    CLOUDAGENTFLEET_HOST: "127.0.0.1",
+    CLOUDAGENTFLEET_PORT: "8787",
+    CLOUDAGENTFLEET_DATA_PATH: config.dataPath,
+  });
+  assert.equal(hubEnvironment({ ...config, publicUrl: "https://hub.example.ts.net" }).CLOUDAGENTFLEET_PUBLIC_URL, "https://hub.example.ts.net");
+  assert.match(config.dataPath.replaceAll("\\", "/"), /\/home\/op\/\.cloudagentfleet\/hub\.json$/);
+});
+
+test("each service's Windows task carries its own description", () => {
+  assert.ok(windowsWorkerTaskXml("PC\op", "node.exe", ["cli.mjs", "hub", "run"], "Cloud Agent Fleet Hub")
+    .includes("<Description>Cloud Agent Fleet Hub</Description>"));
 });

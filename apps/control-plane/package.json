@@ -2,10 +2,11 @@
   "name": "@cloudagentfleet/hub",
   "version": "0.1.8",
   "private": false,
-  "description": "Cloud Agent Fleet Hub — control plane, routing, and Codeman proxy.",
+  "description": "Cloud Agent Fleet Hub — private control plane and dashboard (UI included), with the cloudagentfleet CLI to run it as a service.",
   "type": "module",
   "bin": {
-    "cloudagentfleet-hub": "./dist/cloudagentfleet-hub.mjs"
+    "cloudagentfleet-hub": "./dist/cloudagentfleet-hub.mjs",
+    "cloudagentfleet": "./dist/cloudagentfleet.mjs"
   },
   "files": [
     "dist",
@@ -32,9 +33,6 @@
     "test:multihost:mock": "node --experimental-strip-types src/multihost-harness.ts --mock",
     "test:multihost:live": "node --experimental-strip-types src/multihost-harness.ts --live",
     "typecheck": "tsc --noEmit"
-  },
-  "dependencies": {
-    "@cloudagentfleet/ui": "workspace:*"
   },
   "engines": {
     "node": ">=22.6.0"

@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { FleetHub } from "./hub.ts";
-import { createControllerServer } from "./server.ts";
+import { createControllerServer, defaultHubStatePath } from "./server.ts";
 import type { HostAdapter } from "../../../packages/host-adapters/src/index.ts";
 import type {
   AgentProfile,
@@ -851,4 +851,10 @@ test("only the dashboard may frame a host UI, and nothing may frame the dashboar
     await close();
     await closeHttp(upstream);
   }
+});
+
+test("an installed Hub keeps its state in the user's folder, not where it starts", () => {
+  assert.equal(defaultHubStatePath(true, () => false, "/home/op"), "data/hub.json");
+  assert.equal(defaultHubStatePath(false, () => false, "/home/op"), join("/home/op", ".cloudagentfleet", "hub.json"));
+  assert.equal(defaultHubStatePath(false, (path) => path === "data/hub.json", "/home/op"), "data/hub.json");
 });

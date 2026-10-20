@@ -3,6 +3,7 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "n
 import { randomBytes } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
+import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { resolve, dirname, join, sep } from "node:path";
 import type { Duplex } from "node:stream";
@@ -44,6 +45,8 @@ function resolveDashboardRoot(): string {
   const candidates = [];
   // Running from source (strip-types): serve the editable UI, not a stale build.
   if (import.meta.url.endsWith(".ts")) candidates.push(resolve(here, "../../dashboard/public"));
+  // A release Hub (npm package or standalone archive) ships its UI beside it.
+  candidates.push(join(here, "public"));
   try {
     const require = createRequire(import.meta.url);
     const packageRoot = dirname(require.resolve("@cloudagentfleet/ui/package.json"));
@@ -59,6 +62,22 @@ function resolveDashboardRoot(): string {
     if (existsSync(candidate)) return candidate;
   }
   throw new Error("Unable to resolve @cloudagentfleet/ui public assets");
+}
+
+/**
+ * Where the Hub keeps its state when CLOUDAGENTFLEET_DATA_PATH is unset: the
+ * user's ~/.cloudagentfleet for an installed Hub, so it does not depend on the
+ * folder it starts in. Source runs keep ./data, and an installed Hub that
+ * already has ./data/hub.json keeps using it.
+ */
+export function defaultHubStatePath(
+  runningFromSource = import.meta.url.endsWith(".ts"),
+  pathExists: (path: string) => boolean = existsSync,
+  home: string = homedir(),
+): string {
+  const local = "data/hub.json";
+  if (runningFromSource || pathExists(local)) return local;
+  return join(home, ".cloudagentfleet", "hub.json");
 }
 
 const DASHBOARD_ROOT = resolveDashboardRoot();
@@ -135,7 +154,7 @@ export function createControllerServer(
     hubUrl: options.publicUrl ?? process.env.CLOUDAGENTFLEET_PUBLIC_URL,
     hostUrl: options.hostUiUrl ?? process.env.CLOUDAGENTFLEET_HOST_UI_URL,
   };
-  const statePath = options.statePath ?? process.env.CLOUDAGENTFLEET_DATA_PATH ?? "data/hub.json";
+  const statePath = options.statePath ?? process.env.CLOUDAGENTFLEET_DATA_PATH ?? defaultHubStatePath();
   const dataDir = statePath ? dirname(resolve(statePath)) : undefined;
   // With a UI password on, Workers must present a token. Without a configured
   // one, a durable Hub generates and keeps its own, like the UI password.

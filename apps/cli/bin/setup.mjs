@@ -582,19 +582,194 @@ export function wslWorkerCommandLine(workerScript, env) {
   ].join(" && ");
 }
 
-async function setup() {
+/** What a machine can offer through the fleet; `init` installs the picked ones in one pass. */
+export const COMPONENTS = [
+  { id: "codeman", label: "Codeman", what: "terminal sessions you start and watch from the dashboard" },
+  { id: "cptr", label: "Open WebUI Computer", what: "a full workspace UI: files, editor, terminal, previews, agent chat" },
+  { id: "claude", label: "Claude Code CLI", what: "Anthropic's coding agent, used by both" },
+  { id: "cursor", label: "Cursor Agent CLI", what: "Cursor's coding agent, used by both" },
+];
+
+/** Accepts "1,2", "codeman, cptr", or a mix; at least one of Codeman or cptr. */
+export function parseComponentPicks(value) {
+  const picks = new Set();
+  for (const raw of String(value).split(/[\s,]+/).filter(Boolean)) {
+    const byNumber = COMPONENTS[Number(raw) - 1];
+    const byName = COMPONENTS.find((component) => component.id === raw.toLowerCase());
+    const component = byNumber ?? byName;
+    if (!component) throw new Error(`Unknown choice: ${raw} (use numbers 1-${COMPONENTS.length} or names)`);
+    picks.add(component.id);
+  }
+  if (!picks.has("codeman") && !picks.has("cptr")) {
+    throw new Error("Pick Codeman, Open WebUI Computer, or both: a Worker needs at least one of them.");
+  }
+  return COMPONENTS.map((component) => component.id).filter((id) => picks.has(id));
+}
+
+/** Official installers, per place (`wsl`/unix shells, or native Windows). */
+const AGENT_INSTALLERS = {
+  claude: {
+    label: "Claude Code CLI",
+    binary: "claude",
+    unix: "curl -fsSL https://claude.ai/install.sh | bash",
+    windows: "powershell -NoProfile -ExecutionPolicy Bypass -Command \"irm https://claude.ai/install.ps1 | iex\"",
+    login: "claude   (then follow its sign-in)",
+  },
+  cursor: {
+    label: "Cursor Agent CLI",
+    binary: "agent",
+    unix: "curl https://cursor.com/install -fsS | bash",
+    windows: undefined,
+    login: "agent login",
+  },
+};
+
+const UV_INSTALL = {
+  unix: "curl -LsSf https://astral.sh/uv/install.sh | sh",
+  windows: "powershell -NoProfile -ExecutionPolicy Bypass -Command \"irm https://astral.sh/uv/install.ps1 | iex\"",
+};
+
+function isNativeWindows(place) {
+  return process.platform === "win32" && place !== "wsl";
+}
+
+/** Whether `binary` runs where a backend will run (WSL or this machine). */
+function placeHas(place, binary) {
+  const probe = isNativeWindows(place) ? `where ${binary}` : `command -v ${binary}`;
+  return runWhereWorkerRuns({ execution: place }, probe).status === 0;
+}
+
+function placeLabel(place) {
+  if (place === "wsl") return "WSL";
+  return process.platform === "win32" ? "Windows" : "this machine";
+}
+
+/**
+ * The install steps for the picked components, each where it will run.
+ * Codeman runs in WSL on Windows; cptr where `cptrPlace` says; agents go to
+ * every place a picked backend runs, since that is where they are launched.
+ */
+function planInstalls(environment, picks, cptrPlace) {
+  const steps = [];
+  const notes = [];
+  const codemanPlace = environment.execution;
+  const places = [...new Set([
+    ...(picks.includes("codeman") ? [codemanPlace] : []),
+    ...(picks.includes("cptr") ? [cptrPlace] : []),
+  ])];
+  if (picks.includes("codeman") && !environment.codeman) {
+    if (environment.platform === "windows" && !environment.wsl) {
+      notes.push("Codeman needs WSL on Windows: run `wsl --install` in an administrator PowerShell, restart, then run `cloudagentfleet init` again.");
+    } else {
+      steps.push({ label: "Codeman (official installer)", place: codemanPlace, command: "curl -fsSL https://getcodeman.com/install | bash" });
+    }
+  }
+  for (const id of ["claude", "cursor"]) {
+    if (!picks.includes(id)) continue;
+    const installer = AGENT_INSTALLERS[id];
+    for (const place of places) {
+      if (placeHas(place, installer.binary)) continue;
+      const commandLine = isNativeWindows(place) ? installer.windows : installer.unix;
+      if (commandLine) {
+        steps.push({ label: `${installer.label} in ${placeLabel(place)}`, place, command: commandLine, agent: id });
+      } else {
+        notes.push(`${installer.label} for ${placeLabel(place)}: install it from https://cursor.com/cli, then run init again.`);
+      }
+    }
+  }
+  if (picks.includes("cptr") && !findCptrCommand({ ...environment, execution: cptrPlace })) {
+    const withClaude = picks.includes("claude") || placeHas(cptrPlace, "claude");
+    let installCommand = cptrInstallCommand(
+      (probe) => runWhereWorkerRuns({ execution: cptrPlace }, probe).status === 0,
+      { withClaude },
+    );
+    if (!installCommand) {
+      // No Python package tool yet: uv brings its own Python.
+      steps.push({
+        label: `uv (Python tool installer, for Open WebUI Computer) in ${placeLabel(cptrPlace)}`,
+        place: cptrPlace,
+        command: isNativeWindows(cptrPlace) ? UV_INSTALL.windows : UV_INSTALL.unix,
+      });
+      const uv = isNativeWindows(cptrPlace) ? "\"%USERPROFILE%\\.local\\bin\\uv.exe\"" : "\"$HOME/.local/bin/uv\"";
+      installCommand = `${uv} tool install cptr${withClaude ? " --with claude-agent-sdk" : ""}`;
+    }
+    steps.push({ label: `Open WebUI Computer in ${placeLabel(cptrPlace)}`, place: cptrPlace, command: installCommand, cptr: true });
+  }
+  return { steps, notes };
+}
+
+/** Installers drop tools in ~/.local/bin; let this process (and the services it installs) find them. */
+function addUserBinToPath() {
+  const userBin = join(homedir(), ".local", "bin");
+  const separator = process.platform === "win32" ? ";" : ":";
+  const entries = (process.env.PATH ?? "").split(separator);
+  if (!entries.includes(userBin)) process.env.PATH = [userBin, ...entries].join(separator);
+}
+
+function slugify(value) {
+  return value.toLowerCase().replaceAll(/[^a-z0-9-]+/g, "-").replaceAll(/^-+|-+$/g, "") || "machine";
+}
+
+/**
+ * Configures this machine's Worker. Plain `setup` asks about each detail;
+ * guided setup (`init`) shows one checklist, installs everything picked in a
+ * single confirmed pass, asks only for the Hub, name, and folders, and returns
+ * the saved configuration without starting anything.
+ */
+async function setup(options = {}) {
+  const guided = options.guided === true;
   const environment = detectEnvironment();
-  console.log("Cloud Agent Fleet setup\n=======================\n");
-  printEnvironment(environment);
+  console.log(guided ? "This machine's Worker\n---------------------\n" : "Cloud Agent Fleet setup\n=======================\n");
+  if (!guided) printEnvironment(environment);
   if (!environment.node || !environment.git) throw new Error("Node.js and Git are required");
 
-  const selectedBackends = parseBackendList(
-    await ask("\nBackends on this machine (codeman, cptr, or codeman,cptr)", "codeman"),
-  );
+  let selectedBackends;
+  let picks = [];
+  let cptrExecution;
+  if (guided) {
+    const installedMark = {
+      codeman: environment.codeman,
+      cptr: environment.cptr,
+      claude: environment.claudeCli,
+      cursor: environment.cursorCli,
+    };
+    console.log("What should this machine offer? (installed items are marked)");
+    COMPONENTS.forEach((component, index) => {
+      console.log(`  ${index + 1}. ${component.label}${installedMark[component.id] ? " (installed)" : ""} — ${component.what}`);
+    });
+    const defaults = ["codeman", "cptr", ...(environment.claudeCli ? ["claude"] : []), ...(environment.cursorCli ? ["cursor"] : [])];
+    picks = parseComponentPicks(await ask("Pick numbers or names, separated by commas", defaults.join(",")));
+    selectedBackends = picks.filter((id) => id === "codeman" || id === "cptr");
+    if (selectedBackends.includes("cptr")) cptrExecution = await chooseCptrExecution(environment);
+    const { steps, notes } = planInstalls(environment, picks, cptrExecution ?? environment.execution);
+    for (const note of notes) console.log(`Note: ${note}`);
+    if (steps.length > 0) {
+      if (picks.includes("cptr")) {
+        console.log(`\nOpen WebUI Computer is third-party software under its own license: ${cptrLicenseUrl}`);
+      }
+      console.log("\nTo install:");
+      for (const step of steps) console.log(`  • ${step.label}\n      ${step.command}`);
+      if (await confirm("Install these now?", true)) {
+        for (const step of steps) {
+          console.log(`\nInstalling ${step.label} …`);
+          const result = runWhereWorkerRuns({ execution: step.place }, step.command, { timeout: 15 * 60 * 1000, capture: false });
+          console.log(result.status === 0 ? `Installed ${step.label}.` : `${step.label} did not install (exit ${result.status}); continuing.`);
+        }
+        addUserBinToPath();
+        Object.assign(environment, detectEnvironment());
+      }
+    } else {
+      console.log("\nEverything picked is already installed.");
+    }
+  } else {
+    selectedBackends = parseBackendList(
+      await ask("\nBackends on this machine (codeman, cptr, or codeman,cptr)", "codeman"),
+    );
+  }
   const useCodeman = selectedBackends.includes("codeman");
   const useCptr = selectedBackends.includes("cptr");
 
-  if (useCodeman && !environment.codeman) {
+  if (!guided && useCodeman && !environment.codeman) {
     const installed = await installCodeman(environment);
     if (installed) environment.codeman = true;
   }
@@ -604,45 +779,52 @@ async function setup() {
       + "(set manageCodeman/installCodeman false in worker.json to opt out).",
     );
   }
-  if (useCodeman && !environment.cursorCli) {
+  if (!guided && useCodeman && !environment.cursorCli) {
     const installed = await installCursorCli(environment);
     if (installed) environment.cursorCli = true;
   }
-  const cptrExecution = useCptr ? await chooseCptrExecution(environment) : undefined;
+  if (!guided && useCptr) cptrExecution = await chooseCptrExecution(environment);
   const cptrPlacement = { ...environment, execution: cptrExecution ?? environment.execution };
-  if (useCptr && cptrExecution !== environment.execution) {
+  if (useCptr && cptrPlacement.execution !== environment.execution) {
     environment.cptr = Boolean(findCptrCommand(cptrPlacement));
   }
-  if (useCptr && !environment.cptr) {
+  if (!guided && useCptr && !environment.cptr) {
     environment.cptr = await installCptr(cptrPlacement);
   }
   // Record cptr's absolute path: Worker services run with a minimal PATH.
-  const cptrCommand = useCptr && environment.cptr ? findCptrCommand(cptrPlacement) : undefined;
+  const cptrCommand = useCptr ? findCptrCommand(cptrPlacement) : undefined;
+  if (useCptr && !cptrCommand) {
+    console.log("Open WebUI Computer is not installed yet; the Worker will keep running Codeman and retry cptr on each start.");
+  }
 
-  const controllerUrl = await ask("\nController URL", "http://127.0.0.1:8787");
-  const nodeId = await ask("Worker ID", hostname().toLowerCase().replaceAll(/[^a-z0-9-]/g, "-"));
-  const name = await ask("Worker display name", hostname());
+  const controllerUrl = options.controllerUrl
+    ?? await ask(guided ? "\nHub URL (the address you open the dashboard at)" : "\nController URL", "http://127.0.0.1:8787");
+  const name = await ask(guided ? "Name for this machine" : "Worker display name", hostname());
+  const nodeId = guided ? slugify(name) : await ask("Worker ID", hostname().toLowerCase().replaceAll(/[^a-z0-9-]/g, "-"));
   const workspacePolicy = await selectFolders();
-  const codemanMode = useCodeman
+  const codemanMode = useCodeman && !guided
     ? await ask(`Codeman mode (${modes.join(", ")})`, "claude")
-    : "claude";
+    : environment.claudeCli ? "claude" : "shell";
   if (!modes.includes(codemanMode)) throw new Error(`Unsupported Codeman mode: ${codemanMode}`);
-  const codemanUrl = useCodeman ? await ask("Codeman URL", "http://127.0.0.1:3000") : "http://127.0.0.1:3000";
+  const codemanUrl = useCodeman && !guided ? await ask("Codeman URL", "http://127.0.0.1:3000") : "http://127.0.0.1:3000";
+  const defaultCptrUrl = `http://127.0.0.1:${await freeLocalPort(8000)}`;
   const cptrUrl = useCptr
-    ? safeEndpoint(
-      await ask("Open WebUI Computer local URL", `http://127.0.0.1:${await freeLocalPort(8000)}`),
-      "Open WebUI Computer URL",
-    )
+    ? safeEndpoint(guided ? defaultCptrUrl : await ask("Open WebUI Computer local URL", defaultCptrUrl), "Open WebUI Computer URL")
     : undefined;
   // The cptr driver: through this Worker's outbound connector (no inbound
   // port), or directly over the tailnet.
-  const cptrAccess = useCptr ? parseCptrAccess(await ask(
-    "How should the Hub reach Open WebUI Computer (connector, tailnet)",
-    "connector",
-  )) : undefined;
+  const cptrAccess = useCptr
+    ? guided ? "connector" : parseCptrAccess(await ask("How should the Hub reach Open WebUI Computer (connector, tailnet)", "connector"))
+    : undefined;
   // The Hub stores a generated Worker token in its data folder (hub-worker-token).
-  const authToken = process.env.CLOUDAGENTFLEET_AUTH_TOKEN
-    || (await ask("Hub Worker token (from the Hub's hub-worker-token file; Enter to skip)", "")).trim()
+  const authToken = options.authToken
+    || process.env.CLOUDAGENTFLEET_AUTH_TOKEN
+    || (await ask(
+      guided
+        ? "Worker token (run `cloudagentfleet hub token` on the Hub machine)"
+        : "Hub Worker token (from the Hub's hub-worker-token file; Enter to skip)",
+      "",
+    )).trim()
     || undefined;
   const config = {
     nodeId,
@@ -676,10 +858,20 @@ async function setup() {
   const processes = workerProcesses(config);
   if (processes.length > 1) {
     console.log(
-      "\nCodeman runs in WSL and Open WebUI Computer natively on Windows: `cloudagentfleet run` starts "
+      "\nCodeman runs in WSL and Open WebUI Computer natively on Windows: the Worker service starts "
       + `two Workers, ${processes[0].nodeId} (WSL) and ${processes[1].nodeId} (Windows).`,
     );
   }
+  if (guided) {
+    const logins = picks
+      .filter((id) => AGENT_INSTALLERS[id])
+      .map((id) => `  ${AGENT_INSTALLERS[id].login}`);
+    if (logins.length > 0) {
+      console.log(["", "Sign in to your coding agents yourself (Cloud Agent Fleet never handles provider logins):", ...logins].join("\n"));
+    }
+    return config;
+  }
+
   const cptrNodeId = processes.find((entry) => entry.backends.includes("cptr"))?.nodeId ?? nodeId;
   if (useCptr && cptrAccess === "connector") {
     console.log([
@@ -687,8 +879,8 @@ async function setup() {
       "Enroll Open WebUI Computer through this Worker once it is running:",
       `  cloudagentfleet enroll connector --backend cptr --controller-url ${controllerUrl} \\`,
       `    --node-id ${cptrNodeId} --instance-id ${nodeId}-cptr --name "${name} (Open WebUI Computer)"`,
-      "On cptr's first start the Worker writes its one-time setup token to ~/.cloudagentfleet/cptr-setup-token;",
-      "open the host from the dashboard and visit /?token=<token> to create cptr's admin account.",
+      "(`cloudagentfleet init` does this for you.) On cptr's first start the Worker creates its account,",
+      "and the dashboard signs you in.",
     ].join("\n"));
   } else if (useCptr) {
     let tailnetUrl;
@@ -710,8 +902,6 @@ async function setup() {
       `    --instance-id ${nodeId}-cptr --name "${name} (Open WebUI Computer)" \\`,
       `    --url ${tailnetUrl ?? "https://<this-machine>.<tailnet>.ts.net:<port>"}`,
       ...(tailnetUrl ? [] : [`  (If the Hub runs on this machine, --url ${cptrUrl} also works.)`]),
-      "On cptr's first start the Worker writes its one-time setup token to ~/.cloudagentfleet/cptr-setup-token;",
-      "open the host from the dashboard and visit /?token=<token> to create cptr's admin account.",
     ].join("\n"));
   }
 
@@ -726,8 +916,9 @@ async function setup() {
     }
     await superviseChildren(processes.map((entry) => runWorker(entry)));
   } else {
-    console.log("Run `cloudagentfleet run` to start the Worker.");
+    console.log("Run `cloudagentfleet run` to start the Worker, or `cloudagentfleet worker install` to run it as a service.");
   }
+  return config;
 }
 
 function writeSafeJson(path, value) {
@@ -944,6 +1135,11 @@ function linkWorkerInstance(nodeId, instanceId, backend = "codeman") {
     const config = JSON.parse(readFileSync(configPath, "utf8"));
     const owner = workerProcesses(config).find((entry) => entry.nodeId === nodeId);
     if (!owner || !owner.backends.includes(backend)) return false;
+    // Already the instance the Worker serves: nothing to change or restart.
+    const current = backend === "cptr"
+      ? config.cptrInstanceId ?? `${config.nodeId}-cptr`
+      : config.codemanInstanceId ?? config.nodeId;
+    if (current === instanceId) return false;
     if (backend === "cptr") config.cptrInstanceId = instanceId;
     else config.codemanInstanceId = instanceId;
     writeSafeJson(configPath, config);
@@ -1139,14 +1335,17 @@ function printEnrollmentHelp() {
 
 function printHubHelp() {
   console.log([
-    "Serve the single Cloud Agent Fleet Hub privately through Tailscale Serve.",
+    "Run the Cloud Agent Fleet Hub, and serve it privately through Tailscale Serve.",
     "",
     "Usage:",
+    "  cloudagentfleet hub service <install|start|status|stop|remove>  The Hub as a user service",
+    "  cloudagentfleet hub run [--restart] [--log]  The Hub in this terminal",
+    "  cloudagentfleet hub token                    The Worker token new machines need",
     "  cloudagentfleet hub serve [--port <1-65535>] [--host-port <1-65535>]",
-    "  cloudagentfleet hub status [--port <1-65535>]",
-    "  cloudagentfleet hub stop  [--port <1-65535>]",
+    "  cloudagentfleet hub status [--port <1-65535>]   Tailscale Serve status",
+    "  cloudagentfleet hub stop  [--port <1-65535>]    Stop Tailscale Serve",
     "",
-    "The Controller must already be running on 127.0.0.1 (default port 8787).",
+    "`cloudagentfleet init` sets all of this up. Settings: ~/.cloudagentfleet/hub-config.json.",
     "Serve uses one tailnet origin for the Hub and never publishes host instances.",
   ].join("\n"));
 }
@@ -1159,6 +1358,20 @@ async function hubCommand(args) {
   }
   if (action === "serve") {
     await serveHub(args.slice(1));
+    return;
+  }
+  if (action === "run") {
+    await runSavedHub({ restart: args.includes("--restart"), log: args.includes("--log") });
+    return;
+  }
+  if (action === "service") {
+    serviceAction("hub", args[1] ?? "status");
+    return;
+  }
+  if (action === "token") {
+    const token = readHubWorkerToken();
+    if (!token) throw new Error("No Worker token yet: start the Hub once (cloudagentfleet init), or use the CLOUDAGENTFLEET_AUTH_TOKEN you set for it.");
+    console.log(token);
     return;
   }
   if (action === "status") {
@@ -1178,39 +1391,56 @@ async function hubCommand(args) {
  * Windows task uses both: its hidden console host neither shows output nor
  * passes exit codes on to Task Scheduler.
  */
-async function runSavedWorker({ restart = false, log = false } = {}) {
+async function runSavedWorker(options = {}) {
   const config = JSON.parse(readFileSync(configPath, "utf8"));
-  // The service records its pid: `worker stop` on Windows ends this process
-  // tree with it, and a second service start must not run duplicate Workers.
+  await runService("worker", (output) => workerProcesses(config).map((entry) => runWorker(entry, output)), options);
+}
+
+/** `hub run`: the Hub with its saved settings, supervised like the Worker. */
+async function runSavedHub(options = {}) {
+  const config = readHubConfig();
+  await runService("hub", (output) => [runHub(config, output)], options);
+}
+
+/**
+ * Runs a service's processes until they exit; with `restart`, as the service
+ * itself (pid file, no duplicates, restart after a failure).
+ */
+async function runService(role, startProcesses, { restart = false, log = false } = {}) {
+  const { label } = SERVICE_ROLES[role];
+  const pidFile = servicePidPath(role);
   if (restart) {
-    const running = readWorkerPid();
+    const running = readServicePid(role);
     if (running && running !== process.pid && processAlive(running)) {
-      console.error(`The Worker service is already running (pid ${running}).`);
+      console.error(`The ${label} service is already running (pid ${running}).`);
       return;
     }
-    writeFileSync(workerPidPath, String(process.pid), { mode: 0o600 });
+    mkdirSync(dirname(pidFile), { recursive: true });
+    writeFileSync(pidFile, String(process.pid), { mode: 0o600 });
   }
-  const logPath = join(dirname(configPath), "worker.log");
+  const logPath = join(dirname(configPath), `${role}.log`);
   const output = log ? createWriteStream(logPath, { flags: "a", mode: 0o600 }) : undefined;
-  if (output) console.log(`Worker output: ${logPath}`);
+  if (output) console.log(`${label} output: ${logPath}`);
   try {
     for (;;) {
-      output?.write(`\n--- ${new Date().toISOString()} starting Worker ---\n`);
-      const exitCode = await superviseChildren(workerProcesses(config).map((entry) => runWorker(entry, output)));
+      output?.write(`\n--- ${new Date().toISOString()} starting ${label} ---\n`);
+      const exitCode = await superviseChildren(startProcesses(output));
       if (!restart || stopRequested || exitCode === 0) return;
-      (output ?? process.stderr).write(`A Worker exited with code ${exitCode}; restarting in 5 seconds.\n`);
+      (output ?? process.stderr).write(`The ${label} exited with code ${exitCode}; restarting in 5 seconds.\n`);
       await new Promise((resolveDelay) => setTimeout(resolveDelay, 5000));
     }
   } finally {
-    if (restart && readWorkerPid() === process.pid) unlinkSync(workerPidPath);
+    if (restart && readServicePid(role) === process.pid) unlinkSync(pidFile);
   }
 }
 
-const workerPidPath = join(dirname(configPath), "worker.pid");
+function servicePidPath(role) {
+  return join(dirname(configPath), `${role}.pid`);
+}
 
-function readWorkerPid() {
+function readServicePid(role) {
   try {
-    return Number.parseInt(readFileSync(workerPidPath, "utf8"), 10) || undefined;
+    return Number.parseInt(readFileSync(servicePidPath(role), "utf8"), 10) || undefined;
   } catch {
     return undefined;
   }
@@ -1226,15 +1456,15 @@ function processAlive(pid) {
 }
 
 /**
- * Ending the Windows task stops only its console host; the Worker processes
- * (and cptr and the WSL Worker under them) keep running, so end the tree.
+ * Ending a Windows task stops only its console host; the service's processes
+ * (for the Worker also cptr and the WSL Worker) keep running, so end the tree.
  */
-function stopWindowsWorkerTree() {
-  const pid = readWorkerPid();
+function stopWindowsServiceTree(role) {
+  const pid = readServicePid(role);
   if (!pid) return;
   if (processAlive(pid)) command("taskkill.exe", ["/PID", String(pid), "/T", "/F"], { timeout: 15_000 });
   try {
-    unlinkSync(workerPidPath);
+    unlinkSync(servicePidPath(role));
   } catch {
     // Already gone.
   }
@@ -1251,10 +1481,10 @@ function forwardStop(signal) {
 }
 
 /**
- * Makes `cloudagentfleet run` stand in for its Worker processes: stop signals
- * reach every Worker, and the first one to exit stops the rest and sets our
- * exit status, so a service manager (systemd Restart=on-failure, launchd
- * KeepAlive) sees a failed Worker as failed and restarts them together.
+ * Makes `cloudagentfleet run` stand in for its processes: stop signals reach
+ * every process, and the first one to exit stops the rest and sets our exit
+ * status, so a service manager (systemd Restart=on-failure, launchd
+ * KeepAlive) sees a failure as a failure and restarts them together.
  * Resolves with that exit status.
  */
 function superviseChildren(children) {
@@ -1279,7 +1509,7 @@ function superviseChildren(children) {
     };
     for (const child of children) {
       child.once("error", (error) => {
-        console.error(`Could not start the Worker: ${error.message}`);
+        console.error(`Could not start: ${error.message}`);
         settle(1);
       });
       child.once("exit", (code, signal) => {
@@ -1289,22 +1519,45 @@ function superviseChildren(children) {
   });
 }
 
-function workerServicePaths() {
+/** The user services this CLI installs; the Hub and the Worker can share a machine. */
+const SERVICE_ROLES = {
+  worker: {
+    label: "Worker",
+    systemd: "cloudagentfleet-worker.service",
+    launchd: "com.cloudagentfleet.worker",
+    task: "Cloud Agent Fleet Worker",
+    args: ["run"],
+    config: () => configPath,
+    setupHint: "Run `cloudagentfleet init` (or `cloudagentfleet setup`) first.",
+  },
+  hub: {
+    label: "Hub",
+    systemd: "cloudagentfleet-hub.service",
+    launchd: "com.cloudagentfleet.hub",
+    task: "Cloud Agent Fleet Hub",
+    args: ["hub", "run"],
+    config: () => hubConfigPath,
+    setupHint: "Run `cloudagentfleet init` and choose hub first.",
+  },
+};
+
+function servicePaths(role) {
+  const definition = SERVICE_ROLES[role];
   if (process.platform === "linux") {
     return {
       kind: "systemd",
-      path: join(homedir(), ".config", "systemd", "user", "cloudagentfleet-worker.service"),
-      name: "cloudagentfleet-worker.service",
+      path: join(homedir(), ".config", "systemd", "user", definition.systemd),
+      name: definition.systemd,
     };
   }
   if (process.platform === "darwin") {
     return {
       kind: "launchd",
-      path: join(homedir(), "Library", "LaunchAgents", "com.cloudagentfleet.worker.plist"),
-      name: "com.cloudagentfleet.worker",
+      path: join(homedir(), "Library", "LaunchAgents", `${definition.launchd}.plist`),
+      name: definition.launchd,
     };
   }
-  return { kind: "schtasks", path: null, name: "Cloud Agent Fleet Worker" };
+  return { kind: "schtasks", path: null, name: definition.task };
 }
 
 /**
@@ -1356,10 +1609,6 @@ function removeLegacyWorkerService() {
   console.log(`Replaced legacy Worker service ${legacy.name}.`);
 }
 
-function workerServiceCommand() {
-  return [process.execPath, fileURLToPath(import.meta.url), "run"];
-}
-
 /**
  * systemd `Environment=` line. Services start with a minimal PATH, so the
  * Worker records the installer's PATH: Codeman sessions and cptr agents must
@@ -1371,11 +1620,11 @@ export function systemdEnvironmentLine(name, value) {
 }
 
 /**
- * Task Scheduler definition for the Windows Worker. A logon trigger scoped to
+ * Task Scheduler definition for a Windows service. A logon trigger scoped to
  * the current user needs no administrator rights (`schtasks /SC ONLOGON`
  * does), and a headless console host keeps a window from opening at logon.
  */
-export function windowsWorkerTaskXml(user, executable, args) {
+export function windowsWorkerTaskXml(user, executable, args, description = "Cloud Agent Fleet Worker") {
   const xml = (value) => String(value)
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
@@ -1385,7 +1634,7 @@ export function windowsWorkerTaskXml(user, executable, args) {
   return [
     '<?xml version="1.0" encoding="UTF-16"?>',
     '<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">',
-    "  <RegistrationInfo><Description>Cloud Agent Fleet Worker</Description></RegistrationInfo>",
+    `  <RegistrationInfo><Description>${xml(description)}</Description></RegistrationInfo>`,
     `  <Triggers><LogonTrigger><Enabled>true</Enabled><UserId>${xml(user)}</UserId></LogonTrigger></Triggers>`,
     "  <Principals><Principal id=\"Author\">",
     `    <UserId>${xml(user)}</UserId><LogonType>InteractiveToken</LogonType><RunLevel>LeastPrivilege</RunLevel>`,
@@ -1405,19 +1654,25 @@ export function windowsWorkerTaskXml(user, executable, args) {
   ].join("\r\n");
 }
 
-function installWorkerService() {
-  if (!existsSync(configPath)) throw new Error(`Worker configuration not found: ${configPath}`);
-  const service = workerServicePaths();
-  const [executable, script, action] = workerServiceCommand();
+/** Installs and starts a role's user service (systemd, launchd, or Task Scheduler). */
+function installService(role) {
+  const definition = SERVICE_ROLES[role];
+  if (!existsSync(definition.config())) {
+    throw new Error(`${definition.label} configuration not found: ${definition.config()}. ${definition.setupHint}`);
+  }
+  const service = servicePaths(role);
+  const executable = process.execPath;
+  const script = fileURLToPath(import.meta.url);
+  const args = definition.args;
   if (service.kind === "systemd") {
     mkdirSync(dirname(service.path), { recursive: true });
     writeFileSync(service.path, [
       "[Unit]",
-      "Description=Cloud Agent Fleet Worker",
+      `Description=Cloud Agent Fleet ${definition.label}`,
       "After=network-online.target",
       "",
       "[Service]",
-      `ExecStart=${shellQuote(executable)} ${shellQuote(script)} ${action}`,
+      `ExecStart=${[executable, script].map(shellQuote).join(" ")} ${args.join(" ")}`,
       ...(process.env.PATH ? [systemdEnvironmentLine("PATH", process.env.PATH)] : []),
       "Restart=on-failure",
       "RestartSec=5",
@@ -1440,7 +1695,7 @@ function installWorkerService() {
       "<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">",
       "<plist version=\"1.0\"><dict>",
       `<key>Label</key><string>${service.name}</string>`,
-      `<key>ProgramArguments</key><array><string>${xml(executable)}</string><string>${xml(script)}</string><string>${action}</string></array>`,
+      `<key>ProgramArguments</key><array>${[executable, script, ...args].map((value) => `<string>${xml(value)}</string>`).join("")}</array>`,
       ...(process.env.PATH
         ? [`<key>EnvironmentVariables</key><dict><key>PATH</key><string>${xml(process.env.PATH)}</string></dict>`]
         : []),
@@ -1451,23 +1706,23 @@ function installWorkerService() {
     serviceCommand("launchctl", ["load", "-w", service.path]);
   } else {
     const user = process.env.USERDOMAIN ? `${process.env.USERDOMAIN}\\${process.env.USERNAME}` : process.env.USERNAME;
-    const taskPath = join(dirname(configPath), "worker-task.xml");
+    const taskPath = join(dirname(configPath), `${role}-task.xml`);
+    const taskXml = windowsWorkerTaskXml(user, executable, [script, ...args, "--restart", "--log"], service.name);
     // schtasks reads task XML as UTF-16 with a byte order mark.
-    writeFileSync(taskPath, `﻿${windowsWorkerTaskXml(user, executable, [script, action, "--restart", "--log"])}`, {
-      encoding: "utf16le",
-      mode: 0o600,
-    });
+    writeFileSync(taskPath, `﻿${taskXml}`, { encoding: "utf16le", mode: 0o600 });
     serviceCommand("schtasks.exe", ["/Create", "/TN", service.name, "/XML", taskPath, "/F"]);
+    // A logon task waits for the next logon; start it now, like systemd and launchd do.
+    serviceCommand("schtasks.exe", ["/Run", "/TN", service.name]);
   }
-  console.log(`Installed user-level Worker service: ${service.name}`);
-  removeLegacyWorkerService();
+  console.log(`Installed and started the user-level ${definition.label} service: ${service.name}`);
+  if (role === "worker") removeLegacyWorkerService();
 }
 
 /**
  * Native command for each service action. `status` reports instead of
  * failing, because an inactive service is a valid answer.
  */
-function workerServiceArgs(service, action) {
+function serviceArgs(service, action) {
   if (service.kind === "systemd") {
     const verb = { start: "start", stop: "stop", status: "status", remove: "disable" }[action];
     return ["systemctl", ["--user", verb, ...(action === "remove" ? ["--now"] : []), service.name]];
@@ -1480,36 +1735,367 @@ function workerServiceArgs(service, action) {
   return ["schtasks.exe", [verb, "/TN", service.name, ...(action === "remove" ? ["/F"] : [])]];
 }
 
-function workerServiceAction(action) {
+function serviceAction(role, action) {
+  const { label } = SERVICE_ROLES[role];
   if (action === "install") {
-    installWorkerService();
+    installService(role);
     return;
   }
   if (!["start", "stop", "status", "remove"].includes(action)) {
-    throw new Error(`Unknown worker command: ${action} (use install, start, stop, status, or remove)`);
+    throw new Error(`Unknown ${role} service command: ${action} (use install, start, stop, status, or remove)`);
   }
-  const service = workerServicePaths();
-  const [executable, args] = workerServiceArgs(service, action);
+  const service = servicePaths(role);
+  const [executable, args] = serviceArgs(service, action);
   if (action === "status") {
     const result = command(executable, args, { capture: false });
-    if (result.status !== 0) console.log(`Worker service ${service.name} is not running or not installed.`);
+    if (result.status !== 0) console.log(`${label} service ${service.name} is not running or not installed.`);
     return;
   }
   if (service.kind === "schtasks" && action === "remove") {
     command("schtasks.exe", ["/End", "/TN", service.name]);
   }
   serviceCommand(executable, args);
-  if (service.kind === "schtasks" && (action === "stop" || action === "remove")) stopWindowsWorkerTree();
+  if (service.kind === "schtasks" && (action === "stop" || action === "remove")) stopWindowsServiceTree(role);
   if (action === "remove" && service.path && existsSync(service.path)) {
     unlinkSync(service.path);
     if (service.kind === "systemd") serviceCommand("systemctl", ["--user", "daemon-reload"]);
   }
-  console.log(`Worker service ${action} complete.`);
+  console.log(`${label} service ${action} complete.`);
+}
+
+function workerServiceAction(action) {
+  serviceAction("worker", action);
 }
 
 function serviceCommand(executable, args) {
   const result = command(executable, args, { capture: false });
   if (result.status !== 0) throw new Error(`${executable} ${args.join(" ")} failed`);
+}
+
+// ── Hub ─────────────────────────────────────────────────────
+
+/** Saved Hub settings (`init` writes them); the Hub's own state lives in its data folder. */
+const hubConfigPath = join(dirname(configPath), "hub-config.json");
+
+export function defaultHubConfig(home = homedir()) {
+  return {
+    host: "127.0.0.1",
+    port: 8787,
+    dataPath: join(home, ".cloudagentfleet", "hub.json"),
+  };
+}
+
+function readHubConfig() {
+  let saved = {};
+  try {
+    saved = JSON.parse(readFileSync(hubConfigPath, "utf8"));
+  } catch {
+    // No saved settings yet.
+  }
+  // The Hub honours CLOUDAGENTFLEET_DATA_PATH, so `hub token` does too.
+  const dataPath = process.env.CLOUDAGENTFLEET_DATA_PATH;
+  return { ...defaultHubConfig(), ...saved, ...(dataPath ? { dataPath } : {}) };
+}
+
+export function hubEnvironment(config) {
+  return {
+    CLOUDAGENTFLEET_HOST: config.host,
+    CLOUDAGENTFLEET_PORT: String(config.port),
+    CLOUDAGENTFLEET_DATA_PATH: config.dataPath,
+    ...(config.publicUrl ? { CLOUDAGENTFLEET_PUBLIC_URL: config.publicUrl } : {}),
+    ...(config.hostUiUrl ? { CLOUDAGENTFLEET_HOST_UI_URL: config.hostUiUrl } : {}),
+  };
+}
+
+/** The Hub beside this CLI (Hub and all-in-one installs), or from a source checkout. */
+function resolveHubScript() {
+  return [
+    join(thisDir, "cloudagentfleet-hub.mjs"),
+    join(thisDir, "..", "..", "control-plane", "src", "server.ts"),
+  ].find((candidate) => existsSync(candidate));
+}
+
+function workerInstalled() {
+  try {
+    resolveWorkerScript();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function runHub(config, log) {
+  const script = resolveHubScript();
+  if (!script) throw new Error("The Hub is not part of this install. Install @cloudagentfleet/hub or @cloudagentfleet/all-in-one.");
+  const child = spawn(
+    process.execPath,
+    [script.endsWith(".ts") ? "--experimental-strip-types" : "", script].filter(Boolean),
+    {
+      cwd: homedir(),
+      env: { ...process.env, ...hubEnvironment(config) },
+      stdio: log ? ["ignore", "pipe", "pipe"] : "inherit",
+    },
+  );
+  child.stdout?.pipe(log, { end: false });
+  child.stderr?.pipe(log, { end: false });
+  return child;
+}
+
+function hubDataDir(config = readHubConfig()) {
+  return dirname(config.dataPath);
+}
+
+/** The Worker token Workers present to this Hub (generated by the Hub on first start). */
+function readHubWorkerToken(config = readHubConfig()) {
+  try {
+    return readFileSync(join(hubDataDir(config), "hub-worker-token"), "utf8").trim() || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** The generated Hub password, until the operator sets their own. */
+function readHubPassword(config = readHubConfig()) {
+  try {
+    const value = JSON.parse(readFileSync(join(hubDataDir(config), "hub-ui-auth.json"), "utf8"));
+    return typeof value.password === "string" ? value.password : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+async function waitForHub(baseUrl, timeoutMs = 45_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      const response = await fetch(`${baseUrl}/healthz`, { signal: AbortSignal.timeout(2_000) });
+      if (response.ok) return true;
+    } catch {
+      // Not up yet.
+    }
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 750));
+  }
+  return false;
+}
+
+/** This machine's tailnet name (`laptop.tailnet.ts.net`), when Tailscale is running. */
+function tailnetName() {
+  try {
+    const status = JSON.parse(runTailscale(["status", "--json"]).stdout || "{}");
+    return String(status?.Self?.DNSName ?? "").replace(/\.$/, "") || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+// ── Guided setup ────────────────────────────────────────────
+
+export function parseInitRole(value, available) {
+  const role = String(value).trim().toLowerCase();
+  if (!["hub", "worker", "both"].includes(role) || !available.includes(role)) {
+    throw new Error(`Choose one of: ${available.join(", ")}`);
+  }
+  return role;
+}
+
+/**
+ * `cloudagentfleet init`: one guided flow for a new machine. It offers the
+ * roles this install contains (Hub, Worker, or both), sets them up as user
+ * services, enrolls the machine with the Hub, and ends with the dashboard
+ * address and what to do next.
+ */
+async function init() {
+  const hasHub = Boolean(resolveHubScript());
+  const hasWorker = workerInstalled();
+  const available = [...(hasHub ? ["hub"] : []), ...(hasWorker ? ["worker"] : []), ...(hasHub && hasWorker ? ["both"] : [])];
+  if (available.length === 0) throw new Error("This install contains neither the Hub nor the Worker.");
+  console.log([
+    "Cloud Agent Fleet",
+    "=================",
+    "",
+    "A fleet has one Hub (the dashboard you sign in to) and a Worker on every machine",
+    "whose agents you want to reach. One machine can run both.",
+    "",
+  ].join("\n"));
+  const role = available.length === 1
+    ? available[0]
+    : parseInitRole(await ask(`What should this machine run? (${available.join(", ")})`, available.includes("both") ? "both" : available[0]), available);
+  console.log(`\nSetting up: ${role === "both" ? "the Hub and a Worker" : `the ${role === "hub" ? "Hub" : "Worker"}`}\n`);
+
+  const hub = role === "hub" || role === "both" ? await initHub() : undefined;
+  const worker = role === "worker" || role === "both" ? await initWorker(hub) : undefined;
+
+  console.log(["", "Done.", ""].join("\n"));
+  if (hub) {
+    console.log(`Dashboard:  ${hub.dashboardUrl}`);
+    console.log(hub.password
+      ? `Password:   ${hub.password}  (stored in ${join(hubDataDir(), "hub-ui-auth.json")}; set CLOUDAGENTFLEET_UI_PASSWORD to choose your own)`
+      : "Password:   the one you set with CLOUDAGENTFLEET_UI_PASSWORD");
+    console.log([
+      "",
+      "Add another machine: install @cloudagentfleet/worker there (or the worker archive),",
+      "run `cloudagentfleet init`, and give it:",
+      `  Hub URL:       ${hub.workerUrl}`,
+      "  Worker token:  run `cloudagentfleet hub token` on this machine",
+    ].join("\n"));
+  }
+  if (worker) {
+    console.log("");
+    console.log(worker.enrolled
+      ? `This machine (${worker.name}) is enrolled and appears in the dashboard.`
+      : `This machine (${worker.name}) is set up but not fully enrolled; see the messages above.`);
+  }
+  console.log([
+    "",
+    "Next: open the dashboard, pick a machine, and start a session or open its own UI.",
+    "Guide: https://github.com/hirenf14/cloudagentfleet/blob/master/docs/GETTING-STARTED.md",
+  ].join("\n"));
+}
+
+async function initHub() {
+  const config = readHubConfig();
+  if (!existsSync(hubConfigPath)) {
+    // The Hub uses two ports (dashboard and host UIs); take the first free pair.
+    let port = config.port;
+    while (port < config.port + 40 && (await freeLocalPort(port) !== port || await freeLocalPort(port + 1) !== port + 1)) {
+      port += 2;
+    }
+    if (port !== config.port) console.log(`Port ${config.port} is in use; the Hub will use ${port} (and ${port + 1} for host UIs).`);
+    config.port = port;
+  }
+  writeSafeJson(hubConfigPath, config);
+  const baseUrl = `http://127.0.0.1:${config.port}`;
+  if (await waitForHub(baseUrl, 1_500)) {
+    console.log(`A Hub is already answering at ${baseUrl}; installing the service for the next logon.`);
+  }
+  installService("hub");
+  if (!await waitForHub(baseUrl)) {
+    throw new Error(`The Hub did not start at ${baseUrl}. See ${join(dirname(configPath), "hub.log")} or run \`cloudagentfleet hub run\`.`);
+  }
+  console.log(`The Hub is running at ${baseUrl}.`);
+  let dashboardUrl = `${baseUrl}/_fleet/`;
+  let workerUrl = baseUrl;
+  const name = tailnetName();
+  if (name && await confirm("Publish the Hub privately on your tailnet with Tailscale Serve (recommended)?", true)) {
+    try {
+      await serveHub([]);
+      dashboardUrl = `https://${name}/_fleet/`;
+      workerUrl = `https://${name}`;
+    } catch (error) {
+      console.log(`Tailscale Serve did not start: ${error instanceof Error ? error.message : error}`);
+    }
+  } else if (!name) {
+    console.log("Tailscale is not running here, so the Hub stays on this machine only. Run `cloudagentfleet hub serve` later to reach it from your other devices.");
+  }
+  return {
+    controllerUrl: baseUrl,
+    token: readHubWorkerToken(config),
+    password: readHubPassword(config),
+    dashboardUrl,
+    workerUrl,
+  };
+}
+
+async function initWorker(hub) {
+  const config = await setup({
+    guided: true,
+    ...(hub ? { controllerUrl: hub.controllerUrl, authToken: hub.token } : {}),
+  });
+  installService("worker");
+  return { ...config, enrolled: await enrollWorkerConfig(config) };
+}
+
+/** Re-runs an instance's health check until it is online. */
+async function waitForInstanceOnline(controllerUrl, instanceId, timeoutMs = 90_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      const response = await fetch(`${controllerUrl}/api/instances/${encodeURIComponent(instanceId)}/health`, {
+        method: "POST",
+        headers: { ...authHeaders(), accept: "application/json" },
+        signal: AbortSignal.timeout(10_000),
+      });
+      if (response.ok && (await response.json())?.instance?.status === "online") {
+        console.log(`${instanceId} is online.`);
+        return true;
+      }
+    } catch {
+      // Still starting.
+    }
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 3_000));
+  }
+  return false;
+}
+
+/** Waits until a freshly started Worker has registered with the Hub (it can enroll instances only then). */
+async function waitForNode(controllerUrl, nodeId, timeoutMs = 60_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      const response = await fetch(`${controllerUrl}/api/workers`, {
+        headers: { ...authHeaders(), accept: "application/json" },
+        signal: AbortSignal.timeout(3_000),
+      });
+      const body = response.ok ? await response.json() : undefined;
+      if (body?.workers?.some((worker) => worker.id === nodeId || worker.nodeId === nodeId)) return true;
+    } catch {
+      // The Hub or the Worker is still starting.
+    }
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 1_000));
+  }
+  return false;
+}
+
+/** Enrolls the instances a saved Worker config serves; true when all of them enrolled. */
+async function enrollWorkerConfig(config) {
+  if (config.authToken) process.env.CLOUDAGENTFLEET_AUTH_TOKEN = config.authToken;
+  let enrolledAll = true;
+  for (const entry of workerProcesses(config)) {
+    console.log(`Waiting for the Worker ${entry.nodeId} to connect to the Hub …`);
+    if (!await waitForNode(config.controllerUrl, entry.nodeId)) {
+      console.log(
+        `The Worker ${entry.nodeId} did not connect. Check ${join(dirname(configPath), "worker.log")} `
+        + "or `cloudagentfleet worker status`, then run init again.",
+      );
+      enrolledAll = false;
+      continue;
+    }
+    const common = ["--controller-url", config.controllerUrl, "--node-id", entry.nodeId, "--no-health"];
+    const enrollments = [];
+    if (entry.backends.includes("codeman")) {
+      const env = workerEnvironment(entry);
+      const policy = env.CLOUDAGENTFLEET_WORKSPACE_MODE === "system"
+        ? ["--workspace-mode", "system"]
+        : env.CLOUDAGENTFLEET_WORKSPACE_ROOTS.split(";").filter(Boolean).flatMap((root) => ["--workspace-root", root]);
+      enrollments.push([
+        "connector", "--backend", "codeman", ...common,
+        "--instance-id", config.codemanInstanceId ?? config.nodeId,
+        "--name", config.name,
+        ...(policy.length > 0 ? policy : ["--workspace-mode", "system"]),
+      ]);
+    }
+    if (entry.backends.includes("cptr") && config.cptrAccess === "connector") {
+      enrollments.push([
+        "connector", "--backend", "cptr", ...common,
+        "--instance-id", config.cptrInstanceId ?? `${config.nodeId}-cptr`,
+        "--name", `${config.name} (Open WebUI Computer)`,
+      ]);
+    }
+    for (const argv of enrollments) {
+      try {
+        const instance = await enrollInstance(argv);
+        // Enrolled before its backend finished starting: check until it answers.
+        if (instance?.id && !await waitForInstanceOnline(config.controllerUrl, instance.id)) {
+          console.log(`${instance.label} is enrolled but not answering yet; it will turn online once it has started.`);
+        }
+      } catch (error) {
+        enrolledAll = false;
+        console.log(`Enrollment did not finish: ${error instanceof Error ? error.message : error}`);
+        console.log("Fix the cause, then run `cloudagentfleet init` again (it is safe to rerun).");
+      }
+    }
+  }
+  return enrolledAll;
 }
 
 async function startJob() {
@@ -1568,12 +2154,16 @@ function help() {
     "Cloud Agent Fleet CLI",
     "",
     "Usage:",
-    "  cloudagentfleet setup [--run]  Detect, select, configure, and optionally run",
+    "  cloudagentfleet init             Guided setup: pick Hub/Worker/both and what to install, enroll, done",
+    "  cloudagentfleet setup [--run]  Configure only this machine's Worker, step by step",
     "  cloudagentfleet run              Run the saved Codeman-backed Worker",
     "  cloudagentfleet worker <install|start|status|stop|remove>  Manage the user service",
     "  cloudagentfleet start            Select Worker, workspace, agent, and prompt",
     "  cloudagentfleet enroll           Register a Codeman instance and verify health",
-    "  cloudagentfleet hub <serve|status|stop>  Manage private Tailscale Hub serving",
+    "  cloudagentfleet hub service <install|start|status|stop|remove>  Run the Hub as a user service",
+    "  cloudagentfleet hub token        Print the Worker token new machines need",
+    "  cloudagentfleet hub run          Run the Hub in this terminal",
+    "  cloudagentfleet hub <serve|status|stop>  Publish the Hub privately with Tailscale Serve",
     "  cloudagentfleet doctor           Print local prerequisites",
     "",
     "The setup flow asks before installing Codeman and never performs provider login.",
@@ -1597,7 +2187,8 @@ if (isDirectCliEntrypoint()) {
     if (commandName !== "run" && legacyWorkerService()) {
       console.log("A legacy hosted-agents Worker service is still installed; run `cloudagentfleet worker install` to replace it.");
     }
-    if (commandName === "setup") await setup();
+    if (commandName === "init") await init();
+    else if (commandName === "setup") await setup();
     else if (commandName === "run") await runSavedWorker({ restart: process.argv.includes("--restart"), log: process.argv.includes("--log") });
     else if (commandName === "worker") workerServiceAction(process.argv[3] ?? "status");
     else if (commandName === "doctor") printEnvironment(detectEnvironment());

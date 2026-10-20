@@ -1,0 +1,33 @@
+{
+  "name": "@cloudagentfleet/all-in-one",
+  "version": "0.1.8",
+  "private": false,
+  "description": "Cloud Agent Fleet for one machine: the Hub (with its dashboard), the Worker, and the cloudagentfleet CLI.",
+  "type": "module",
+  "bin": {
+    "cloudagentfleet": "./dist/cloudagentfleet.mjs",
+    "cloudagentfleet-worker": "./dist/cloudagentfleet-worker.mjs",
+    "cloudagentfleet-hub": "./dist/cloudagentfleet-hub.mjs"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "CHANGELOG.md"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hirenf14/cloudagentfleet.git",
+    "directory": "apps/all-in-one"
+  },
+  "homepage": "https://github.com/hirenf14/cloudagentfleet/tree/master/apps/all-in-one#readme",
+  "bugs": {
+    "url": "https://github.com/hirenf14/cloudagentfleet/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "engines": {
+    "node": ">=22.6.0"
+  }
+}

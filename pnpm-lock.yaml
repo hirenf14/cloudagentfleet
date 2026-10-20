@@ -24,13 +24,11 @@ importers:
         specifier: ^7.0.2
         version: 7.0.2
 
+  apps/all-in-one: {}
+
   apps/cli: {}
 
-  apps/control-plane:
-    dependencies:
-      '@cloudagentfleet/ui':
-        specifier: workspace:*
-        version: link:../dashboard
+  apps/control-plane: {}
 
   apps/dashboard: {}
 
