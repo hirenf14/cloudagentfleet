@@ -462,7 +462,10 @@ export type NodeMessage =
         | { kind: "resize"; width: number; height: number };
     }
   | CodemanConnectorResponse
-  | CodemanConnectorSessionEvent;
+  | CodemanConnectorSessionEvent
+  | TunnelOpened
+  | TunnelData
+  | TunnelClose;
 
 export type ControlMessage =
   | {
@@ -485,7 +488,58 @@ export type ControlMessage =
       type: "browser.stop";
       sessionId: string;
     }
-  | CodemanConnectorRequest;
+  | CodemanConnectorRequest
+  | TunnelOpen
+  | TunnelData
+  | TunnelClose;
+
+/**
+ * Byte-stream tunnel over the Worker connector: the Hub opens a stream to a
+ * service the Worker exposes for one connector instance (the cptr driver),
+ * and both sides relay raw bytes. The Worker alone decides where a stream
+ * connects; the Hub only names the instance. Old Workers ignore these types.
+ */
+export interface TunnelOpen {
+  type: "tunnel.open";
+  streamId: string;
+  instanceId: string;
+}
+
+export interface TunnelOpened {
+  type: "tunnel.opened";
+  streamId: string;
+}
+
+export interface TunnelData {
+  type: "tunnel.data";
+  streamId: string;
+  /** Base64-encoded bytes. */
+  data: string;
+}
+
+export interface TunnelClose {
+  type: "tunnel.close";
+  streamId: string;
+  error?: string;
+}
+
+export type TunnelMessage = TunnelOpen | TunnelOpened | TunnelData | TunnelClose;
+
+export function isTunnelMessage(value: unknown): value is TunnelMessage {
+  if (!isRecord(value) || !isNonEmptyString(value.streamId)) return false;
+  switch (value.type) {
+    case "tunnel.open":
+      return isNonEmptyString(value.instanceId);
+    case "tunnel.opened":
+      return true;
+    case "tunnel.data":
+      return typeof value.data === "string";
+    case "tunnel.close":
+      return value.error === undefined || typeof value.error === "string";
+    default:
+      return false;
+  }
+}
 
 export function isCodemanConnectorRequest(
   value: unknown,

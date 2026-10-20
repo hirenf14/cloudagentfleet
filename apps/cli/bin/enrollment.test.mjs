@@ -5,6 +5,7 @@ import {
   cptrInstallCommand,
   enrollInstance,
   parseBackendList,
+  parseCptrAccess,
   workerEnvironment,
   parseAgentProfiles,
   parseOptions,
@@ -157,11 +158,14 @@ test("enroll rejects an unknown backend before prompting", async () => {
   );
 });
 
-test("enroll keeps cptr to tailscale-url mode", async () => {
+test("enroll allows cptr over the connector but not link-only there", async () => {
   await assert.rejects(
-    () => enrollInstance(["connector", "--backend", "cptr"]),
-    /supports only tailscale-url mode/,
+    () => enrollInstance(["connector", "--backend", "cptr", "--link-only"]),
+    /--link-only needs a tailscale-url instance/,
   );
+  assert.equal(parseCptrAccess(" Connector "), "connector");
+  assert.equal(parseCptrAccess("tailnet"), "tailnet");
+  assert.throws(() => parseCptrAccess("funnel"), /connector or tailnet/);
 });
 
 test("enroll accepts --link-only only for cptr", async () => {
@@ -207,6 +211,7 @@ test("workerEnvironment turns off Codeman management on a cptr-only machine", ()
   assert.equal(env.CLOUDAGENTFLEET_CODEMAN_INSTALL, "false");
   assert.equal(env.CLOUDAGENTFLEET_CPTR_URL, "http://127.0.0.1:8000");
   assert.equal(env.CLOUDAGENTFLEET_MANAGE_CPTR, "true");
+  assert.equal(env.CLOUDAGENTFLEET_CPTR_INSTANCE_ID, "laptop-cptr");
 
   const legacy = workerEnvironment({
     nodeId: "desk",

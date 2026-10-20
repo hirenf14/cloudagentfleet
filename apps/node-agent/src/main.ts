@@ -11,6 +11,7 @@ import {
 } from "./supervisor.ts";
 import { validateConfig, type NodeAgentConfig } from "./index.ts";
 import { ControllerTransport } from "./transport.ts";
+import { WorkerTunnels, type TunnelTarget } from "./tunnel.ts";
 import type {
   CodemanAgentMode,
   AgentProfile,
@@ -204,21 +205,45 @@ export async function runWorker(): Promise<void> {
     transport.stop();
     stopSupervised();
   };
+  // cptr connector driver: the Hub reaches this machine's cptr through the
+  // Worker's outbound connection instead of an inbound tailnet port.
+  const tunnels = backends.includes("cptr")
+    ? new WorkerTunnels({
+        targets: new Map([[
+          process.env.CLOUDAGENTFLEET_CPTR_INSTANCE_ID ?? `${config.nodeId}-cptr`,
+          loopbackTarget(process.env.CLOUDAGENTFLEET_CPTR_URL ?? "http://127.0.0.1:8000"),
+        ]]),
+        send: (message) => transport.send(message),
+      })
+    : undefined;
+
   process.once("SIGINT", shutdown);
   process.once("SIGTERM", shutdown);
   try {
     await transport.start(
       codemanEnabled ? (message) => runtime.handle(message) : codemanDisabled,
       codemanEnabled ? (request) => runtime.handleConnectorRequest(request) : codemanDisabled,
+      tunnels ? (message) => tunnels.handle(message) : undefined,
     );
   } catch (error) {
     // SIGINT/SIGTERM aborts the Controller stream; that is a clean shutdown.
     if (!(stopping && error instanceof Error && error.name === "AbortError")) throw error;
   } finally {
     stopping = true;
+    tunnels?.closeAll();
     stopEventForwarding();
     stopSupervised();
   }
+}
+
+/** Tunnels may only reach a loopback service on this machine. */
+function loopbackTarget(value: string): TunnelTarget {
+  const url = new URL(value);
+  const host = url.hostname.replace(/^[|]$/g, "");
+  if (url.protocol !== "http:" || !["127.0.0.1", "localhost", "::1"].includes(host)) {
+    throw new Error(`CLOUDAGENTFLEET_CPTR_URL must be loopback HTTP for the connector driver: ${value}`);
+  }
+  return { host, port: Number(url.port || 80) };
 }
 
 function isDirectWorkerEntrypoint(): boolean {

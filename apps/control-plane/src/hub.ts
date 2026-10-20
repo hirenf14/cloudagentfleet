@@ -48,6 +48,8 @@ export interface HubOptions {
     instanceId: string,
     listener: (event: HostSessionEvent) => void,
   ) => () => void;
+  /** Byte stream to the service a Worker exposes for a connector instance (cptr driver). */
+  connectorOpenStream?: (nodeId: string, instanceId: string) => Duplex;
 }
 
 /**
@@ -62,6 +64,7 @@ export class FleetHub {
   private readonly hasCustomAdapterFactory: boolean;
   private readonly connectorRequest?: HubOptions["connectorRequest"];
   private readonly connectorSubscribeEvents?: HubOptions["connectorSubscribeEvents"];
+  private readonly connectorOpenStream?: HubOptions["connectorOpenStream"];
   private readonly runtimeCredentials = new Map<string, { username: string; password: string }>();
   private readonly adapters = new Map<string, HostAdapter>();
   private readonly adapterUnsubscribers = new Map<string, () => void>();
@@ -73,6 +76,7 @@ export class FleetHub {
     this.credentials = options.credentials;
     this.connectorRequest = options.connectorRequest;
     this.connectorSubscribeEvents = options.connectorSubscribeEvents;
+    this.connectorOpenStream = options.connectorOpenStream;
     this.adapterFactory = options.adapterFactory
       ?? ((instance, credentials) => createAdapter(instance, this.adapterDependencies(instance, credentials)));
     for (const instance of this.state.snapshot().instances) {
@@ -371,6 +375,9 @@ export class FleetHub {
             this.connectorRequest!(nodeId, instance.id, operation, payload),
           subscribeEvents: (listener: (event: HostSessionEvent) => void) =>
             this.connectorSubscribeEvents!(nodeId, instance.id, listener),
+          ...(this.connectorOpenStream
+            ? { openStream: () => this.connectorOpenStream!(nodeId, instance.id) }
+            : {}),
         }
       : undefined;
     return {

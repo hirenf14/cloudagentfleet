@@ -5,7 +5,11 @@ import type {
   NodeMessage,
   NodeRegistration,
 } from "../../../packages/protocol/src/index.ts";
-import { validateCodemanConnectorRequest } from "../../../packages/protocol/src/index.ts";
+import {
+  isTunnelMessage,
+  validateCodemanConnectorRequest,
+  type TunnelMessage,
+} from "../../../packages/protocol/src/index.ts";
 import type { NodeAgentConfig } from "./index.ts";
 
 export interface ControllerTransportOptions extends NodeAgentConfig {
@@ -49,6 +53,7 @@ export class ControllerTransport {
   async start(
     handle: (message: ControlMessage) => Promise<void>,
     connectorHandle?: (request: CodemanConnectorRequest) => Promise<unknown>,
+    tunnelHandle?: (message: TunnelMessage) => void,
   ): Promise<void> {
     await this.register();
     this.heartbeatTimer = setInterval(() => {
@@ -78,6 +83,7 @@ export class ControllerTransport {
             handle,
             this.abortController.signal,
             (request) => this.handleConnectorRequest(request, connectorHandle),
+            tunnelHandle,
           );
         } catch (error) {
           if (!this.reconnect || this.abortController.signal.aborted) throw error;
@@ -202,6 +208,7 @@ async function readServerSentEvents(
   handle: (message: ControlMessage) => Promise<void>,
   signal: AbortSignal,
   handleConnectorRequest: (request: CodemanConnectorRequest) => Promise<void>,
+  tunnelHandle?: (message: TunnelMessage) => void,
 ): Promise<void> {
   const reader = body.getReader();
   const decoder = new TextDecoder();
@@ -226,10 +233,20 @@ async function readServerSentEvents(
       if (!data) continue;
 
       const parsed = JSON.parse(data) as Partial<ControlMessage>;
-      if (parsed.type === "codeman.request") {
-        await handleConnectorRequest(validateCodemanConnectorRequest(parsed));
+      // Dispatch without awaiting: a long job or a slow connector request must
+      // not stall the rest of the stream (tunnel bytes above all). Each request
+      // is correlated by its own id, so ordering between them does not matter.
+      if (isTunnelMessage(parsed)) {
+        tunnelHandle?.(parsed);
+      } else if (parsed.type === "codeman.request") {
+        const request = validateCodemanConnectorRequest(parsed);
+        void handleConnectorRequest(request).catch((error: unknown) => {
+          console.error(`Connector request ${request.requestId} failed: ${error instanceof Error ? error.message : error}`);
+        });
       } else if (typeof parsed.type === "string") {
-        await handle(parsed as ControlMessage);
+        void handle(parsed as ControlMessage).catch((error: unknown) => {
+          console.error(`Controller message ${parsed.type} failed: ${error instanceof Error ? error.message : error}`);
+        });
       }
     }
   }

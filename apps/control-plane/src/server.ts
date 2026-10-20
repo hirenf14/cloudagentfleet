@@ -146,6 +146,7 @@ export function createControllerServer(
       controlPlane.requestConnector(nodeId, instanceId, operation, payload),
     connectorSubscribeEvents: (nodeId, instanceId, listener) =>
       controlPlane.subscribeConnectorEvents(nodeId, instanceId, listener),
+    connectorOpenStream: (nodeId, instanceId) => controlPlane.openTunnel(nodeId, instanceId),
   });
 
   if (!isLoopback(host) && !authToken) {

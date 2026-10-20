@@ -15,6 +15,8 @@ export interface ProxyWebSocketOptions {
   label: string;
   /** Allowlisted backend session cookies to forward on the upgrade. */
   cookies?: CookieBridge;
+  /** Upstream connection override (a Worker tunnel stream) instead of dialing `endpoint`. */
+  connect?: () => Duplex;
 }
 
 /**
@@ -28,7 +30,7 @@ export async function proxyWebSocket(
   options: ProxyWebSocketOptions,
 ): Promise<void> {
   const { endpoint, label } = options;
-  const transport = endpoint.protocol === "https:" ? httpsRequest : httpRequest;
+  const transport = endpoint.protocol === "https:" && !options.connect ? httpsRequest : httpRequest;
   const browserKey = request.headers["sec-websocket-key"];
   if (typeof browserKey !== "string") {
     rejectSocket(clientSocket, 400, "Missing WebSocket key");
@@ -52,6 +54,7 @@ export async function proxyWebSocket(
     method: "GET",
     headers,
     rejectUnauthorized: verifyUpstreamTls(endpoint),
+    ...(options.connect ? { createConnection: options.connect } : {}),
   });
   upstreamRequest.once("upgrade", (response, upstreamSocket, upstreamHead) => {
     if (response.statusCode !== 101) {

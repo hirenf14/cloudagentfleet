@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { PassThrough } from "node:stream";
 import test from "node:test";
 import type {
   BackendFeature,
@@ -41,6 +42,7 @@ function fixture(
 const connector = {
   request: async () => undefined,
   subscribeEvents: () => () => undefined,
+  openStream: () => new PassThrough(),
 };
 
 /** Capability variants that select a different adapter shape. */

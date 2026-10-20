@@ -441,6 +441,7 @@ export function workerEnvironment(config) {
       ? {
           CLOUDAGENTFLEET_CPTR_URL: config.cptrUrl,
           CLOUDAGENTFLEET_MANAGE_CPTR: config.manageCptr === false ? "false" : "true",
+          CLOUDAGENTFLEET_CPTR_INSTANCE_ID: config.cptrInstanceId ?? `${config.nodeId}-cptr`,
         }
       : {}),
     CLOUDAGENTFLEET_NODE_ID: config.nodeId,
@@ -527,6 +528,12 @@ async function setup() {
   const cptrUrl = useCptr
     ? safeEndpoint(await ask("Open WebUI Computer local URL", "http://127.0.0.1:8000"), "Open WebUI Computer URL")
     : undefined;
+  // The cptr driver: through this Worker's outbound connector (no inbound
+  // port), or directly over the tailnet.
+  const cptrAccess = useCptr ? parseCptrAccess(await ask(
+    "How should the Hub reach Open WebUI Computer (connector, tailnet)",
+    "connector",
+  )) : undefined;
   const authToken = process.env.CLOUDAGENTFLEET_AUTH_TOKEN;
   const config = {
     nodeId,
@@ -546,7 +553,7 @@ async function setup() {
     codemanUrl,
     manageCodeman: useCodeman,
     installCodeman: useCodeman,
-    ...(cptrUrl ? { cptrUrl, manageCptr: true } : {}),
+    ...(cptrUrl ? { cptrUrl, manageCptr: true, cptrAccess, cptrInstanceId: `${nodeId}-cptr` } : {}),
   };
 
   mkdirSync(dirname(configPath), { recursive: true });
@@ -554,7 +561,16 @@ async function setup() {
   console.log(`\nSaved Worker configuration: ${configPath}`);
   console.log(`Discovered ${config.workspaces.length} workspace(s).`);
 
-  if (useCptr) {
+  if (useCptr && cptrAccess === "connector") {
+    console.log([
+      "",
+      "Enroll Open WebUI Computer through this Worker once it is running:",
+      `  cloudagentfleet enroll connector --backend cptr --controller-url ${controllerUrl} \\`,
+      `    --node-id ${nodeId} --instance-id ${nodeId}-cptr --name "${name} (Open WebUI Computer)"`,
+      "On cptr's first start the Worker writes its one-time setup token to ~/.cloudagentfleet/cptr-setup-token;",
+      "open the host from the dashboard and visit /?token=<token> to create cptr's admin account.",
+    ].join("\n"));
+  } else if (useCptr) {
     let tailnetUrl;
     if (environment.cptr && await confirm(
       `Publish Open WebUI Computer to your tailnet with Tailscale Serve (https port ${cptrTailnetPort})?`,
@@ -610,6 +626,14 @@ function writeSafeJson(path, value) {
     }
   }
   chmodSync(path, 0o600);
+}
+
+export function parseCptrAccess(value) {
+  const access = String(value).trim().toLowerCase();
+  if (access !== "connector" && access !== "tailnet") {
+    throw new Error("Open WebUI Computer access must be connector or tailnet");
+  }
+  return access;
 }
 
 export function parseBackendList(value) {
@@ -794,11 +818,13 @@ function saveInstanceRegistration(registration) {
   writeSafeJson(instancesConfigPath, instances);
 }
 
-function linkWorkerInstance(nodeId, instanceId) {
+/** Points the local Worker's driver for this backend at the enrolled connector instance. */
+function linkWorkerInstance(nodeId, instanceId, backend = "codeman") {
   try {
     const config = JSON.parse(readFileSync(configPath, "utf8"));
     if (config.nodeId !== nodeId) return false;
-    config.codemanInstanceId = instanceId;
+    if (backend === "cptr") config.cptrInstanceId = instanceId;
+    else config.codemanInstanceId = instanceId;
     writeSafeJson(configPath, config);
     return true;
   } catch {
@@ -833,11 +859,11 @@ export async function enrollInstance(argv = process.argv.slice(3)) {
   if (selectedMode !== "connector" && selectedMode !== "tailscale-url") {
     throw new Error("--mode must be connector or tailscale-url");
   }
-  if (backend === "cptr" && selectedMode !== "tailscale-url") {
-    throw new Error("Open WebUI Computer (cptr) supports only tailscale-url mode");
-  }
   const linkOnly = parsed.values.has("link-only");
   if (linkOnly && backend !== "cptr") throw new Error("--link-only applies only to --backend cptr");
+  if (linkOnly && selectedMode !== "tailscale-url") {
+    throw new Error("--link-only needs a tailscale-url instance; the connector driver always proxies cptr");
+  }
 
   const controllerUrl = safeEndpoint(
     optionValue(parsed, "controller-url", "controller")
@@ -928,11 +954,12 @@ export async function enrollInstance(argv = process.argv.slice(3)) {
   const instance = registered.body?.instance;
   if (!instance) throw new Error("Instance registration returned no instance");
   saveInstanceRegistration(registration);
-  const linked = selectedMode === "connector" ? linkWorkerInstance(registration.nodeId, registration.id) : false;
+  const linked = selectedMode === "connector" ? linkWorkerInstance(registration.nodeId, registration.id, backend) : false;
   const backendLabel = backend === "cptr" ? "Open WebUI Computer" : "Codeman";
   console.log(`Registered ${backendLabel} instance ${registration.label} (${registration.id}) in ${selectedMode} mode.`);
   if (linked) {
-    console.log(`Updated Worker configuration with CLOUDAGENTFLEET_CODEMAN_INSTANCE_ID=${registration.id}. Restart the Worker to apply it.`);
+    const variable = backend === "cptr" ? "CLOUDAGENTFLEET_CPTR_INSTANCE_ID" : "CLOUDAGENTFLEET_CODEMAN_INSTANCE_ID";
+    console.log(`Updated Worker configuration with ${variable}=${registration.id}. Restart the Worker to apply it.`);
   }
   if (parsed.values.has("no-health")) {
     console.log("Health verification skipped by --no-health.");
@@ -969,8 +996,8 @@ function printEnrollmentHelp() {
     "  cloudagentfleet enroll [connector|tailscale-url] [options]",
     "",
     "Options:",
-    "  --backend <codeman|cptr>                   default codeman; cptr = Open WebUI Computer (tailscale-url only)",
-    "  --link-only                                cptr: open it directly instead of through the Hub",
+    "  --backend <codeman|cptr>                   default codeman; cptr = Open WebUI Computer (connector or tailscale-url)",
+    "  --link-only                                cptr over tailscale-url: open it directly, not through the Hub",
     "  --mode <connector|tailscale-url>",
     "  --instance-id <id> --name <name>",
     "  --node-id <enrolled-worker-id>             connector mode",

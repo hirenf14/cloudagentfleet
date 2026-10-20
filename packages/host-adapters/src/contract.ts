@@ -77,6 +77,8 @@ export interface PathSuggestions {
 export interface ConnectorChannel {
   request(operation: CodemanConnectorOperation, payload?: Record<string, unknown>): Promise<unknown>;
   subscribeEvents(listener: (event: HostSessionEvent) => void): () => void;
+  /** Byte stream to the service the Worker exposes for this instance (stream drivers such as cptr). */
+  openStream?(): Duplex;
 }
 
 export interface AdapterDependencies {

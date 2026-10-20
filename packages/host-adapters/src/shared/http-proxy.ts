@@ -1,4 +1,5 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
+import type { Duplex } from "node:stream";
 import { request as httpRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
 import type { CookieBridge } from "./cookies.ts";
@@ -22,6 +23,8 @@ export interface ProxyHttpOptions {
   forwardReferer?: boolean;
   /** Allowlisted backend session cookies; without it no cookies cross the proxy. */
   cookies?: CookieBridge;
+  /** Upstream connection override (a Worker tunnel stream) instead of dialing `endpoint`. */
+  connect?: () => Duplex;
 }
 
 /**
@@ -39,7 +42,7 @@ export async function proxyHttpRequest(
 ): Promise<void> {
   const { endpoint } = options;
   const requestUrl = new URL(request.url ?? "/", "http://controller.local");
-  const transport = endpoint.protocol === "https:" ? httpsRequest : httpRequest;
+  const transport = endpoint.protocol === "https:" && !options.connect ? httpsRequest : httpRequest;
   const headers: Record<string, string> = {};
   for (const [name, value] of Object.entries(request.headers)) {
     if (
@@ -66,6 +69,7 @@ export async function proxyHttpRequest(
     method: request.method ?? "GET",
     headers,
     rejectUnauthorized: verifyUpstreamTls(endpoint),
+    ...(options.connect ? { createConnection: options.connect } : {}),
   }, (upstreamResponse) => {
     const inject = options.injectSwitcher === true
       && String(upstreamResponse.headers["content-type"] ?? "").includes("text/html");
