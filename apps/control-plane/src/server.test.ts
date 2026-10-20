@@ -858,3 +858,33 @@ test("an installed Hub keeps its state in the user's folder, not where it starts
   assert.equal(defaultHubStatePath(false, () => false, "/home/op"), join("/home/op", ".cloudagentfleet", "hub.json"));
   assert.equal(defaultHubStatePath(false, (path) => path === "data/hub.json", "/home/op"), "data/hub.json");
 });
+
+test("onboarding tells the dashboard where Workers connect, never the token", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "cloudagentfleet-onboarding-"));
+  try {
+    const app = createControllerServer({ statePath: join(directory, "hub.json"), uiPassword: "correct horse battery staple", uiCookieSecure: false });
+    const { baseUrl, close } = await listenBoth(app);
+    try {
+      const login = await fetch(`${baseUrl}/_fleet/api/auth/login`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ password: "correct horse battery staple" }),
+      });
+      const cookie = `cloudagentfleet_session=${cookieValue(login.headers.get("set-cookie") ?? "", "cloudagentfleet_session")}`;
+      const response = await fetch(`${baseUrl}/_fleet/api/fleet/onboarding`, { headers: { cookie } });
+      const body = await response.json();
+      assert.equal(body.hubUrl, baseUrl);
+      assert.equal(body.dashboardUrl, `${baseUrl}/_fleet/`);
+      assert.equal(body.reachableBeyondThisMachine, false);
+      assert.equal(body.workerTokenPath, join(directory, "hub-worker-token"));
+      assert.equal(body.workers, 0);
+      const token = readFileSync(join(directory, "hub-worker-token"), "utf8").trim();
+      assert.ok(!JSON.stringify(body).includes(token), "the token is never sent to the browser");
+      assert.equal((await fetch(`${baseUrl}/_fleet/api/fleet/onboarding`)).status, 401);
+    } finally {
+      await close();
+    }
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});

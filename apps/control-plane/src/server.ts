@@ -236,7 +236,7 @@ export function createControllerServer(
         response.end();
         return;
       }
-      await route(request, response, target.url, controlPlane, hub, uiAuth, auth, origins);
+      await route(request, response, target.url, controlPlane, hub, uiAuth, auth, origins, { workerTokenPath });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Request failed";
       const status = error instanceof HttpError ? error.status : 400;
@@ -327,6 +327,7 @@ async function route(
   uiAuth: UiAuth,
   auth: UiAuthRequest,
   origins: OriginPlan,
+  setup: { workerTokenPath?: string } = {},
 ): Promise<void> {
   const method = request.method ?? "GET";
 
@@ -405,6 +406,21 @@ async function route(
     response.setHeader("set-cookie", instanceCookie(request));
     response.writeHead(303, { location: `${FLEET_PATH_PREFIX}/` });
     response.end();
+    return;
+  }
+
+  // What the dashboard's onboarding shows: where Workers connect and how to get
+  // a token. The token itself never leaves the Hub machine.
+  if (method === "GET" && url.pathname === "/api/fleet/onboarding") {
+    const hubUrl = originFor(request, "hub", origins);
+    const hostname = new URL(hubUrl).hostname;
+    sendJson(response, 200, {
+      hubUrl,
+      dashboardUrl: `${hubUrl}${FLEET_PATH_PREFIX}/`,
+      reachableBeyondThisMachine: !["127.0.0.1", "localhost", "[::1]", "::1"].includes(hostname),
+      workerTokenPath: setup.workerTokenPath ?? null,
+      workers: controlPlane.nodes.list().length,
+    });
     return;
   }
 
