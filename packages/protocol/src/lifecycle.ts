@@ -73,6 +73,7 @@ export class NodeRegistry {
     return updated;
   }
 
+  /** Applies the heartbeat timeout; reads call it so status is never stale. */
   markOffline(now = this.clock()): void {
     for (const node of this.nodes.values()) {
       if (node.status !== "online" || !node.lastSeenAt) continue;
@@ -91,6 +92,7 @@ export class NodeRegistry {
   }
 
   select(provider: Provider, requestedNodeId?: string): HostedNode {
+    this.markOffline();
     if (requestedNodeId) {
       const node = this.require(requestedNodeId);
       this.assertSchedulable(node, provider);
@@ -125,6 +127,7 @@ export class NodeRegistry {
   }
 
   list(): HostedNode[] {
+    this.markOffline();
     return [...this.nodes.values()].map((node) => ({
       ...node,
       capabilities: [...node.capabilities],

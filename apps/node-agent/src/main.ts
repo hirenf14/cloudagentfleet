@@ -3,14 +3,24 @@ import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
-import { CodemanClient, CodemanWorkerRuntime, type CodemanMode } from "./codeman.ts";
+import { CodemanClient, CodemanWorkerRuntime } from "./codeman.ts";
+import {
+  backendSupervisors,
+  workerBackends,
+  type SupervisorHandle,
+} from "./supervisor.ts";
 import { validateConfig, type NodeAgentConfig } from "./index.ts";
 import { ControllerTransport } from "./transport.ts";
+import { WorkerTunnels, type TunnelTarget } from "./tunnel.ts";
+import { CptrSessions } from "./cptr-session.ts";
 import type {
-  CodemanAgentProfile,
+  CodemanAgentMode,
+  CodemanConnectorRequest,
+  AgentProfile,
   WorkspaceDescriptor,
   WorkspacePolicy,
 } from "../../../packages/protocol/src/index.ts";
+import { isCodemanAgentMode } from "../../../packages/protocol/src/index.ts";
 
 function required(name: string): string {
   const value = process.env[name]?.trim();
@@ -19,9 +29,9 @@ function required(name: string): string {
 }
 
 function parseWorkspaces(): WorkspaceDescriptor[] {
-  const raw = process.env.HOSTED_AGENTS_WORKSPACES ?? "[]";
+  const raw = process.env.CLOUDAGENTFLEET_WORKSPACES ?? "[]";
   const value = JSON.parse(raw) as unknown;
-  if (!Array.isArray(value)) throw new Error("HOSTED_AGENTS_WORKSPACES must be a JSON array");
+  if (!Array.isArray(value)) throw new Error("CLOUDAGENTFLEET_WORKSPACES must be a JSON array");
   return (value as WorkspaceDescriptor[]).map((workspace) => ({
     ...workspace,
     id: `ws_${createHash("sha256").update(workspace.canonicalPath).digest("hex").slice(0, 20)}`,
@@ -29,8 +39,8 @@ function parseWorkspaces(): WorkspaceDescriptor[] {
 }
 
 function parsePolicy(): WorkspacePolicy {
-  const mode = process.env.HOSTED_AGENTS_WORKSPACE_MODE === "system" ? "system" : "folders";
-  const roots = (process.env.HOSTED_AGENTS_WORKSPACE_ROOTS ?? "")
+  const mode = process.env.CLOUDAGENTFLEET_WORKSPACE_MODE === "system" ? "system" : "folders";
+  const roots = (process.env.CLOUDAGENTFLEET_WORKSPACE_ROOTS ?? "")
     .split(";")
     .map((root) => root.trim())
     .filter(Boolean);
@@ -74,7 +84,7 @@ function isCursorAuthenticated(commandName: string): boolean {
 function detectAgentProfiles(providers: {
   cursor?: { command: string; ready: boolean };
   claude?: { command: string; ready: boolean };
-}): CodemanAgentProfile[] {
+}): AgentProfile[] {
   return [
     ...(providers.cursor ? [{
       id: "cursor-agent",
@@ -91,23 +101,12 @@ function detectAgentProfiles(providers: {
   ];
 }
 
-function mode(): CodemanMode {
-  const selected = process.env.HOSTED_AGENTS_CODEMAN_MODE ?? "claude";
-  const modes: CodemanMode[] = [
-    "claude",
-    "shell",
-    "opencode",
-    "codex",
-    "gemini",
-    "antigravity",
-    "pi",
-    "grok",
-    "deepseek",
-  ];
-  if (!modes.includes(selected as CodemanMode)) {
-    throw new Error(`Unsupported HOSTED_AGENTS_CODEMAN_MODE: ${selected}`);
+function mode(): CodemanAgentMode {
+  const selected = process.env.CLOUDAGENTFLEET_CODEMAN_MODE ?? "claude";
+  if (!isCodemanAgentMode(selected)) {
+    throw new Error(`Unsupported CLOUDAGENTFLEET_CODEMAN_MODE: ${selected}`);
   }
-  return selected as CodemanMode;
+  return selected;
 }
 
 export async function runWorker(): Promise<void> {
@@ -130,26 +129,62 @@ export async function runWorker(): Promise<void> {
       claude: !providers.claude ? "missing" as const : "ready" as const,
     },
   }));
+  const backends = workerBackends();
   const config = validateConfig({
-    nodeId: required("HOSTED_AGENTS_NODE_ID"),
-    name: process.env.HOSTED_AGENTS_NODE_NAME ?? "Hosted Agents Worker",
+    nodeId: required("CLOUDAGENTFLEET_NODE_ID"),
+    name: process.env.CLOUDAGENTFLEET_NODE_NAME ?? "Cloud Agent Fleet Worker",
     platform: platform(),
-    capabilities: ["codeman", ...(agentProfiles.length > 0 ? ["cursor-worker" as const] : [])],
+    capabilities: [
+      ...backends,
+      ...(backends.includes("codeman") && agentProfiles.length > 0 ? ["cursor-worker" as const] : []),
+    ],
     workspacePolicy: parsePolicy(),
     workspaces,
-    controlPlaneUrl: required("HOSTED_AGENTS_CONTROLLER_URL"),
-    authToken: process.env.HOSTED_AGENTS_AUTH_TOKEN,
+    controlPlaneUrl: required("CLOUDAGENTFLEET_CONTROLLER_URL"),
+    authToken: process.env.CLOUDAGENTFLEET_AUTH_TOKEN,
   });
-  const instanceId = process.env.CODEMAN_INSTANCE_ID ?? config.nodeId;
+  const instanceId = process.env.CLOUDAGENTFLEET_CODEMAN_INSTANCE_ID ?? config.nodeId;
+  const codemanBaseUrl = process.env.CLOUDAGENTFLEET_CODEMAN_URL ?? "http://127.0.0.1:3000";
+  const supervised: SupervisorHandle[] = [];
+  const stopSupervised = () => {
+    for (const handle of supervised.splice(0)) handle.stopIfOwned();
+  };
+  let stopping = false;
+  try {
+    for (const supervisor of backendSupervisors(backends, { codeman: { baseUrl: codemanBaseUrl } })) {
+      if (supervisor.required) {
+        supervised.push(await supervisor.ensure());
+        continue;
+      }
+      void supervisor.ensure().then(
+        (handle) => {
+          if (stopping) handle.stopIfOwned();
+          else supervised.push(handle);
+        },
+        (error) => console.error(
+          `${supervisor.backend} is unavailable; the Worker keeps running without it: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        ),
+      );
+    }
+  } catch (error) {
+    stopSupervised();
+    throw error;
+  }
+  const cptrInstanceId = process.env.CLOUDAGENTFLEET_CPTR_INSTANCE_ID ?? `${config.nodeId}-cptr`;
   const transport = new ControllerTransport({
     ...config,
-    connectorInstanceId: instanceId,
+    connectorInstanceId: [
+      ...(backends.includes("codeman") ? [instanceId] : []),
+      ...(backends.includes("cptr") ? [cptrInstanceId] : []),
+    ],
     reconnect: true,
   });
   const codeman = new CodemanClient({
-    baseUrl: process.env.CODEMAN_URL ?? "http://127.0.0.1:3000",
-    username: process.env.CODEMAN_USERNAME,
-    password: process.env.CODEMAN_PASSWORD,
+    baseUrl: codemanBaseUrl,
+    username: process.env.CLOUDAGENTFLEET_CODEMAN_USERNAME,
+    password: process.env.CLOUDAGENTFLEET_CODEMAN_PASSWORD,
   });
   const runtime = new CodemanWorkerRuntime({
     client: codeman,
@@ -163,18 +198,67 @@ export async function runWorker(): Promise<void> {
     cursorCommand,
     claudeCommand,
   });
-  const stopEventForwarding = runtime.startEventForwarding();
+  // The connector and job runtime are Codeman-only; a cptr-only Worker just
+  // supervises cptr and keeps its node heartbeat.
+  const codemanEnabled = backends.includes("codeman");
+  const stopEventForwarding = codemanEnabled ? runtime.startEventForwarding() : () => undefined;
+  const codemanDisabled = async (): Promise<never> => {
+    throw new Error("Codeman is not enabled on this Worker");
+  };
 
-  process.once("SIGINT", () => transport.stop());
-  process.once("SIGTERM", () => transport.stop());
+  const shutdown = () => {
+    stopping = true;
+    transport.stop();
+    stopSupervised();
+  };
+  // cptr connector driver: the Hub reaches this machine's cptr through the
+  // Worker's outbound connection instead of an inbound tailnet port.
+  const cptrUrl = process.env.CLOUDAGENTFLEET_CPTR_URL ?? "http://127.0.0.1:8000";
+  const tunnels = backends.includes("cptr")
+    ? new WorkerTunnels({
+        targets: new Map([[cptrInstanceId, loopbackTarget(cptrUrl)]]),
+        send: (message) => transport.send(message),
+      })
+    : undefined;
+  // Signs a Hub-authenticated browser in to this cptr without its password leaving the machine.
+  const cptrSessions = tunnels ? new CptrSessions({ baseUrl: cptrUrl }) : undefined;
+  const connectorRequest = async (request: CodemanConnectorRequest): Promise<unknown> => {
+    if (request.operation === "cptr.session") {
+      if (!cptrSessions || request.instanceId !== cptrInstanceId) {
+        throw new Error(`Open WebUI Computer sign-in is not served for ${request.instanceId}`);
+      }
+      return cptrSessions.session();
+    }
+    return codemanEnabled ? runtime.handleConnectorRequest(request) : codemanDisabled();
+  };
+
+  process.once("SIGINT", shutdown);
+  process.once("SIGTERM", shutdown);
   try {
     await transport.start(
-      (message) => runtime.handle(message),
-      (request) => runtime.handleConnectorRequest(request),
+      codemanEnabled ? (message) => runtime.handle(message) : codemanDisabled,
+      connectorRequest,
+      tunnels ? (message) => tunnels.handle(message) : undefined,
     );
+  } catch (error) {
+    // SIGINT/SIGTERM aborts the Controller stream; that is a clean shutdown.
+    if (!(stopping && error instanceof Error && error.name === "AbortError")) throw error;
   } finally {
+    stopping = true;
+    tunnels?.closeAll();
     stopEventForwarding();
+    stopSupervised();
   }
+}
+
+/** Tunnels may only reach a loopback service on this machine. */
+function loopbackTarget(value: string): TunnelTarget {
+  const url = new URL(value);
+  const host = url.hostname.replace(/^[|]$/g, "");
+  if (url.protocol !== "http:" || !["127.0.0.1", "localhost", "::1"].includes(host)) {
+    throw new Error(`CLOUDAGENTFLEET_CPTR_URL must be loopback HTTP for the connector driver: ${value}`);
+  }
+  return { host, port: Number(url.port || 80) };
 }
 
 function isDirectWorkerEntrypoint(): boolean {

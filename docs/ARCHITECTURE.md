@@ -2,7 +2,7 @@
 
 ## System boundary
 
-Hosted Agents is a private fleet control plane. It does not replace Codeman
+Cloud Agent Fleet is a private fleet control plane. It does not replace Codeman
 and does not create a shared Cursor/Claude protocol. It coordinates distinct
 execution adapters behind one local operator experience.
 
@@ -51,11 +51,10 @@ The Controller routes and records work; it never launches shells, agents,
 browsers, or containers. A Worker owns local process execution, provider
 credentials, Codeman sessions, preview connections, and browser sessions.
 
-For private remote operator access, the current phase is Tailscale SSH on a
-dedicated port only (80 and 443 stay unused by Hosted Agents; no Hub UI yet).
-Later, the Controller can remain bound to `127.0.0.1` and optionally publish a
-single Hub origin with Tailscale Serve. The Hub password is then the browser
-application boundary. Tailnet ACLs allow operators to reach the Hub tag and
+For private remote operator access, the Controller stays bound to `127.0.0.1`
+and publishes the Hub (dashboard on 443, host UIs on 8443) with Tailscale Serve (`cloudagentfleet hub
+serve`). Cloud Agent Fleet never binds host-local 80 or 443. The Hub password
+is the browser application boundary. Tailnet ACLs allow operators to reach the Hub tag and
 allow the Hub tag to reach only Codeman-host ports. Codeman endpoints are
 never returned to the browser or published through Funnel. See
 `docs/TAILSCALE-SERVE.md`.
@@ -96,7 +95,7 @@ four stages:
    anything.
 3. Generate or import the Worker identity, complete one-time pairing, and store
    credentials in a protected machine-local location.
-4. Install our user-level Hosted Agents Worker service and verify the outbound
+4. Install our user-level Cloud Agent Fleet Worker service and verify the outbound
    connection, capabilities, and local preview relay.
 
 The worker reconnects with backoff after network failures, resumes or reattaches

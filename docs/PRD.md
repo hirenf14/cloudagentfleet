@@ -1,4 +1,4 @@
-# Product Requirements: Hosted Agents
+# Product Requirements: Cloud Agent Fleet
 
 ## Objective
 
@@ -23,7 +23,7 @@ one browser.
    explicitly approved whole-system scope.
 4. Discover and display multiple workspaces per Worker, including canonical
    path, name, provider readiness, and workspace health.
-5. Install and persist the Hosted Agents worker as a user-level background
+5. Install and persist the Cloud Agent Fleet worker as a user-level background
    service. Detect Codeman, Cursor, and Claude readiness without taking over
    their login or provider-worker setup.
 6. Reuse Codeman for persistent tmux sessions, live terminal output, remote SSH

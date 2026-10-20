@@ -9,9 +9,19 @@ const packages = [
   {
     name: "@cloudagentfleet/hub",
     dir: "apps/control-plane",
-    required: [/^package\.json$/, /^README\.md$/, /^dist\/cloudagentfleet-hub\.mjs$/],
-    optional: [/^CHANGELOG\.md$/],
-    forbidden: [/src\//, /\.ts$/, /^bin\//, /\.test\./],
+    // Standalone: the Hub ships its UI, the CLI that runs it as a service, and
+    // the Worker for operators who also run one on the Hub's machine.
+    required: [
+      /^package\.json$/,
+      /^README\.md$/,
+      /^dist\/cloudagentfleet-hub\.mjs$/,
+      /^dist\/cloudagentfleet\.mjs$/,
+      /^dist\/cloudagentfleet-worker\.mjs$/,
+      /^dist\/public\/index\.html$/,
+      /^dist\/public\/app\.js$/,
+    ],
+    optional: [/^CHANGELOG\.md$/, /^dist\/public\/[^/]+$/],
+    forbidden: [/src\//, /\.ts$/, /^bin\//, /\.test\./, /design-draft/],
   },
   {
     name: "@cloudagentfleet/ui",
@@ -60,7 +70,7 @@ function listPackFiles(packageDir) {
       if (match) files.push(match[1].replaceAll("\\", "/"));
     }
   }
-  return [...new Set(files)].filter((file) => file !== "package.json" || true);
+  return [...new Set(files)];
 }
 
 let failed = false;

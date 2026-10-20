@@ -26,9 +26,6 @@
     "registry": "https://registry.npmjs.org/"
   },
   "scripts": {
-    "build": "node ../../scripts/build-release.mjs",
-    "dev": "node --watch --check public/app.js",
-    "test": "node --test",
     "typecheck": "node --check public/app.js"
   },
   "engines": {

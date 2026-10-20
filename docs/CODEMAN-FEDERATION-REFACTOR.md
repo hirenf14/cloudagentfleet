@@ -2,11 +2,11 @@
 
 ## Decision
 
-Hosted Agents extends Codeman rather than replacing it.
+Cloud Agent Fleet extends Codeman rather than replacing it.
 
 Codeman remains the execution authority on each machine. It owns provider
 processes, PTYs, tmux persistence, terminal bytes, session lifecycle, and
-Codeman's native terminal behavior. Hosted Agents adds the federation layer
+Codeman's native terminal behavior. Cloud Agent Fleet adds the federation layer
 around those instances.
 
 ```text
@@ -27,7 +27,7 @@ Browser
 - Start and stop configured providers.
 - Expose the supported session, terminal, resize, and event APIs.
 
-### Hosted Agents Controller
+### Cloud Agent Fleet Controller
 
 - Register and health-check many Codeman instances.
 - Route each request by instance and namespaced session ID.
@@ -35,7 +35,7 @@ Browser
 - Persist fleet metadata, audit events, and session indexes.
 - Provide one authenticated Hub URL.
 
-### Hosted Agents Worker
+### Cloud Agent Fleet Worker
 
 - Maintain an outbound connection to the Controller.
 - Enforce local workspace policy.

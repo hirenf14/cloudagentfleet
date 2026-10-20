@@ -4,11 +4,11 @@ This repo uses [Changesets](https://github.com/changesets/changesets) to draft
 version bumps and changelogs for the three public packages:
 
 - `@cloudagentfleet/hub`
-- `@cloudagentfleet/ui`
 - `@cloudagentfleet/worker`
+- `@cloudagentfleet/ui`
 
-Those packages are **linked**: one changeset bumps them together so Hub, UI, and
-Worker stay on the same version line.
+They are **fixed**: every release bumps all three to the same version, because
+the Hub and Worker packages ship the same CLI and Worker.
 
 ## Add a changeset on your PR
 
@@ -16,18 +16,19 @@ Worker stay on the same version line.
 pnpm changeset
 ```
 
-Pick **patch**, **minor**, or **major**, write a short summary aimed at
-operators, and commit the generated file under `.changeset/`.
+Pick **patch**, **minor**, or **major** (on 0.x, minor marks a breaking
+change), write a short summary aimed at operators, and commit the generated
+file under `.changeset/`.
 
-Private workspace packages (`cli`, `protocol`, `codeman-bridge`) are ignored.
+Private workspace packages (`cli`, `protocol`, `host-adapters`) are ignored.
 
 ## What happens on `master`
 
 1. Merging PRs that include changeset files leaves those files on `master`.
 2. The Release workflow opens (or updates) a **Version Packages** PR that bumps
-   the three package versions, updates each `CHANGELOG.md`, and removes consumed
-   changeset files.
-3. Merging that Version Packages PR publishes to npm and creates GitHub Releases.
-   Standalone platform archives are built afterward.
+   the versions, updates each `CHANGELOG.md`, and removes consumed changeset
+   files.
+3. Merging that PR publishes to npm (with provenance) and creates GitHub
+   Releases; the Worker's is marked Latest and gets the standalone archives.
 
 See [`CONTRIBUTING.md`](../CONTRIBUTING.md#releases) for secrets and commands.

@@ -1,7 +1,6 @@
 node_modules/
 dist/
 **/dist/
-apps/node-agent/cli/
 build/
 .turbo/
 .env
@@ -12,3 +11,4 @@ data/
 coverage/
 .DS_Store
 *.tsbuildinfo
+site-dist/

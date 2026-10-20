@@ -1,46 +1,136 @@
-# Private Tailscale access (SSH first, Serve later)
+# Private access with Tailscale
 
-Hosted Agents uses Tailscale for private machine reachability. The current
-setup phase is **SSH over a dedicated port only**. Ports **80 and 443 stay
-untouched**: do not run `tailscale serve`, Funnel, or any Hosted Agents
-listener on them.
+Cloud Agent Fleet is reachable only over your tailnet. The browser reaches the
+Hub through Tailscale Serve on two HTTPS ports: 443 for the dashboard and 8443
+for proxied host UIs (a separate origin, so backend pages can't use your Hub
+session against the Hub API). The Hub reaches hosts over the tailnet. Nothing
+is published with Funnel, and Cloud Agent Fleet never binds host-local `:80`
+or `:443`.
 
-The Hub web UI and `cloudagentfleet hub serve` are optional and deferred until
-you explicitly want a browser origin.
+```text
+Browser → Serve :443  → Controller dashboard on 127.0.0.1:8787
+Browser → Serve :8443 → Controller host UIs  on 127.0.0.1:8788 → tailnet → hosts
+```
 
-## Current phase: SSH only
-
-Goals:
-
-- Shared tailnet for operators and hosts
-- Access only via SSH on a **separate** TCP port (default example: `2222`)
-- Leave host `:80` / `:443` free for other software
-- No Hub UI / MagicDNS HTTPS yet
+## Hub UI via Tailscale Serve
 
 ### Prerequisites
 
-- Install Tailscale on each machine and confirm `tailscale status` is connected.
-- Run `sshd` on the dedicated port (example `2222`), not on 80/443.
-- Do **not** run `cloudagentfleet hub serve` or `tailscale serve` in this phase.
-- Do **not** enable Tailscale Funnel.
+- Tailscale installed and connected on the Hub node (`tailscale status`).
+- Controller bound to loopback (`CLOUDAGENTFLEET_HOST=127.0.0.1`, the default).
+- Funnel disabled.
+- Operators reach only the Hub tag; the Hub reaches Codeman hosts. Operators
+  get no direct Codeman grant.
 
-### ACL / grants (SSH port only)
+Serve publishes MagicDNS HTTPS on the node's Tailscale endpoint (typically 443
+on the **tailnet** name). That is separate from the machine's ordinary 80/443
+services, but it shares the node's Serve configuration with any other Serve
+routes.
 
-Tailscale ACLs apply only to **tailnet** traffic. They do not close LAN or
-loopback ports. Once you replace the default allow-all policy, unlisted
-tailnet ports are deny-by-default — so list only the SSH port you intend.
+### Start Serve
 
-Do **not** grant `tcp:80` or `tcp:443` for Hosted Agents in this phase.
+```bash
+cloudagentfleet-hub          # or, from a clone: pnpm --filter @cloudagentfleet/hub dev
+cloudagentfleet hub serve
+```
+
+`hub serve` checks the Tailscale CLI and local Hub health, then serves only the
+loopback Hub. Equivalent Serve command:
+
+```text
+tailscale serve --bg http://127.0.0.1:8787
+```
+
+Custom Controller port:
+
+```bash
+CLOUDAGENTFLEET_HOST=127.0.0.1 CLOUDAGENTFLEET_PORT=9000 cloudagentfleet-hub
+cloudagentfleet hub serve --port 9000
+```
+
+The command rejects non-loopback Controller binds.
+
+### Hub password
+
+On first start with a durable data directory and no password env vars, the
+Controller generates a random UI password, stores it in `data/hub-ui-auth.json`,
+and prints the plaintext on **every** start until you replace it.
+
+```bash
+# Optional override — stops printing the bootstrap password
+export CLOUDAGENTFLEET_UI_PASSWORD='use-a-long-random-password'
+# or
+export CLOUDAGENTFLEET_UI_PASSWORD_HASH='scrypt$N$r$p$salt$hash'
+```
+
+### Worker token
+
+Workers authenticate with a bearer token, separate from the UI password. When
+`CLOUDAGENTFLEET_AUTH_TOKEN` is unset and the Hub has a durable data
+directory, the Hub generates one in `<data dir>/hub-worker-token` (owner-only)
+and logs only that path. Give its contents to `cloudagentfleet setup` (it asks
+for the Hub Worker token) or set `CLOUDAGENTFLEET_AUTH_TOKEN` on both sides.
+Delete the file and restart the Hub to rotate it, then rerun setup on each
+Worker.
+
+Codeman Basic credentials stay server-side (`CLOUDAGENTFLEET_CODEMAN_CREDENTIALS`
+or enroll-time `--username` / `--password`). They are never returned to the
+browser.
+
+### Grants
+
+Tailscale ACLs apply only to **tailnet** traffic; they do not close LAN or
+loopback ports. Once you replace the default allow-all policy, unlisted tailnet
+ports are deny-by-default, so list only what you intend.
 
 ```json
 {
   "tagOwners": {
-    "tag:hosted-agents-host": ["autogroup:admin"]
+    "tag:cloudagentfleet-hub": ["autogroup:admin"],
+    "tag:codeman-host": ["autogroup:admin"]
   },
   "grants": [
     {
-      "src": ["group:hosted-agents-operators"],
-      "dst": ["tag:hosted-agents-host"],
+      "src": ["group:cloudagentfleet-operators"],
+      "dst": ["tag:cloudagentfleet-hub"],
+      "ip": ["tcp:443", "tcp:8443"]
+    },
+    {
+      "src": ["tag:cloudagentfleet-hub"],
+      "dst": ["tag:codeman-host"],
+      "ip": ["tcp:3000"]
+    }
+  ]
+}
+```
+
+Change `3000` if Codeman listens elsewhere.
+
+### Inspect or stop Serve
+
+```bash
+cloudagentfleet hub status
+cloudagentfleet hub stop
+```
+
+`hub stop` runs `tailscale serve reset` on this node. Use it only when this
+node's Serve routes are dedicated to Cloud Agent Fleet. It does not stop SSH,
+the Controller process, or Codeman.
+
+## Optional: operator SSH on a dedicated port
+
+For shell access to fleet machines, run `sshd` on a dedicated port (example
+`2222`) and grant only that port. Add this grant next to the Hub grants above.
+
+```json
+{
+  "tagOwners": {
+    "tag:cloudagentfleet-host": ["autogroup:admin"]
+  },
+  "grants": [
+    {
+      "src": ["group:cloudagentfleet-operators"],
+      "dst": ["tag:cloudagentfleet-host"],
       "ip": ["tcp:2222", "icmp:*"]
     }
   ]
@@ -52,123 +142,29 @@ Equivalent ACL shape:
 ```json
 {
   "tagOwners": {
-    "tag:hosted-agents-host": ["autogroup:admin"]
+    "tag:cloudagentfleet-host": ["autogroup:admin"]
   },
   "acls": [
     {
       "action": "accept",
-      "src": ["group:hosted-agents-operators"],
-      "dst": ["tag:hosted-agents-host:2222"]
+      "src": ["group:cloudagentfleet-operators"],
+      "dst": ["tag:cloudagentfleet-host:2222"]
     }
   ]
 }
 ```
 
-Tag each machine that should accept operator SSH as `tag:hosted-agents-host`.
-Change `2222` to whatever dedicated SSH port you configure in `sshd`. If you
-prefer standard SSH, use `tcp:22` / `:22` instead — still omit 80 and 443.
-
-Connect:
+Tag each machine that should accept operator SSH as `tag:cloudagentfleet-host`.
+To use standard SSH, grant `tcp:22` instead.
 
 ```bash
 ssh -p 2222 user@machine-name.tailnet-name.ts.net
 ```
 
-## Later (optional): Hub UI via Tailscale Serve
+## Security checklist
 
-Only when you want the browser Hub. Serve publishes MagicDNS HTTPS on the
-node’s Tailscale HTTPS endpoint (typically 443 on the **tailnet** name). That
-is separate from leaving the machine’s ordinary 80/443 services alone, but it
-still competes with other Tailscale Serve/Funnel routes on that node. Prefer
-keeping this off until the SSH fleet path is stable.
-
-### Prerequisites for Serve
-
-- Controller bound to loopback (`HOSTED_AGENTS_HOST=127.0.0.1`).
-- Hub password via `HOSTED_AGENTS_UI_PASSWORD_HASH` or `HOSTED_AGENTS_UI_PASSWORD`.
-- No Funnel.
-- Operators reach only the Hub tag; Hub reaches Codeman hosts. Operators do
-  not get a direct Codeman grant.
-
-### Example grants when enabling Serve later
-
-Add Hub/Codeman tags and grants **without removing** the SSH grant, and
-**without** putting Hosted Agents on host-local 80/443 listeners. Serve
-proxies loopback (for example `127.0.0.1:8787`); the Controller does not bind
-`:80` or `:443`.
-
-```json
-{
-  "tagOwners": {
-    "tag:hosted-agents-hub": ["autogroup:admin"],
-    "tag:codeman-host": ["autogroup:admin"],
-    "tag:hosted-agents-host": ["autogroup:admin"]
-  },
-  "grants": [
-    {
-      "src": ["group:hosted-agents-operators"],
-      "dst": ["tag:hosted-agents-host"],
-      "ip": ["tcp:2222", "icmp:*"]
-    },
-    {
-      "src": ["group:hosted-agents-operators"],
-      "dst": ["tag:hosted-agents-hub"],
-      "ip": ["tcp:443"]
-    },
-    {
-      "src": ["tag:hosted-agents-hub"],
-      "dst": ["tag:codeman-host"],
-      "ip": ["tcp:3000"]
-    }
-  ]
-}
-```
-
-### Start Serve (deferred)
-
-```bash
-pnpm --filter @cloudagentfleet/hub dev
-cloudagentfleet hub serve
-```
-
-Equivalent Serve command:
-
-```text
-tailscale serve --bg http://127.0.0.1:8787
-```
-
-Custom Controller port:
-
-```bash
-HOSTED_AGENTS_HOST=127.0.0.1 HOSTED_AGENTS_PORT=9000 \
-  pnpm --filter @cloudagentfleet/hub dev
-cloudagentfleet hub serve --port 9000
-```
-
-### Hub password (Serve / Hub UI phase)
-
-On first Hub start with a durable data directory and no password env vars, the
-Controller generates a random UI password, stores it in `data/hub-ui-auth.json`,
-and prints the plaintext on **every** start until you replace it.
-
-```bash
-# Optional override — stops printing the bootstrap password
-export HOSTED_AGENTS_UI_PASSWORD='use-a-long-random-password'
-# or
-export HOSTED_AGENTS_UI_PASSWORD_HASH='scrypt$N$r$p$salt$hash'
-```
-
-Codeman Basic credentials stay server-side (`HOSTED_AGENTS_CODEMAN_CREDENTIALS`
-or enroll-time `--username` / `--password`). They are never returned to the
-browser.
-
-### Inspect or stop Serve
-
-```bash
-cloudagentfleet hub status
-cloudagentfleet hub stop
-```
-
-`hub stop` runs `tailscale serve reset` on this node. Use it only when this
-node’s Serve routes are dedicated to Hosted Agents. It does not stop SSH,
-the Controller process, or Codeman.
+- Hub bound to `127.0.0.1`; only Serve reaches it.
+- Hub password set (or the bootstrap password stored and rotated).
+- Funnel off on every fleet node.
+- Operators granted the Hub tag only, never Codeman ports.
+- Codeman hosts accept the Codeman port only from `tag:cloudagentfleet-hub`.

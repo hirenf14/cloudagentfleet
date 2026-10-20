@@ -1,18 +1,18 @@
 import assert from "node:assert/strict";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
-import { CodemanHub } from "./hub.ts";
+import { FleetHub } from "./hub.ts";
 import { createControllerServer } from "./server.ts";
 import type {
-  CodemanAgentProfile,
-  CodemanInstanceRegistration,
-  CodemanSessionEvent,
+  AgentProfile,
+  HostInstanceRegistration,
+  HostSessionEvent,
   WorkspaceDescriptor,
 } from "../../../packages/protocol/src/index.ts";
 
 type JsonRecord = Record<string, unknown>;
 
-const agent: CodemanAgentProfile = {
+const agent: AgentProfile = {
   id: "claude",
   name: "Claude Code",
   mode: "claude",
@@ -175,7 +175,7 @@ async function runMock(): Promise<void> {
   const endpointB = await mockB.listen();
   const workspaceA = workspace("workspace-a", "/mock/workspace-a");
   const workspaceB = workspace("workspace-b", "/mock/workspace-b");
-  const hub = new CodemanHub({ statePath: "" });
+  const hub = new FleetHub({ statePath: "" });
   const controller = createController(hub);
   const controllerUrl = await listen(controller.server);
   const registrations = [
@@ -195,7 +195,7 @@ async function runMock(): Promise<void> {
     );
 
     await waitFor(() => mockA.eventResponses.size === 1 && mockB.eventResponses.size === 1);
-    const observed: CodemanSessionEvent[] = [];
+    const observed: HostSessionEvent[] = [];
     const unsubscribe = hub.subscribeEvents((event) => observed.push(event));
     try {
       const sessionA = await createSession(controllerUrl, "codeman-a", workspaceA);
@@ -248,7 +248,7 @@ async function runLive(): Promise<void> {
   const credentialsB = credentials("B");
   if (credentialsA) credentialsByInstance["codeman-a"] = credentialsA;
   if (credentialsB) credentialsByInstance["codeman-b"] = credentialsB;
-  const hub = new CodemanHub({
+  const hub = new FleetHub({
     statePath: "",
     credentials: credentialsByInstance,
   });
@@ -268,13 +268,13 @@ async function runLive(): Promise<void> {
     );
     console.log(`[live] Hub ${controllerUrl} listed both configured Codeman URLs`);
 
-    const observed: CodemanSessionEvent[] = [];
+    const observed: HostSessionEvent[] = [];
     const unsubscribe = hub.subscribeEvents((event) => observed.push(event));
     try {
       const sessionA = await createSession(controllerUrl, "codeman-a", workspaceA);
       const sessionB = await createSession(controllerUrl, "codeman-b", workspaceB);
-      await sendInput(controllerUrl, "codeman-a", sessionA.id, "hosted-agents-live-a");
-      await sendInput(controllerUrl, "codeman-b", sessionB.id, "hosted-agents-live-b");
+      await sendInput(controllerUrl, "codeman-a", sessionA.id, "cloudagentfleet-live-a");
+      await sendInput(controllerUrl, "codeman-b", sessionB.id, "cloudagentfleet-live-b");
       await waitFor(() =>
         observed.some((event) => event.instanceId === "codeman-a" && event.event === "output")
         && observed.some((event) => event.instanceId === "codeman-b" && event.event === "output"),
@@ -291,7 +291,7 @@ async function runLive(): Promise<void> {
   }
 }
 
-function createController(hub: CodemanHub) {
+function createController(hub: FleetHub) {
   return createControllerServer({ host: "127.0.0.1", port: 0, hub, statePath: "" });
 }
 
@@ -300,7 +300,7 @@ function registration(
   label: string,
   endpoint: string,
   selectedWorkspace: WorkspaceDescriptor,
-): CodemanInstanceRegistration {
+): HostInstanceRegistration {
   return {
     id,
     label,
@@ -324,7 +324,7 @@ function workspace(id: string, canonicalPath: string): WorkspaceDescriptor {
 
 async function enrollAndHealth(
   controllerUrl: string,
-  registrations: CodemanInstanceRegistration[],
+  registrations: HostInstanceRegistration[],
 ): Promise<void> {
   for (const registration of registrations) {
     const created = await requestJson(controllerUrl, "/api/instances", {

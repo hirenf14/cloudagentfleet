@@ -6,7 +6,7 @@ import type {
   CodemanConnectorRequest,
   CodemanConnectorSessionEvent,
   CodemanConnectorResponse,
-  CodemanSessionEvent,
+  HostSessionEvent,
   CreateJobRequest,
   HostedNode,
   NodeMessage,
@@ -14,9 +14,12 @@ import type {
   NodeRegistration,
 } from "../../../packages/protocol/src/index.ts";
 import {
+  isTunnelMessage,
   validateCodemanConnectorResponse,
   validateCodemanConnectorSessionEvent,
 } from "../../../packages/protocol/src/index.ts";
+import type { Duplex } from "node:stream";
+import { TunnelBroker } from "./tunnel.ts";
 
 export interface NodeConnection {
   node: HostedNode;
@@ -37,10 +40,11 @@ export class ControlPlane {
   readonly jobs: JobStore;
   readonly audit: AuditLog;
   private readonly connections = new Map<string, NodeConnection>();
+  private readonly tunnels = new TunnelBroker();
   private readonly connectorRequests = new Map<string, PendingConnectorRequest>();
   private readonly connectorEventListeners = new Map<
     string,
-    Set<(event: CodemanSessionEvent) => void>
+    Set<(event: HostSessionEvent) => void>
   >();
 
   constructor() {
@@ -67,7 +71,10 @@ export class ControlPlane {
     }
     const existing = this.connections.get(connection.node.id);
     void existing?.close();
-    if (existing) this.rejectConnectorRequests(connection.node.id, "Worker connection replaced");
+    if (existing) {
+      this.rejectConnectorRequests(connection.node.id, "Worker connection replaced");
+      this.tunnels.closeNode(connection.node.id, "Worker connection replaced");
+    }
     this.connections.set(connection.node.id, connection);
   }
 
@@ -75,9 +82,25 @@ export class ControlPlane {
     if (connection && this.connections.get(nodeId) !== connection) return;
     this.connections.delete(nodeId);
     this.rejectConnectorRequests(nodeId, `Worker connection closed: ${nodeId}`);
+    this.tunnels.closeNode(nodeId, `Worker connection closed: ${nodeId}`);
+  }
+
+  /**
+   * Opens a byte stream to the service the Worker exposes for this connector
+   * instance (for example its local Open WebUI Computer).
+   */
+  openTunnel(nodeId: string, instanceId: string): Duplex {
+    const connection = this.connections.get(nodeId);
+    if (!connection) throw new Error(`Node has no active connection: ${nodeId}`);
+    if (connection.node.status === "revoked") throw new Error(`Node is revoked: ${nodeId}`);
+    return this.tunnels.open(nodeId, instanceId, (message) => connection.send(message));
   }
 
   receiveNodeMessage(nodeId: string, message: NodeMessage): void {
+    if (isTunnelMessage(message)) {
+      this.tunnels.receive(nodeId, message);
+      return;
+    }
     if (message.type === "codeman.response") {
       this.receiveConnectorResponse(nodeId, message);
       return;
@@ -169,7 +192,7 @@ export class ControlPlane {
   subscribeConnectorEvents(
     nodeId: string,
     instanceId: string,
-    listener: (event: CodemanSessionEvent) => void,
+    listener: (event: HostSessionEvent) => void,
   ): () => void {
     const key = connectorKey(nodeId, instanceId);
     const listeners = this.connectorEventListeners.get(key) ?? new Set();

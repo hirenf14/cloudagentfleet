@@ -1,15 +1,16 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type {
-  CodemanAgentProfile,
-  CodemanInstance,
-  CodemanInstanceRegistration,
-  CodemanSession,
-  CodemanSessionEvent,
-  CodemanStatus,
+  AgentProfile,
+  HostInstance,
+  HostInstanceRegistration,
+  HostSession,
+  HostSessionEvent,
   WorkspaceDescriptor,
 } from "../../../packages/protocol/src/index.ts";
-import { CodemanHub } from "./hub.ts";
+import type { HostAdapter } from "../../../packages/host-adapters/src/index.ts";
+import { UnsupportedError } from "./errors.ts";
+import { FleetHub } from "./hub.ts";
 
 const workspace: WorkspaceDescriptor = {
   id: "workspace-a",
@@ -19,27 +20,32 @@ const workspace: WorkspaceDescriptor = {
   providers: { codeman: "ready" },
 };
 
-const agent: CodemanAgentProfile = {
+const agent: AgentProfile = {
   id: "claude",
   name: "Claude Code",
   mode: "claude",
   ready: true,
 };
 
-class FakeAdapter {
-  readonly instance: CodemanInstance;
-  readonly events = new Set<(event: CodemanSessionEvent) => void>();
-  sessions: CodemanSession[] = [];
+class FakeAdapter implements HostAdapter {
+  readonly instance: HostInstance;
+  readonly features = ["sessions", "workspace-suggest"] as const;
+  readonly events = new Set<(event: HostSessionEvent) => void>();
+  sessions: HostSession[] = [];
 
-  constructor(instance: CodemanInstance) {
+  constructor(instance: HostInstance) {
     this.instance = instance;
   }
 
-  async getStatus(): Promise<CodemanStatus> {
-    return { version: "test", agents: [agent] };
+  get sessionControl(): this {
+    return this;
   }
 
-  async listCapabilities(): Promise<CodemanAgentProfile[]> {
+  get pathSuggestions(): this {
+    return this;
+  }
+
+  async listAgents(): Promise<AgentProfile[]> {
     return [agent];
   }
 
@@ -51,17 +57,17 @@ class FakeAdapter {
     return [];
   }
 
-  async listSessions(): Promise<CodemanSession[]> {
+  async listSessions(): Promise<HostSession[]> {
     return this.sessions;
   }
 
   async createSession(
     selectedWorkspace: WorkspaceDescriptor,
-    selectedAgent: CodemanAgentProfile,
+    selectedAgent: AgentProfile,
     title = "session",
-  ): Promise<CodemanSession> {
+  ): Promise<HostSession> {
     const now = new Date().toISOString();
-    const session: CodemanSession = {
+    const session: HostSession = {
       id: `${this.instance.id}-session`,
       instanceId: this.instance.id,
       workspaceId: selectedWorkspace.id,
@@ -92,17 +98,17 @@ class FakeAdapter {
     });
   }
 
-  subscribeEvents(listener: (event: CodemanSessionEvent) => void): () => void {
+  subscribeEvents(listener: (event: HostSessionEvent) => void): () => void {
     this.events.add(listener);
     return () => this.events.delete(listener);
   }
 
-  emit(event: CodemanSessionEvent): void {
+  emit(event: HostSessionEvent): void {
     for (const listener of this.events) listener(event);
   }
 }
 
-function registration(id: string): CodemanInstanceRegistration {
+function registration(id: string): HostInstanceRegistration {
   return {
     id,
     label: id,
@@ -113,9 +119,9 @@ function registration(id: string): CodemanInstanceRegistration {
   };
 }
 
-test("CodemanHub isolates many instances and applies adapter events durably", async () => {
+test("FleetHub isolates many instances and applies adapter events durably", async () => {
   const adapters = new Map<string, FakeAdapter>();
-  const hub = new CodemanHub({
+  const hub = new FleetHub({
     adapterFactory: (instance) => {
       const adapter = new FakeAdapter(instance);
       adapters.set(instance.id, adapter);
@@ -134,7 +140,7 @@ test("CodemanHub isolates many instances and applies adapter events durably", as
     /Unknown session: codeman-b/,
   );
 
-  const received: CodemanSessionEvent[] = [];
+  const received: HostSessionEvent[] = [];
   const unsubscribe = hub.subscribeEvents((event) => received.push(event));
   adapters.get("codeman-a")!.emit({
     instanceId: "codeman-a",
@@ -157,8 +163,8 @@ test("CodemanHub isolates many instances and applies adapter events durably", as
   assert.equal(hub.getInstance("codeman-a").status, "online");
 });
 
-test("CodemanHub accepts an explicit path only inside the instance policy", async () => {
-  const hub = new CodemanHub({
+test("FleetHub accepts an explicit path only inside the instance policy", async () => {
+  const hub = new FleetHub({
     adapterFactory: (instance) => new FakeAdapter(instance),
   });
   hub.registerInstance({
@@ -194,4 +200,45 @@ test("CodemanHub accepts an explicit path only inside the instance policy", asyn
     ),
     /outside the instance policy/,
   );
+});
+
+test("FleetHub stores adapter features and rejects unsupported features with 409", async () => {
+  const hub = new FleetHub({
+    adapterFactory: (instance): HostAdapter => ({
+      instance,
+      features: [],
+      listAgents: async () => [agent],
+      listWorkspaces: async () => [workspace],
+    }),
+  });
+  const registered = hub.registerInstance(registration("link-only"));
+  assert.deepEqual(registered.features, []);
+  assert.equal(hub.supportsFeature("link-only", "sessions"), false);
+
+  await assert.rejects(
+    () => hub.createSession("link-only", workspace.id, agent.id),
+    (error: unknown) => error instanceof UnsupportedError && /does not support sessions/.test(error.message),
+  );
+  await assert.rejects(() => hub.prepareNativeUi("link-only"), UnsupportedError);
+  await assert.rejects(() => hub.suggestWorkspacePaths("link-only", "/"), UnsupportedError);
+
+  const full = new FleetHub({ adapterFactory: (instance) => new FakeAdapter(instance) });
+  assert.deepEqual(
+    full.registerInstance(registration("full")).features,
+    ["sessions", "workspace-suggest"],
+  );
+});
+
+test("FleetHub marks sessions the host no longer reports as stopped", async () => {
+  let adapter: FakeAdapter | undefined;
+  const hub = new FleetHub({
+    adapterFactory: (instance) => (adapter = new FakeAdapter(instance)),
+  });
+  hub.registerInstance(registration("codeman-sync"));
+  const session = await hub.createSession("codeman-sync", workspace.id, agent.id);
+  assert.equal(hub.getSession("codeman-sync", session.id).status, "starting");
+
+  adapter!.sessions = [];
+  await hub.syncSessions("codeman-sync");
+  assert.equal(hub.getSession("codeman-sync", session.id).status, "stopped");
 });

@@ -95,8 +95,8 @@ Controller owns those values and strips upstream cookies while proxying.
 For the supported interactive CLI flow, start the Controller first:
 
 ```powershell
-$env:HOSTED_AGENTS_HOST = "127.0.0.1"
-$env:HOSTED_AGENTS_PORT = "8787"
+$env:CLOUDAGENTFLEET_HOST = "127.0.0.1"
+$env:CLOUDAGENTFLEET_PORT = "8787"
 pnpm --filter @cloudagentfleet/hub dev
 ```
 
@@ -114,7 +114,7 @@ verification through the Controller. To publish the single private Hub, use
 not publish individual Codeman endpoints.
 
 The harness intentionally uses direct HTTP registration rather than the
-interactive CLI so it cannot overwrite `~/.hosted-agents/instances.json` or a
+interactive CLI so it cannot overwrite `~/.cloudagentfleet/instances.json` or a
 Worker configuration while testing.
 
 ## Evidence and blockers

@@ -5,7 +5,11 @@ import type {
   NodeMessage,
   NodeRegistration,
 } from "../../../packages/protocol/src/index.ts";
-import { validateCodemanConnectorRequest } from "../../../packages/protocol/src/index.ts";
+import {
+  isTunnelMessage,
+  validateCodemanConnectorRequest,
+  type TunnelMessage,
+} from "../../../packages/protocol/src/index.ts";
 import type { NodeAgentConfig } from "./index.ts";
 
 export interface ControllerTransportOptions extends NodeAgentConfig {
@@ -14,7 +18,8 @@ export interface ControllerTransportOptions extends NodeAgentConfig {
   heartbeatIntervalMs?: number;
   reconnect?: boolean;
   reconnectDelayMs?: number;
-  connectorInstanceId?: string;
+  /** Instances this Worker serves over the connector (Codeman, and its cptr driver). */
+  connectorInstanceId?: string | readonly string[];
 }
 
 /**
@@ -30,10 +35,12 @@ export class ControllerTransport {
   private readonly heartbeatIntervalMs: number;
   private readonly reconnect: boolean;
   private readonly reconnectDelayMs: number;
-  private readonly connectorInstanceId?: string;
+  private readonly connectorInstanceIds?: ReadonlySet<string>;
   private readonly handledConnectorRequests = new Set<string>();
   private readonly abortController = new AbortController();
   private heartbeatTimer: ReturnType<typeof setInterval> | undefined;
+  /** Set when the Controller stops recognising this node (for example after it restarted). */
+  private needsRegistration = false;
 
   constructor(options: ControllerTransportOptions) {
     this.config = options;
@@ -41,21 +48,29 @@ export class ControllerTransport {
     this.heartbeatIntervalMs = options.heartbeatIntervalMs ?? 15_000;
     this.reconnect = options.reconnect ?? false;
     this.reconnectDelayMs = options.reconnectDelayMs ?? 1_000;
-    this.connectorInstanceId = options.connectorInstanceId;
+    this.connectorInstanceIds = options.connectorInstanceId === undefined
+      ? undefined
+      : new Set(typeof options.connectorInstanceId === "string" ? [options.connectorInstanceId] : options.connectorInstanceId);
   }
 
   async start(
     handle: (message: ControlMessage) => Promise<void>,
     connectorHandle?: (request: CodemanConnectorRequest) => Promise<unknown>,
+    tunnelHandle?: (message: TunnelMessage) => void,
   ): Promise<void> {
     await this.register();
     this.heartbeatTimer = setInterval(() => {
-      void this.sendHeartbeat();
+      void this.heartbeatTick();
     }, this.heartbeatIntervalMs);
 
+    let firstAttempt = true;
     try {
       do {
         try {
+          // A Controller restart forgets enrolled nodes (its registry is in
+          // memory), so every reconnect enrolls again before connecting.
+          if (!firstAttempt) await this.register();
+          firstAttempt = false;
           const response = await this.fetchImpl(
             `${this.baseUrl()}/api/workers/${encodeURIComponent(this.config.nodeId)}/connect`,
             {
@@ -71,6 +86,7 @@ export class ControllerTransport {
             handle,
             this.abortController.signal,
             (request) => this.handleConnectorRequest(request, connectorHandle),
+            tunnelHandle,
           );
         } catch (error) {
           if (!this.reconnect || this.abortController.signal.aborted) throw error;
@@ -115,7 +131,7 @@ export class ControllerTransport {
       errorCode: "connector_disabled",
     };
     try {
-      if (this.connectorInstanceId && request.instanceId !== this.connectorInstanceId) {
+      if (this.connectorInstanceIds && !this.connectorInstanceIds.has(request.instanceId)) {
         throw new Error("Connector instance authorization failed");
       }
       if (this.handledConnectorRequests.has(request.requestId)) {
@@ -155,6 +171,17 @@ export class ControllerTransport {
       signal: this.abortController.signal,
     });
     if (!response.ok) throw new Error(`Controller enrollment failed with HTTP ${response.status}`);
+    this.needsRegistration = false;
+  }
+
+  /** Never throws: a failed heartbeat schedules re-enrollment instead of crashing the Worker. */
+  private async heartbeatTick(): Promise<void> {
+    try {
+      if (this.needsRegistration) await this.register();
+      await this.sendHeartbeat();
+    } catch {
+      if (!this.abortController.signal.aborted) this.needsRegistration = true;
+    }
   }
 
   private async sendHeartbeat(): Promise<void> {
@@ -184,6 +211,7 @@ async function readServerSentEvents(
   handle: (message: ControlMessage) => Promise<void>,
   signal: AbortSignal,
   handleConnectorRequest: (request: CodemanConnectorRequest) => Promise<void>,
+  tunnelHandle?: (message: TunnelMessage) => void,
 ): Promise<void> {
   const reader = body.getReader();
   const decoder = new TextDecoder();
@@ -208,10 +236,20 @@ async function readServerSentEvents(
       if (!data) continue;
 
       const parsed = JSON.parse(data) as Partial<ControlMessage>;
-      if (parsed.type === "codeman.request") {
-        await handleConnectorRequest(validateCodemanConnectorRequest(parsed));
+      // Dispatch without awaiting: a long job or a slow connector request must
+      // not stall the rest of the stream (tunnel bytes above all). Each request
+      // is correlated by its own id, so ordering between them does not matter.
+      if (isTunnelMessage(parsed)) {
+        tunnelHandle?.(parsed);
+      } else if (parsed.type === "codeman.request") {
+        const request = validateCodemanConnectorRequest(parsed);
+        void handleConnectorRequest(request).catch((error: unknown) => {
+          console.error(`Connector request ${request.requestId} failed: ${error instanceof Error ? error.message : error}`);
+        });
       } else if (typeof parsed.type === "string") {
-        await handle(parsed as ControlMessage);
+        void handle(parsed as ControlMessage).catch((error: unknown) => {
+          console.error(`Controller message ${parsed.type} failed: ${error instanceof Error ? error.message : error}`);
+        });
       }
     }
   }

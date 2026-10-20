@@ -3,41 +3,39 @@ import type { Dirent } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import type {
   AgentJob,
-  CodemanAgentProfile,
+  CodemanAgentMode,
+  AgentProfile,
   CodemanConnectorRequest,
-  CodemanSessionEvent,
-  CodemanStatus,
+  HostSessionEvent,
   ControlMessage,
   NodeMessage,
   WorkspaceDescriptor,
   WorkspacePolicy,
   WorkspacePathSuggestion,
 } from "../../../packages/protocol/src/index.ts";
+import {
+  codemanAgentName,
+  isCodemanAgentMode,
+  isPathAllowed,
+  isRecord,
+} from "../../../packages/protocol/src/index.ts";
+import {
+  type CodemanEnvelope,
+  codemanEventKind,
+  codemanEventSessionId,
+  codemanTimestamp,
+  dedupeAgents,
+  normalizeCodemanAgent,
+  type CodemanStatus,
+} from "../../../packages/host-adapters/src/codeman/wire.ts";
+import { readSseStream } from "../../../packages/host-adapters/src/shared/sse.ts";
 
-export type CodemanMode =
-  | "claude"
-  | "shell"
-  | "opencode"
-  | "codex"
-  | "gemini"
-  | "antigravity"
-  | "pi"
-  | "grok"
-  | "deepseek";
-
-interface CodemanEnvelope<T> {
-  success: boolean;
-  data?: T;
-  error?: string;
-  errorCode?: string;
-}
-
-interface CodemanSession {
+interface CodemanApiSession {
   id: string;
 }
 
 interface CreateSessionData {
-  session: CodemanSession;
+  session: CodemanApiSession;
 }
 
 interface InputData {
@@ -66,7 +64,7 @@ export interface CodemanClientOptions {
 
 export interface CodemanCreateSessionOptions {
   workingDir: string;
-  mode: CodemanMode;
+  mode: CodemanAgentMode;
   name: string;
 }
 
@@ -93,7 +91,7 @@ export class CodemanApiError extends Error {
  * Thin client for Codeman's supported HTTP API.
  *
  * Codeman owns PTYs, tmux persistence, terminal streaming, and provider CLI
- * invocation. Hosted Agents only creates a session, submits a prompt, waits for
+ * invocation. Cloud Agent Fleet only creates a session, submits a prompt, waits for
  * the definitive stop/exit signal, and reads the clean response.
  */
 export class CodemanClient {
@@ -127,7 +125,7 @@ export class CodemanClient {
     }
   }
 
-  async createSession(options: CodemanCreateSessionOptions): Promise<CodemanSession> {
+  async createSession(options: CodemanCreateSessionOptions): Promise<CodemanApiSession> {
     const envelope = await this.request<CreateSessionData>("/api/v1/sessions", {
       method: "POST",
       body: {
@@ -211,7 +209,7 @@ export class CodemanClient {
       body: {
         input: deliveredInput,
         useMux: !raw,
-        clientId: "hosted-agents-connector",
+        clientId: "cloudagentfleet-connector",
         seq: ++this.inputSequence,
       },
     });
@@ -266,59 +264,21 @@ export class CodemanClient {
       signal,
     }).catch(() => undefined);
     if (!response?.ok || !response.body) return;
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-    try {
-      while (!signal.aborted) {
-        const result = await reader.read();
-        if (result.done) return;
-        buffer += decoder.decode(result.value, { stream: true });
-        let boundary = sseBoundary(buffer);
-        while (boundary) {
-          const raw = buffer.slice(0, boundary.index);
-          buffer = buffer.slice(boundary.index + boundary.length);
-          boundary = sseBoundary(buffer);
-          const data = raw.split(/\r?\n/)
-            .filter((line) => line.startsWith("data:"))
-            .map((line) => line.slice(5).trimStart())
-            .join("\n");
-          if (!data) continue;
-          try {
-            const parsed = JSON.parse(data) as Record<string, unknown>;
-            const nestedSession = isRecord(parsed.session) ? parsed.session : undefined;
-            const nestedData = isRecord(parsed.data) ? parsed.data : undefined;
-            const sessionId = String(
-              parsed.sessionId
-              ?? parsed.session_id
-              ?? nestedSession?.id
-              ?? nestedData?.sessionId
-              ?? nestedData?.session_id
-              ?? "",
-            );
-            if (!sessionId) continue;
-            onEvent({
-              sessionId,
-              type: String(
-                parsed.type
-                ?? parsed.event
-                ?? raw.split(/\r?\n/).find((line) => line.startsWith("event:"))
-                  ?.slice("event:".length).trim()
-                ?? "",
-              ).toLowerCase(),
-              data: parsed.data ?? parsed.output ?? parsed.text,
-              createdAt: providerTimestamp(parsed.createdAt ?? parsed.created_at),
-            });
-          } catch {
-            // Ignore malformed provider events.
-          }
-        }
+    await readSseStream(response.body, signal, (frame) => {
+      try {
+        const parsed = JSON.parse(frame.data) as Record<string, unknown>;
+        const sessionId = codemanEventSessionId(parsed);
+        if (!sessionId) return;
+        onEvent({
+          sessionId,
+          type: String(parsed.type ?? parsed.event ?? frame.event ?? "").toLowerCase(),
+          data: parsed.data ?? parsed.output ?? parsed.text,
+          createdAt: codemanTimestamp(parsed.createdAt ?? parsed.created_at),
+        });
+      } catch {
+        // Ignore malformed provider events.
       }
-    } catch {
-      // The connector control path remains usable if the event stream closes.
-    } finally {
-      reader.releaseLock();
-    }
+    });
   }
 
   private async requestData<T>(
@@ -378,8 +338,8 @@ export interface CodemanWorkerRuntimeOptions {
   workspaces: WorkspaceDescriptor[];
   workspacePolicy: WorkspacePolicy;
   send: (message: NodeMessage) => Promise<void>;
-  mode?: CodemanMode;
-  agentProfiles?: CodemanAgentProfile[];
+  mode?: CodemanAgentMode;
+  agentProfiles?: AgentProfile[];
   cursorCommand?: string;
   claudeCommand?: string;
 }
@@ -399,8 +359,8 @@ export class CodemanWorkerRuntime {
   private readonly workspaces: WorkspaceDescriptor[];
   private readonly workspacePolicy: WorkspacePolicy;
   private readonly send: (message: NodeMessage) => Promise<void>;
-  private readonly mode: CodemanMode;
-  private readonly agentProfiles: CodemanAgentProfile[];
+  private readonly mode: CodemanAgentMode;
+  private readonly agentProfiles: AgentProfile[];
   private readonly cursorCommand?: string;
   private readonly claudeCommand?: string;
   private readonly activeJobs = new Map<string, ActiveJob>();
@@ -536,7 +496,7 @@ export class CodemanWorkerRuntime {
       const input = await this.client.sendPrompt(
         session.id,
         job.prompt,
-        `hosted-agents-${this.nodeId}`,
+        `cloudagentfleet-${this.nodeId}`,
         1,
         abortController.signal,
       );
@@ -605,7 +565,7 @@ export class CodemanWorkerRuntime {
       : process.cwd();
     const fragment = input && !trailingSeparator ? basename(input).toLowerCase() : "";
     const directory = resolve(basePath);
-    if (!isAllowedPath(directory, this.workspacePolicy)) return [];
+    if (!isPathAllowed(directory, this.workspacePolicy)) return [];
 
     let entries: Dirent[];
     try {
@@ -627,7 +587,7 @@ export class CodemanWorkerRuntime {
         if (isFileSystemError(error, "ENOENT", "ELOOP")) continue;
         throw error;
       }
-      if (!isAllowedPath(canonicalCandidate, this.workspacePolicy)) continue;
+      if (!isPathAllowed(canonicalCandidate, this.workspacePolicy)) continue;
       suggestions.push({ path: canonicalCandidate, name: entry.name });
       if (suggestions.length >= 50) break;
     }
@@ -639,7 +599,7 @@ export class CodemanWorkerRuntime {
       (candidate) => candidate.canonicalPath === workspacePath,
     );
     if (existing) return this.validateWorkspace(existing);
-    if (!isAllowedPath(workspacePath, this.workspacePolicy)) {
+    if (!isPathAllowed(workspacePath, this.workspacePolicy)) {
       throw new Error(`Workspace is outside the worker policy: ${workspacePath}`);
     }
     return {
@@ -658,24 +618,15 @@ export class CodemanWorkerRuntime {
     if (workspace.providers.codeman !== "ready") {
       throw new Error("Codeman is not ready for the selected workspace");
     }
-    if (!isAllowedPath(workspace.canonicalPath, this.workspacePolicy)) {
+    if (!isPathAllowed(workspace.canonicalPath, this.workspacePolicy)) {
       throw new Error(`Workspace is outside the worker policy: ${workspace.id}`);
     }
     return workspace;
   }
 
-  private toSessionEvent(event: CodemanProviderEvent): CodemanSessionEvent | undefined {
-    const type = event.type;
-    let mapped: CodemanSessionEvent["event"];
-    if (type.includes("terminal") || type.includes("output")) mapped = "output";
-    else if (type.includes("permission") || type.includes("wait")) mapped = "waiting";
-    else if (type.includes("idle")) mapped = "idle";
-    else if (type.includes("fail") || type.includes("error")) mapped = "failed";
-    else if (type.includes("complete")) mapped = "completed";
-    else if (type.includes("exit") || type.includes("delet") || type.includes("stop")) mapped = "stopped";
-    else if (type.includes("start") || type.includes("run")) mapped = "started";
-    else if (type.includes("create")) mapped = "created";
-    else return undefined;
+  private toSessionEvent(event: CodemanProviderEvent): HostSessionEvent | undefined {
+    const mapped = codemanEventKind(event.type);
+    if (!mapped) return undefined;
     return {
       instanceId: this.instanceId,
       sessionId: event.sessionId,
@@ -705,21 +656,22 @@ function requiredInteger(value: unknown, field: string): number {
   return value;
 }
 
-function isAgentProfile(value: unknown): value is { mode: CodemanMode; name: string } {
-  if (!isRecord(value)) return false;
-  const modes: CodemanMode[] = [
-    "claude", "shell", "opencode", "codex", "gemini", "antigravity", "pi", "grok", "deepseek",
-  ];
-  return typeof value.name === "string" && modes.includes(value.mode as CodemanMode);
+function isAgentProfile(
+  value: unknown,
+): value is { id: string; mode: CodemanAgentMode; name: string } {
+  return isRecord(value)
+    && typeof value.id === "string"
+    && typeof value.name === "string"
+    && isCodemanAgentMode(value.mode);
 }
 
 /** Stable launch list: raw Shell CLI first, configured Codeman mode, then status/local profiles. */
 export function mergeLaunchAgents(input: {
-  mode: CodemanMode;
+  mode: CodemanAgentMode;
   statusAgents?: unknown[];
-  localProfiles?: CodemanAgentProfile[];
-}): CodemanAgentProfile[] {
-  const ordered: CodemanAgentProfile[] = [
+  localProfiles?: AgentProfile[];
+}): AgentProfile[] {
+  const ordered: AgentProfile[] = [
     {
       id: "shell",
       name: "Shell (raw CLI)",
@@ -730,93 +682,19 @@ export function mergeLaunchAgents(input: {
   if (input.mode !== "shell") {
     ordered.push({
       id: input.mode,
-      name: agentDisplayName(input.mode, input.mode),
+      name: codemanAgentName(input.mode, input.mode),
       mode: input.mode,
       ready: true,
     });
   }
   for (const raw of input.statusAgents ?? []) {
-    const agent = normalizeStatusAgent(raw);
+    const agent = normalizeCodemanAgent(raw);
     if (agent) ordered.push(agent);
   }
   for (const profile of input.localProfiles ?? []) {
     ordered.push(profile);
   }
-  return dedupeAgentsById(ordered);
-}
-
-function agentDisplayName(id: string, mode: string): string {
-  if (id === "shell" || mode === "shell" && id === "shell") return "Shell (raw CLI)";
-  if (id === "claude" && mode === "claude") return "Claude Code";
-  if (id === "claude-code") return "Claude Code CLI";
-  if (id === "cursor-agent") return "Cursor Agent CLI";
-  if (id === mode) {
-    return mode === "claude" ? "Claude Code" : mode;
-  }
-  return id;
-}
-
-function normalizeStatusAgent(raw: unknown): CodemanAgentProfile | undefined {
-  const modes: CodemanMode[] = [
-    "claude", "shell", "opencode", "codex", "gemini", "antigravity", "pi", "grok", "deepseek",
-  ];
-  if (typeof raw === "string") {
-    if (!modes.includes(raw as CodemanMode)) return undefined;
-    const mode = raw as CodemanMode;
-    return {
-      id: mode,
-      name: agentDisplayName(mode, mode),
-      mode,
-      ready: true,
-    };
-  }
-  if (!isRecord(raw)) return undefined;
-  const modeRaw = String(raw.mode ?? raw.id ?? "shell");
-  const mode = (modes.includes(modeRaw as CodemanMode) ? modeRaw : "shell") as CodemanMode;
-  const id = String(raw.id ?? mode);
-  // Skip opaque Codeman capability strings that collapsed into duplicate shell entries.
-  if (mode === "shell" && id !== "shell" && !String(raw.name ?? "").trim()) return undefined;
-  return {
-    id,
-    name: String(raw.name ?? agentDisplayName(id, mode)),
-    mode,
-    ready: raw.ready !== false && raw.available !== false,
-  };
-}
-
-function dedupeAgentsById(agents: CodemanAgentProfile[]): CodemanAgentProfile[] {
-  const seen = new Set<string>();
-  const result: CodemanAgentProfile[] = [];
-  for (const agent of agents) {
-    if (seen.has(agent.id)) continue;
-    seen.add(agent.id);
-    result.push(agent);
-  }
-  return result;
-}
-
-function isAllowedPath(path: string, policy: WorkspacePolicy): boolean {
-  if (policy.mode === "system") return true;
-  const normalizedPath = normalizePath(path);
-  return policy.roots.some((root) => {
-    const normalizedRoot = normalizePath(root);
-    return !normalizedRoot
-      || normalizedPath === normalizedRoot
-      || normalizedPath.startsWith(`${normalizedRoot}/`);
-  });
-}
-
-function normalizePath(path: string): string {
-  const segments: string[] = [];
-  for (const segment of path.replaceAll("\\", "/").split("/")) {
-    if (!segment || segment === ".") continue;
-    if (segment === "..") {
-      segments.pop();
-    } else {
-      segments.push(segment);
-    }
-  }
-  return segments.join("/").toLowerCase();
+  return dedupeAgents(ordered);
 }
 
 function isFileSystemError(error: unknown, ...codes: string[]): boolean {
@@ -838,25 +716,4 @@ function delay(milliseconds: number, signal: AbortSignal): Promise<void> {
       { once: true },
     );
   });
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function sseBoundary(value: string): { index: number; length: number } | undefined {
-  const lineFeed = value.indexOf("\n\n");
-  const carriageReturn = value.indexOf("\r\n\r\n");
-  if (lineFeed < 0 && carriageReturn < 0) return undefined;
-  if (lineFeed < 0) return { index: carriageReturn, length: 4 };
-  if (carriageReturn < 0 || lineFeed < carriageReturn) {
-    return { index: lineFeed, length: 2 };
-  }
-  return { index: carriageReturn, length: 4 };
-}
-
-function providerTimestamp(value: unknown): string {
-  if (typeof value === "string" && !Number.isNaN(Date.parse(value))) return value;
-  if (typeof value === "number" && Number.isFinite(value)) return new Date(value).toISOString();
-  return new Date().toISOString();
 }

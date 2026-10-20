@@ -22,11 +22,11 @@
   };
 
   const TERMINAL_THEME = {
-    background: "#090c10",
-    foreground: "#d7dee7",
-    cursor: "#a7f3d0",
-    cursorAccent: "#090c10",
-    selectionBackground: "#334155",
+    background: "#0a0a0a",
+    foreground: "#d4d4d4",
+    cursor: "#d4d4d4",
+    cursorAccent: "#0a0a0a",
+    selectionBackground: "#404040",
     black: "#20262e",
     red: "#ff6b6b",
     green: "#4ade80",
@@ -45,10 +45,28 @@
     brightWhite: "#ffffff",
   };
 
+  /** Instances advertise what the Hub can do with them; the UI never checks backend names. */
+  function hasFeature(instance, feature) {
+    return Array.isArray(instance?.features) && instance.features.includes(feature);
+  }
+
+  function backendLabel(backends, instance) {
+    return backends.find((backend) => backend.backend === instance?.backend)?.label || instance?.backend || "Host";
+  }
+
+  function connectionLabel(instance) {
+    return instance.connectionMode === "connector"
+      ? "Connected through the Worker connector"
+      : "Reached directly over Tailscale";
+  }
+
   function csrfToken() {
-    const match = document.cookie.match(/(?:^|;\s*)hosted_agents_csrf=([^;]+)/);
+    const match = document.cookie.match(/(?:^|;\s*)cloudagentfleet_csrf=([^;]+)/);
     return match ? decodeURIComponent(match[1]) : "";
   }
+
+  /** Hub-owned routes; everything else on this origin may belong to a selected host. */
+  const FLEET = "/_fleet";
 
   function api(path, options) {
     const request = { ...(options || {}) };
@@ -57,7 +75,7 @@
       request.body = JSON.stringify(request.body);
     }
     const csrf = csrfToken();
-    return fetch(path, {
+    return fetch(`${FLEET}${path}`, {
       ...request,
       credentials: "same-origin",
       headers: {
@@ -87,6 +105,54 @@
       hour: "numeric",
       minute: "2-digit",
     }).format(date);
+  }
+
+  /** "5m ago" style age for sidebar rows. */
+  function timeAgo(value) {
+    const time = new Date(value).getTime();
+    if (Number.isNaN(time)) return "";
+    const seconds = Math.max(0, Math.round((Date.now() - time) / 1000));
+    if (seconds < 60) return "just now";
+    if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+    if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
+    return `${Math.floor(seconds / 86400)}d ago`;
+  }
+
+  /** Sessions that have ended stay listed only on request. */
+  const ENDED_STATUSES = new Set(["completed", "failed", "stopped"]);
+  const LIVE_SESSIONS_SHOWN = 3;
+  const RECENT_SESSIONS_SHOWN = 5;
+  const MACHINES_SHOWN = 6;
+
+  const GUIDE_URL = "https://github.com/hirenf14/cloudagentfleet/blob/master/docs/GETTING-STARTED.md";
+
+  /** Per-browser conveniences (guide hidden, host UI opened); never required state. */
+  function readLocal(key) {
+    try {
+      return window.localStorage.getItem(`cloudagentfleet.${key}`);
+    } catch {
+      return null;
+    }
+  }
+
+  function writeLocal(key, value) {
+    try {
+      window.localStorage.setItem(`cloudagentfleet.${key}`, value);
+    } catch {
+      // Storage blocked: the guide simply shows again next time.
+    }
+  }
+
+  function byLastActivity(left, right) {
+    return new Date(right.lastEventAt || right.createdAt).getTime()
+      - new Date(left.lastEventAt || left.createdAt).getTime();
+  }
+
+  function instanceSummary(label, instanceSessions) {
+    const live = instanceSessions.filter((session) => !ENDED_STATUSES.has(session.status)).length;
+    return instanceSessions.length === 0
+      ? `${label} · no sessions`
+      : `${label} · ${live} active · ${instanceSessions.length} total`;
   }
 
   function normalizeTerminalText(value) {
@@ -154,7 +220,6 @@
     return h(
       "div",
       { className: "empty-state" },
-      h("div", { className: "empty-state__icon", "aria-hidden": "true" }, "◇"),
       h("h2", null, title),
       children && h("p", null, children),
       action,
@@ -172,6 +237,63 @@
     const [streamStatus, setStreamStatus] = useState("connecting");
     const [showCreate, setShowCreate] = useState(false);
     const [refreshing, setRefreshing] = useState(false);
+    const [backends, setBackends] = useState([]);
+    // A host UI shown inside the dashboard (an iframe on the host-UI origin).
+    const [embeddedInstanceId, setEmbeddedInstanceId] = useState(null);
+    // Instances whose every live session, or whose ended sessions, are listed.
+    const [expandedLive, setExpandedLive] = useState(() => new Set());
+    const [expandedEnded, setExpandedEnded] = useState(() => new Set());
+    const [query, setQuery] = useState("");
+    const searchRef = useRef(null);
+    const [onboarding, setOnboarding] = useState(null);
+    const [showGuide, setShowGuide] = useState(false);
+    const [guideHidden, setGuideHidden] = useState(() => readLocal("guideHidden") === "1");
+    const [openedHostUi, setOpenedHostUi] = useState(() => readLocal("openedHostUi") === "1");
+    const [showAddMachine, setShowAddMachine] = useState(false);
+    const [showHelp, setShowHelp] = useState(false);
+    const [showAllMachines, setShowAllMachines] = useState(false);
+    // Machine id -> open (true) or closed (false), when the user toggled it.
+    const [machineOpen, setMachineOpen] = useState(() => new Map());
+    const [hostUiOrigin, setHostUiOrigin] = useState(null);
+
+    useEffect(() => {
+      api("/api/fleet/onboarding")
+        .then((data) => setOnboarding(data))
+        .catch(() => setOnboarding(null));
+    }, []);
+
+    // "/" or Ctrl/⌘+K: search. "?": help. Not while typing or in a terminal.
+    useEffect(() => {
+      const onKey = (event) => {
+        const target = event.target;
+        const typing = target instanceof HTMLElement
+          && (target.closest("input, textarea, select, [contenteditable=true], .xterm") !== null);
+        if ((event.key === "k" && (event.ctrlKey || event.metaKey)) || (event.key === "/" && !typing)) {
+          event.preventDefault();
+          searchRef.current?.focus();
+        } else if (event.key === "?" && !typing) {
+          event.preventDefault();
+          setShowHelp(true);
+        } else if (event.key === "Escape") {
+          setShowHelp(false);
+          setShowAddMachine(false);
+        }
+      };
+      window.addEventListener("keydown", onKey);
+      return () => window.removeEventListener("keydown", onKey);
+    }, []);
+
+    useEffect(() => {
+      api("/api/fleet/origins")
+        .then((data) => setHostUiOrigin(data.hostUiOrigin || null))
+        .catch(() => setHostUiOrigin(null));
+    }, []);
+
+    useEffect(() => {
+      api("/api/backends")
+        .then((data) => setBackends(data.backends || []))
+        .catch(() => setBackends([]));
+    }, []);
 
     const refresh = useCallback(async (quiet = false) => {
       if (!quiet) setLoading(true);
@@ -179,14 +301,19 @@
       try {
         const instanceData = await api("/api/instances");
         const nextInstances = instanceData.instances || [];
-        const sessionResponses = await Promise.all(
-          nextInstances.map((instance) =>
-            api(`/api/instances/${encodeURIComponent(instance.id)}/sessions`),
-          ),
+        // One unreachable host (for example a Worker that went offline) must not
+        // blank the whole fleet: load each instance on its own and keep the
+        // last-known sessions for any that fail.
+        const sessionInstances = nextInstances.filter((instance) => hasFeature(instance, "sessions"));
+        const sessionResults = await Promise.allSettled(
+          sessionInstances.map((instance) => api(`/api/instances/${encodeURIComponent(instance.id)}/sessions`)),
         );
-        const nextSessions = sessionResponses.flatMap((result) => result.sessions || []);
         setInstances(nextInstances);
-        setSessions(nextSessions);
+        setSessions((previous) => sessionResults.flatMap((result, index) => (
+          result.status === "fulfilled"
+            ? result.value.sessions || []
+            : previous.filter((session) => session.instanceId === sessionInstances[index].id)
+        )));
         setSelectedInstanceId((current) =>
           current && nextInstances.some((instance) => instance.id === current)
             ? current
@@ -211,7 +338,7 @@
     }, [refresh]);
 
     useEffect(() => {
-      const events = new EventSource("/api/events");
+      const events = new EventSource(`${FLEET}/api/events`);
       let refreshTimer = null;
       const reload = () => {
         if (refreshTimer !== null) return;
@@ -247,17 +374,27 @@
     const selectedSession = sessions.find(
       (session) => `${session.instanceId}/${session.id}` === selectedSessionKey,
     ) || null;
+    const embeddedInstance = !selectedSession && hostUiOrigin && selectedInstance
+      && selectedInstance.id === embeddedInstanceId && hasFeature(selectedInstance, "native-ui-proxy")
+      ? selectedInstance
+      : null;
 
+    // Open the most recent session once, on first load; after that the operator's
+    // choice (including an instance overview with no session open) sticks.
+    const autoSelectedSession = useRef(false);
     useEffect(() => {
-      if (!selectedSessionKey && sessions[0]) {
-        setSelectedSessionKey(`${sessions[0].instanceId}/${sessions[0].id}`);
+      if (!loading && !autoSelectedSession.current) {
+        autoSelectedSession.current = true;
+        if (!selectedSessionKey && sessions[0]) {
+          setSelectedSessionKey(`${sessions[0].instanceId}/${sessions[0].id}`);
+        }
       }
       if (selectedSessionKey && !sessions.some(
         (session) => `${session.instanceId}/${session.id}` === selectedSessionKey,
       )) {
         setSelectedSessionKey(null);
       }
-    }, [sessions, selectedSessionKey]);
+    }, [loading, sessions, selectedSessionKey]);
 
     const sessionsByInstance = useMemo(() => {
       const groups = new Map();
@@ -266,8 +403,140 @@
         if (!groups.has(session.instanceId)) groups.set(session.instanceId, []);
         groups.get(session.instanceId).push(session);
       }
+      for (const group of groups.values()) group.sort(byLastActivity);
       return groups;
     }, [instances, sessions]);
+    const recentSessions = useMemo(
+      () => [...sessions].sort(byLastActivity).slice(0, RECENT_SESSIONS_SHOWN),
+      [sessions],
+    );
+    const instanceLabels = useMemo(
+      () => new Map(instances.map((instance) => [instance.id, instance.label])),
+      [instances],
+    );
+    const toggle = (setter, id) => setter((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+    const sessionKey = (session) => `${session.instanceId}/${session.id}`;
+    const sessionRow = (session, context) => h(
+      "button",
+      {
+        className: `session-row ${selectedSessionKey === sessionKey(session) ? "session-row--selected" : ""}`,
+        key: sessionKey(session),
+        title: `${session.title} · ${session.agent.name} · ${STATUS_LABELS[session.status] || session.status}`,
+        onClick: () => {
+          setSelectedInstanceId(session.instanceId);
+          setSelectedSessionKey(sessionKey(session));
+          setEmbeddedInstanceId(null);
+        },
+      },
+      h("span", { className: `session-row__indicator session-row__indicator--${session.status}` }),
+      h(
+        "span",
+        { className: "session-row__copy" },
+        h("span", { className: "session-row__title" }, session.title),
+        context && h("span", { className: "session-row__context" }, context),
+      ),
+      session.needsInput
+        ? h("span", { className: "needs-input-dot", title: "Needs input" })
+        : h("span", { className: "session-row__age" }, timeAgo(session.lastEventAt || session.createdAt)),
+    );
+    // Under each machine: live sessions first (capped), ended ones folded,
+    // and the selected session always visible.
+    const instanceSessionRows = (instanceId) => {
+      const all = sessionsByInstance.get(instanceId) || [];
+      const live = all.filter((session) => !ENDED_STATUSES.has(session.status));
+      const ended = all.filter((session) => ENDED_STATUSES.has(session.status));
+      const showAllLive = expandedLive.has(instanceId);
+      const showEnded = expandedEnded.has(instanceId);
+      const shownLive = showAllLive ? live : live.slice(0, LIVE_SESSIONS_SHOWN);
+      const hiddenSelected = [...live.slice(shownLive.length), ...(showEnded ? [] : ended)]
+        .filter((session) => selectedSessionKey === sessionKey(session));
+      return [
+        ...shownLive.map((session) => sessionRow(session)),
+        ...hiddenSelected.map((session) => sessionRow(session)),
+        live.length > LIVE_SESSIONS_SHOWN && h(
+          "button",
+          { className: "session-toggle", key: "more", onClick: () => toggle(setExpandedLive, instanceId) },
+          showAllLive ? "Show fewer" : `Show ${live.length - LIVE_SESSIONS_SHOWN} more`,
+        ),
+        ended.length > 0 && h(
+          "button",
+          {
+            className: "session-toggle",
+            key: "ended",
+            "aria-expanded": showEnded,
+            onClick: () => toggle(setExpandedEnded, instanceId),
+          },
+          `${showEnded ? "▾" : "▸"} ${ended.length} ended`,
+        ),
+        ...(showEnded ? ended.map((session) => sessionRow(session)) : []),
+      ];
+    };
+
+    // Search shows every match, uncapped; otherwise machines and sessions are capped.
+    const needle = query.trim().toLowerCase();
+    const sessionMatches = (session) => !needle
+      || session.title.toLowerCase().includes(needle)
+      || session.agent.name.toLowerCase().includes(needle);
+    const machineMatches = (instance) => !needle
+      || instance.label.toLowerCase().includes(needle)
+      || (sessionsByInstance.get(instance.id) || []).some(sessionMatches);
+    const orderedMachines = [...instances]
+      .filter(machineMatches)
+      .sort((left, right) => Number(right.status === "online") - Number(left.status === "online"));
+    const cappedMachines = needle || showAllMachines ? orderedMachines : orderedMachines.slice(0, MACHINES_SHOWN);
+    const shownMachines = cappedMachines.some((instance) => instance.id === selectedInstanceId)
+      ? cappedMachines
+      : [...cappedMachines, ...orderedMachines.filter((instance) => instance.id === selectedInstanceId)];
+    const isMachineOpen = (instance) => {
+      if (needle) return true;
+      if (machineOpen.has(instance.id)) return machineOpen.get(instance.id);
+      const live = (sessionsByInstance.get(instance.id) || []).some((session) => !ENDED_STATUSES.has(session.status));
+      return instance.id === selectedInstanceId || live;
+    };
+    const toggleMachine = (instance) => setMachineOpen((current) => new Map(current).set(instance.id, !isMachineOpen(instance)));
+    const machineSessionRows = (instanceId) => needle
+      ? (sessionsByInstance.get(instanceId) || []).filter(sessionMatches).map((session) => sessionRow(session))
+      : instanceSessionRows(instanceId);
+
+    const guideSteps = [
+      { id: "hub", done: true, title: "Run the Hub", detail: "Done: you are signed in to it." },
+      {
+        id: "reach",
+        done: Boolean(onboarding?.reachableBeyondThisMachine),
+        title: "Reach it from your other devices",
+        detail: "Publish the Hub privately on your tailnet. On the Hub machine run:",
+        command: "cloudagentfleet hub serve",
+      },
+      {
+        id: "machine",
+        done: instances.length > 0,
+        title: "Add a machine",
+        detail: "Install the Worker on any machine whose agents you want here; it can be this one.",
+        action: { label: "Add machine", onClick: () => setShowAddMachine(true) },
+      },
+      {
+        id: "use",
+        done: sessions.length > 0 || openedHostUi,
+        title: "Start a session or open a machine's own UI",
+        detail: "Pick a machine on the left, then use Start a session or Open … UI.",
+      },
+    ];
+    const guideDone = guideSteps.filter((step) => step.done).length;
+    const guideComplete = guideDone === guideSteps.length;
+    const showGuideView = showGuide || (!loading && instances.length === 0);
+
+    async function signOut() {
+      try {
+        await api("/api/auth/logout", { method: "POST" });
+      } finally {
+        window.location.reload();
+      }
+    }
 
     async function stopSession() {
       if (!selectedSession || !selectedInstance) return;
@@ -297,107 +566,266 @@
       }
     }
 
+    const onlineCount = instances.filter((instance) => instance.status === "online").length;
+    const selectedSessions = selectedInstance ? sessionsByInstance.get(selectedInstance.id) || [] : [];
+    const selectedLive = selectedSessions.filter((session) => !ENDED_STATUSES.has(session.status));
+    const selectedEnded = selectedSessions.filter((session) => ENDED_STATUSES.has(session.status)).slice(0, 5);
+    const openHostUi = () => {
+      setOpenedHostUi(true);
+      writeLocal("openedHostUi", "1");
+      if (hasFeature(selectedInstance, "native-ui-proxy") && hostUiOrigin) {
+        setEmbeddedInstanceId(selectedInstance.id);
+      } else if (hasFeature(selectedInstance, "native-ui-proxy")) {
+        window.open(`${FLEET}/api/fleet/select/${encodeURIComponent(selectedInstance.id)}`, "_blank", "noopener");
+      } else if (hasFeature(selectedInstance, "native-ui-link") && selectedInstance.launchUrl) {
+        window.open(selectedInstance.launchUrl, "_blank", "noopener,noreferrer");
+      }
+    };
+    const checkHealth = async () => {
+      try {
+        await api(`/api/instances/${encodeURIComponent(selectedInstance.id)}/health`, { method: "POST" });
+        await refresh(true);
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : "Unable to check instance health");
+      }
+    };
+    const homeSessionLink = (session) => h(
+      "button",
+      {
+        className: "home-item",
+        key: sessionKey(session),
+        onClick: () => setSelectedSessionKey(sessionKey(session)),
+      },
+      h("span", { className: "home-item__title" }, session.title),
+      h("span", { className: "home-item__meta" }, `${session.agent.name} · ${STATUS_LABELS[session.status] || session.status} · ${timeAgo(session.lastEventAt || session.createdAt)}`),
+    );
+
+    const instanceHome = selectedInstance && h(
+      "section",
+      { className: "instance-overview" },
+      h(
+        "div",
+        { className: "instance-overview__title" },
+        h("h2", null, selectedInstance.label),
+        h(StatusBadge, { status: selectedInstance.status }),
+      ),
+      h("p", { className: "instance-overview__meta" }, `${backendLabel(backends, selectedInstance)} · ${connectionLabel(selectedInstance)}`),
+      // The Hub mediates (and policy-checks) sessions only through the sessions feature.
+      !hasFeature(selectedInstance, "sessions") && h(
+        "p",
+        { className: "policy-note", role: "note" },
+        "This host's own UI is not mediated by the Hub: folder policy is not enforced there, and anyone signed in to it has full shell access.",
+      ),
+      h("span", { className: "home-label" }, "Start"),
+      h(
+        "div",
+        { className: "overview-actions" },
+        h(
+          "button",
+          {
+            className: "home-action",
+            onClick: () => setShowCreate(true),
+            disabled: selectedInstance.status !== "online" || !hasFeature(selectedInstance, "sessions"),
+          },
+          selectedInstance.status === "online" ? "Start a session" : "Instance unavailable",
+        ),
+        hasFeature(selectedInstance, "sessions") && h(
+          "span",
+          { className: "home-hint" },
+          "Runs an agent (or a plain shell) in one of this machine's workspaces; you watch and type here.",
+        ),
+        h(
+          "button",
+          {
+            className: "home-action",
+            onClick: openHostUi,
+            disabled: !hasFeature(selectedInstance, "native-ui-proxy")
+              && !(hasFeature(selectedInstance, "native-ui-link") && selectedInstance.launchUrl),
+            title: hasFeature(selectedInstance, "native-ui-proxy")
+              ? `Open ${backendLabel(backends, selectedInstance)}'s own UI for this host here, through the Hub.`
+              : hasFeature(selectedInstance, "native-ui-link")
+                ? `Open ${backendLabel(backends, selectedInstance)} in a new tab (signs in separately)`
+                : "This host's UI is not available through the Hub",
+          },
+          `Open ${backendLabel(backends, selectedInstance)} UI`,
+        ),
+        (hasFeature(selectedInstance, "native-ui-proxy") || hasFeature(selectedInstance, "native-ui-link")) && h(
+          "span",
+          { className: "home-hint" },
+          `${backendLabel(backends, selectedInstance)}'s own interface for this machine, inside the dashboard.`,
+        ),
+        h("button", { className: "home-action", onClick: checkHealth }, "Check health"),
+        h("span", { className: "home-hint" }, "Asks the machine whether it is reachable right now."),
+      ),
+      selectedLive.length > 0 && h("span", { className: "home-label" }, "Continue"),
+      selectedLive.map(homeSessionLink),
+      selectedEnded.length > 0 && h("span", { className: "home-label" }, "Recent"),
+      selectedEnded.map(homeSessionLink),
+      h("span", { className: "home-label" }, "Details"),
+      h(
+        "dl",
+        { className: "overview-grid" },
+        h("div", null, h("dt", null, "Workspaces"), h("dd", null, selectedInstance.workspaces.length)),
+        h("div", null, h("dt", null, "Agents ready"), h("dd", null, selectedInstance.agents.filter((agent) => agent.ready).length)),
+        h("div", null, h("dt", null, "Last seen"), h("dd", null, formatTime(selectedInstance.lastSeenAt))),
+      ),
+    );
+
     return h(
       "div",
-      { className: "app-shell" },
+      { className: `app-shell ${embeddedInstance ? "app-shell--embedded" : ""}` },
       h(
-        "header",
-        { className: "topbar" },
+        "aside",
+        { className: "sidebar", "aria-label": "Fleet machines and sessions" },
         h(
           "div",
-          { className: "brand" },
+          { className: "sidebar__brand" },
           h("span", { className: "brand__mark", "aria-hidden": "true" }, "✦"),
-          h("div", null, h("strong", null, "Codeman Fleet"), h("span", null, "Multi-host Hub")),
+          h("strong", null, "Cloud Agent Fleet"),
+          h("span", {
+            className: `connection-state__dot connection-state__dot--${streamStatus}`,
+            title: streamStatus === "live" ? "Live updates" : "Reconnecting…",
+            "aria-label": streamStatus === "live" ? "Live updates" : "Reconnecting",
+            role: "status",
+          }),
+        ),
+        h(
+          "label",
+          { className: "sidebar__search" },
+          h("span", { className: "sidebar__search-icon", "aria-hidden": "true" }, "⌕"),
+          h("input", {
+            type: "search",
+            placeholder: "Search",
+            ref: searchRef,
+            value: query,
+            onChange: (event) => setQuery(event.target.value),
+            "aria-label": "Search machines and sessions",
+          }),
+        ),
+        loading
+          ? h("div", { className: "skeleton-list", "aria-label": "Loading instances" }, h("span"), h("span"), h("span"))
+          : instances.length === 0
+            ? h(EmptyState, { title: "No machines yet" }, "Follow Getting started to connect your first one.")
+            : h(
+              "nav",
+              { className: "instance-list" },
+              !needle && recentSessions.length > 0 && h(
+                "section",
+                { className: "sidebar-section", "aria-label": "Recent sessions" },
+                h("span", { className: "sidebar-section__title" }, "Recent"),
+                recentSessions.map((session) => sessionRow(session, instanceLabels.get(session.instanceId) || session.instanceId)),
+              ),
+              h(
+                "section",
+                { className: "sidebar-section", "aria-label": "Machines" },
+                h(
+                  "span",
+                  { className: "sidebar-section__title" },
+                  "Machines",
+                  h(
+                    "span",
+                    { className: "sidebar-section__tools" },
+                    h("span", { className: "sidebar-section__count" }, `${onlineCount}/${instances.length} online`),
+                    h("button", {
+                      className: "sidebar-section__add",
+                      onClick: () => setShowAddMachine(true),
+                      "aria-label": "Add machine",
+                      title: "Add machine",
+                    }, "+"),
+                  ),
+                ),
+                orderedMachines.length === 0 && h("p", { className: "sidebar-empty" }, "No matches"),
+                shownMachines.map((instance) => {
+                  const instanceSessions = sessionsByInstance.get(instance.id) || [];
+                  const live = instanceSessions.filter((session) => !ENDED_STATUSES.has(session.status)).length;
+                  const open = isMachineOpen(instance);
+                  return h(
+                    "div",
+                    { className: "instance-group", key: instance.id },
+                    h(
+                      "div",
+                      { className: `instance-row ${selectedInstanceId === instance.id && !selectedSession ? "instance-row--selected" : ""}` },
+                      instanceSessions.length > 0
+                        ? h(
+                          "button",
+                          {
+                            className: "instance-row__toggle",
+                            "aria-expanded": open,
+                            "aria-label": `${open ? "Hide" : "Show"} sessions of ${instance.label}`,
+                            onClick: () => toggleMachine(instance),
+                          },
+                          open ? "▾" : "▸",
+                        )
+                        : h("span", { className: "instance-row__toggle instance-row__toggle--empty", "aria-hidden": "true" }),
+                      h(
+                        "button",
+                        {
+                          className: "instance-card",
+                          title: instanceSummary(backendLabel(backends, instance), instanceSessions),
+                          onClick: () => {
+                            // Show this instance's overview, not a session from another instance.
+                            setSelectedInstanceId(instance.id);
+                            setSelectedSessionKey(null);
+                            setEmbeddedInstanceId(null);
+                            setShowGuide(false);
+                          },
+                          "aria-pressed": selectedInstanceId === instance.id,
+                        },
+                        h(StatusDot, { status: instance.status }),
+                        h("span", { className: "instance-card__copy" }, instance.label),
+                        live > 0 && h("span", { className: "instance-card__count", title: `${live} active` }, live),
+                      ),
+                    ),
+                    open && machineSessionRows(instance.id),
+                  );
+                }),
+                !needle && orderedMachines.length > MACHINES_SHOWN && h(
+                  "button",
+                  { className: "session-toggle session-toggle--machines", onClick: () => setShowAllMachines((value) => !value) },
+                  showAllMachines ? "Show fewer machines" : `Show all ${orderedMachines.length} machines`,
+                ),
+              ),
+            ),
+        !guideComplete && !guideHidden && h(
+          "button",
+          {
+            className: `sidebar__guide ${showGuideView ? "sidebar__guide--active" : ""}`,
+            onClick: () => {
+              setShowGuide(true);
+              setSelectedSessionKey(null);
+              setEmbeddedInstanceId(null);
+            },
+          },
+          h("span", null, "Getting started"),
+          h("span", { className: "sidebar__guide-progress" }, `${guideDone}/${guideSteps.length}`),
         ),
         h(
           "div",
-          { className: "connection-state", "aria-live": "polite" },
-          h("span", { className: `connection-state__dot connection-state__dot--${streamStatus}` }),
-          streamStatus === "live" ? "Live updates" : "Reconnecting…",
-          refreshing && h("span", { className: "refresh-label" }, " · Refreshing"),
+          { className: "sidebar__footer" },
+          h("span", null, `${onlineCount} online · ${sessions.length} sessions`, refreshing ? " · syncing" : ""),
+          h("button", { className: "sidebar__signout", onClick: () => setShowHelp(true), "aria-label": "Help", title: "Help (?)" }, "?"),
+          h("button", { className: "sidebar__signout", onClick: () => void signOut() }, "Sign out"),
         ),
-      ),
-      error && h(
-        "div",
-        { className: "alert", role: "alert" },
-        h("strong", null, "Couldn’t update the fleet"),
-        h("span", null, error),
-        h("button", { className: "button button--quiet", onClick: () => void refresh() }, "Try again"),
       ),
       h(
-        "div",
-        { className: "workspace-layout" },
-        h(
-          "aside",
-          { className: "sidebar", "aria-label": "Fleet instances and sessions" },
-          h(
-            "div",
-            { className: "sidebar__heading" },
-            h("div", null, h("span", { className: "eyebrow" }, "Fleet"), h("h1", null, "Instances")),
-            h(
-              "span",
-              { className: "count-pill", "aria-label": `${instances.length} instances` },
-              instances.length,
-            ),
-          ),
-          loading
-            ? h("div", { className: "skeleton-list", "aria-label": "Loading instances" }, h("span"), h("span"), h("span"))
-            : instances.length === 0
-              ? h(EmptyState, { title: "No instances yet" }, "Connect a Codeman host to see it here.")
-              : h(
-                "nav",
-                { className: "instance-list" },
-                instances.map((instance) => h(
-                  "div",
-                  { className: "instance-group", key: instance.id },
-                  h(
-                    "button",
-                    {
-                      className: `instance-card ${selectedInstanceId === instance.id ? "instance-card--selected" : ""}`,
-                      onClick: () => setSelectedInstanceId(instance.id),
-                      "aria-pressed": selectedInstanceId === instance.id,
-                    },
-                    h(StatusDot, { status: instance.status }),
-                    h(
-                      "span",
-                      { className: "instance-card__copy" },
-                      h("strong", null, instance.label),
-                      h("small", null, `${(sessionsByInstance.get(instance.id) || []).length} sessions`),
-                    ),
-                    h("span", { className: "instance-card__chevron", "aria-hidden": "true" }, "›"),
-                  ),
-                  (sessionsByInstance.get(instance.id) || []).map((session) => h(
-                    "button",
-                    {
-                      className: `session-row ${selectedSessionKey === `${session.instanceId}/${session.id}` ? "session-row--selected" : ""}`,
-                      key: session.id,
-                      onClick: () => {
-                        setSelectedInstanceId(instance.id);
-                        setSelectedSessionKey(`${session.instanceId}/${session.id}`);
-                      },
-                    },
-                    h("span", { className: `session-row__indicator session-row__indicator--${session.status}` }),
-                    h(
-                      "span",
-                      { className: "session-row__copy" },
-                      h("strong", null, session.title),
-                      h("small", null, `${session.agent.name} · ${shortId(session.id)} · ${STATUS_LABELS[session.status] || session.status}`),
-                    ),
-                    session.needsInput && h("span", { className: "needs-input-dot", title: "Needs input" }),
-                  )),
-                )),
-              ),
-          h(
-            "div",
-            { className: "sidebar__footer" },
-            h("span", null, `${instances.filter((instance) => instance.status === "online").length} online`),
-            h("span", null, `${sessions.length} total sessions`),
-          ),
+        "main",
+        { className: `main-content ${embeddedInstance ? "main-content--embedded" : ""}` },
+        error && h(
+          "div",
+          { className: "alert", role: "alert" },
+          h("strong", null, "Couldn’t update the fleet"),
+          h("span", null, error),
+          h("button", { className: "button button--quiet", onClick: () => void refresh() }, "Try again"),
         ),
-        h(
-          "main",
-          { className: "main-content" },
-          selectedSession
+        embeddedInstance
+          ? h(HostUiFrame, {
+            key: embeddedInstance.id,
+            instance: embeddedInstance,
+            label: backendLabel(backends, embeddedInstance),
+            src: `${hostUiOrigin}/_fleet/select/${encodeURIComponent(embeddedInstance.id)}`,
+            onClose: () => setEmbeddedInstanceId(null),
+          })
+          : selectedSession
             ? h(
               SessionDetail,
               {
@@ -411,86 +839,36 @@
                 setError,
               },
             )
-            : h(
-              "section",
-              { className: "welcome-panel" },
-              h(
-                "div",
-                { className: "welcome-panel__content" },
-                h("span", { className: "eyebrow" }, "Control plane"),
-                h("h2", null, "Operate every Codeman host from one place."),
-                h("p", null, "Choose an instance to inspect its work, or start a new session in a ready workspace."),
-                h(
-                  "button",
-                  {
-                    className: "button button--primary",
-                    onClick: () => setShowCreate(true),
-                    disabled: !selectedInstance,
-                  },
-                  "Start a session",
-                ),
-              ),
-              h("div", { className: "welcome-panel__orb", "aria-hidden": "true" }, "✦"),
-            ),
-          selectedInstance && !selectedSession && h(
-            "section",
-            { className: "instance-overview" },
-            h("span", { className: "eyebrow" }, "Selected instance"),
-            h("div", { className: "instance-overview__title" }, h("h2", null, selectedInstance.label), h(StatusBadge, { status: selectedInstance.status })),
-            h("p", null, selectedInstance.endpoint || "Connected through worker connector"),
-            h(
-              "div",
-              { className: "overview-grid" },
-              h("div", null, h("span", null, "Workspaces"), h("strong", null, selectedInstance.workspaces.length)),
-              h("div", null, h("span", null, "Agents ready"), h("strong", null, selectedInstance.agents.filter((agent) => agent.ready).length)),
-              h("div", null, h("span", null, "Last seen"), h("strong", null, formatTime(selectedInstance.lastSeenAt))),
-            ),
-            h(
-              "div",
-              { className: "overview-actions" },
-              h(
-                "button",
-                {
-                  className: "button button--quiet",
-                  onClick: () => {
-                    if (selectedInstance.connectionMode === "tailscale-url") {
-                      window.location.assign(
-                        `/api/fleet/select/${encodeURIComponent(selectedInstance.id)}`,
-                      );
-                    }
-                  },
-                  disabled: selectedInstance.connectionMode !== "tailscale-url",
-                  title: selectedInstance.connectionMode === "tailscale-url"
-                    ? "Open Codeman's native UI for this host. Use Fleet dashboard in the top bar to return."
-                    : "Native Codeman UI requires a Tailscale Codeman host",
+            : showGuideView
+              ? h(GettingStarted, {
+                steps: guideSteps,
+                done: guideDone,
+                hidden: guideHidden,
+                onHide: () => {
+                  setGuideHidden(true);
+                  writeLocal("guideHidden", "1");
+                  setShowGuide(false);
                 },
-                "Open Codeman UI",
-              ),
-              h(
-                "button",
-                { className: "button button--quiet", onClick: async () => {
-                  try {
-                    await api(`/api/instances/${encodeURIComponent(selectedInstance.id)}/health`, { method: "POST" });
-                    await refresh(true);
-                  } catch (cause) {
-                    setError(cause instanceof Error ? cause.message : "Unable to check instance health");
-                  }
-                } },
-                "Check health",
-              ),
-              h(
-                "button",
-                { className: "button button--primary", onClick: () => setShowCreate(true), disabled: selectedInstance.status !== "online" },
-                selectedInstance.status === "online" ? "Start a session" : "Instance unavailable",
-              ),
-            ),
-          ),
-        ),
+                onClose: instances.length > 0 ? () => setShowGuide(false) : undefined,
+              })
+              : instanceHome,
       ),
+      showAddMachine && h(AddMachineDialog, { onboarding, onClose: () => setShowAddMachine(false) }),
+      showHelp && h(HelpDialog, {
+        onClose: () => setShowHelp(false),
+        onShowGuide: () => {
+          setShowHelp(false);
+          setGuideHidden(false);
+          writeLocal("guideHidden", "0");
+          setShowGuide(true);
+          setSelectedSessionKey(null);
+          setEmbeddedInstanceId(null);
+        },
+      }),
       showCreate && h(
         CreateSessionDialog,
         {
-          instances,
+          instances: instances.filter((instance) => hasFeature(instance, "sessions")),
           preferredInstanceId: selectedInstanceId,
           onClose: () => setShowCreate(false),
           onCreated: async (session) => {
@@ -502,6 +880,308 @@
           setError,
         },
       ),
+    );
+  }
+
+  /** A command with a copy button. */
+  function CopyLine({ text }) {
+    const [copied, setCopied] = useState(false);
+    return h(
+      "div",
+      { className: "copy-line" },
+      h("code", null, text),
+      h("button", {
+        className: "copy-line__button",
+        onClick: async () => {
+          try {
+            await navigator.clipboard.writeText(text);
+            setCopied(true);
+            setTimeout(() => setCopied(false), 1500);
+          } catch {
+            setCopied(false);
+          }
+        },
+        "aria-label": `Copy ${text}`,
+      }, copied ? "Copied" : "Copy"),
+    );
+  }
+
+  /** First-run guide; each step checks itself off from the fleet's state. */
+  function GettingStarted({ steps, done, onHide, onClose }) {
+    return h(
+      "section",
+      { className: "guide", "aria-label": "Getting started" },
+      h("h2", null, "Getting started"),
+      h(
+        "p",
+        { className: "instance-overview__meta" },
+        `${done} of ${steps.length} done · a Hub (this dashboard) and a Worker on each machine you want to reach`,
+      ),
+      h(
+        "ol",
+        { className: "guide__steps" },
+        steps.map((step) => h(
+          "li",
+          { key: step.id, className: `guide-step ${step.done ? "guide-step--done" : ""}` },
+          h("span", { className: "guide-step__check", "aria-hidden": "true" }, step.done ? "✓" : ""),
+          h(
+            "div",
+            { className: "guide-step__body" },
+            h("strong", null, step.title, step.done && h("span", { className: "visually-hidden" }, " (done)")),
+            !step.done && h("p", null, step.detail),
+            !step.done && step.command && h(CopyLine, { text: step.command }),
+            !step.done && step.action && h("button", { className: "button", onClick: step.action.onClick }, step.action.label),
+          ),
+        )),
+      ),
+      h(
+        "div",
+        { className: "guide__footer" },
+        h("a", { href: GUIDE_URL, target: "_blank", rel: "noopener noreferrer" }, "Read the full guide"),
+        onClose && h("button", { className: "home-action", onClick: onClose }, "Back to machines"),
+        h("button", { className: "home-action", onClick: onHide }, "Hide this guide"),
+      ),
+    );
+  }
+
+  const RELEASE_DOWNLOAD = "https://github.com/hirenf14/cloudagentfleet/releases/latest/download";
+  // Release archives are built on each platform's standard runner.
+  const ARCHIVE_PLATFORM = { windows: "win32-x64", macos: "darwin-arm64", linux: "linux-x64" };
+
+  function detectOs() {
+    const platform = `${navigator.userAgentData?.platform || navigator.platform || ""} ${navigator.userAgent}`.toLowerCase();
+    if (platform.includes("win")) return "windows";
+    if (platform.includes("mac")) return "macos";
+    return "linux";
+  }
+
+  /**
+   * The commands for one install. Every install is standalone: the archive
+   * carries its own Node, and `init` installs whatever the machine offers.
+   */
+  function installSteps({ target, os, method }) {
+    // The Hub install already contains the Worker: nothing to add, just
+    // rerun init there and say yes to running a Worker.
+    if (target === "hub-machine") {
+      const hubFolder = `cloudagentfleet-hub-${ARCHIVE_PLATFORM[os]}`;
+      const command = method === "npm"
+        ? "cloudagentfleet init"
+        : os === "windows"
+          ? `$HOME\\cloudagentfleet\\${hubFolder}\\cloudagentfleet.cmd init`
+          : `~/cloudagentfleet/${hubFolder}/cloudagentfleet init`;
+      return {
+        commands: [command],
+        note: [
+          "The Hub install includes the Worker, so there is nothing new to install.",
+          method === "npm" ? "" : "Use the folder you extracted the Hub into.",
+          "Answer yes to \"Also run a Worker on this machine\"; the Hub keeps its settings and data.",
+        ].filter(Boolean).join(" "),
+      };
+    }
+    if (method === "npm") {
+      return { commands: ["npm install --global @cloudagentfleet/worker", "cloudagentfleet init"] };
+    }
+    const asset = `cloudagentfleet-worker-${ARCHIVE_PLATFORM[os]}`;
+    const url = `${RELEASE_DOWNLOAD}/${asset}.tar.gz`;
+    const commands = os === "windows"
+      ? [
+        "mkdir -Force $HOME\\cloudagentfleet; cd $HOME\\cloudagentfleet",
+        `curl.exe -fsSLO ${url}`,
+        `tar -xzf ${asset}.tar.gz`,
+        `.\\${asset}\\cloudagentfleet.cmd init`,
+      ]
+      : [
+        "mkdir -p ~/cloudagentfleet && cd ~/cloudagentfleet",
+        `curl -fsSLO ${url}`,
+        `tar -xzf ${asset}.tar.gz`,
+        `./${asset}/cloudagentfleet init`,
+      ];
+    return {
+      commands,
+      note: [
+        "Keep this folder: the services run from it. Node.js is included.",
+        os === "windows" ? "Run these in PowerShell (not inside WSL)." : "",
+        os === "macos" ? "This archive is for Apple silicon; on an Intel Mac use npm." : "",
+      ].filter(Boolean).join(" "),
+    };
+  }
+
+  function Segmented({ label, value, options, onChange }) {
+    return h(
+      "div",
+      { className: "segmented", role: "radiogroup", "aria-label": label },
+      options.map(([id, text]) => h(
+        "button",
+        {
+          key: id,
+          role: "radio",
+          "aria-checked": value === id,
+          className: `segmented__option ${value === id ? "segmented__option--active" : ""}`,
+          onClick: () => onChange(id),
+        },
+        text,
+      )),
+    );
+  }
+
+  /** Every way to add a machine, with this Hub's address; the token stays on the Hub machine. */
+  function AddMachineDialog({ onboarding, onClose }) {
+    const hubUrl = onboarding?.hubUrl || window.location.origin;
+    const [target, setTarget] = useState("other");
+    const [os, setOs] = useState(detectOs);
+    const [method, setMethod] = useState("archive");
+    const { commands, note } = installSteps({ target, os, method });
+    return h(
+      "div",
+      { className: "dialog-backdrop", role: "presentation", onMouseDown: (event) => event.target === event.currentTarget && onClose() },
+      h(
+        "section",
+        { className: "dialog dialog--wide", role: "dialog", "aria-modal": "true", "aria-labelledby": "add-machine-title" },
+        h(
+          "div",
+          { className: "dialog__header" },
+          h("h2", { id: "add-machine-title" }, "Add a machine"),
+          h("button", { className: "icon-button", onClick: onClose, "aria-label": "Close dialog" }, "×"),
+        ),
+        h(
+          "div",
+          { className: "dialog__body" },
+          h("span", { className: "home-label" }, "Which machine"),
+          h(Segmented, {
+            label: "Which machine",
+            value: target,
+            onChange: setTarget,
+            options: [["other", "Another machine"], ["hub-machine", "This Hub's machine"]],
+          }),
+          h("span", { className: "home-label" }, "Its system"),
+          h(Segmented, {
+            label: "Its system",
+            value: os,
+            onChange: setOs,
+            options: [["windows", "Windows"], ["macos", "macOS"], ["linux", "Linux"]],
+          }),
+          h("span", { className: "home-label" }, "Install with"),
+          h(Segmented, {
+            label: "Install with",
+            value: method,
+            onChange: setMethod,
+            options: [["archive", "Download (nothing else needed)"], ["npm", "npm (Node.js 22.6+)"]],
+          }),
+          h("span", { className: "home-label" }, "Run on that machine"),
+          h("div", { className: "copy-lines" }, commands.map((line) => h(CopyLine, { key: line, text: line }))),
+          note && h("p", { className: "dialog__note" }, note),
+          h("span", { className: "home-label" }, "init then asks what the machine offers: one or both"),
+          h(
+            "dl",
+            { className: "help-terms" },
+            h("dt", null, "Codeman"),
+            h("dd", null, "Agent sessions in terminals: start, watch, and type into them from here. Light; good for many agents at once. Runs in WSL on Windows."),
+            h("dt", null, "Open WebUI Computer"),
+            h("dd", null, "A full workspace: files, editor, terminal, app previews, and agent chat, inside the dashboard."),
+          ),
+          h("p", { className: "dialog__note" }, "It also offers Claude Code and Cursor's agent CLI, installs what you pick in one go, and runs everything as services."),
+          target === "other" && h("span", { className: "home-label" }, "And asks for"),
+          target === "other" && h(
+            "dl",
+            { className: "dialog__facts" },
+            h("dt", null, "Hub URL"),
+            h("dd", null, h(CopyLine, { text: hubUrl })),
+            h("dt", null, "Worker token"),
+            h(
+              "dd",
+              null,
+              h("p", { className: "dialog__note" }, "On this Hub's machine, run:"),
+              h(CopyLine, { text: "cloudagentfleet hub token" }),
+              onboarding?.workerTokenPath && h("p", { className: "dialog__note" }, `It is stored there in ${onboarding.workerTokenPath}.`),
+            ),
+          ),
+          target === "other" && !onboarding?.reachableBeyondThisMachine && h(
+            "p",
+            { className: "policy-note" },
+            "This Hub is only reachable on its own machine. To add other machines, run cloudagentfleet hub serve on it first (Tailscale), then use the address it prints.",
+          ),
+          h("p", { className: "dialog__note" }, "The machine appears on the left within a few seconds of init finishing. "),
+          h("a", { className: "dialog__link", href: GUIDE_URL, target: "_blank", rel: "noopener noreferrer" }, "Full guide, including starting a new Hub"),
+        ),
+      ),
+    );
+  }
+
+  /** Short, plain explanations and shortcuts. */
+  function HelpDialog({ onClose, onShowGuide }) {
+    const term = (name, text) => [h("dt", { key: `${name}-t` }, name), h("dd", { key: `${name}-d` }, text)];
+    return h(
+      "div",
+      { className: "dialog-backdrop", role: "presentation", onMouseDown: (event) => event.target === event.currentTarget && onClose() },
+      h(
+        "section",
+        { className: "dialog dialog--wide", role: "dialog", "aria-modal": "true", "aria-labelledby": "help-title" },
+        h(
+          "div",
+          { className: "dialog__header" },
+          h("h2", { id: "help-title" }, "Help"),
+          h("button", { className: "icon-button", onClick: onClose, "aria-label": "Close dialog" }, "×"),
+        ),
+        h(
+          "div",
+          { className: "dialog__body" },
+          h("span", { className: "home-label" }, "The parts"),
+          h("dl", { className: "help-terms" },
+            ...term("Hub", "This dashboard. It keeps the list of machines and connects you to them; run one per fleet."),
+            ...term("Worker", "A small service on each machine. It connects out to the Hub, so the machine needs no open ports."),
+            ...term("Codeman", "Runs agent sessions in terminals. Start them here, watch them, and type into them."),
+            ...term("Open WebUI Computer", "A full workspace on the machine: files, editor, terminal, previews, and agent chat. Opens inside the dashboard."),
+            ...term("Session", "One agent (or shell) working in one workspace on one machine."),
+          ),
+          h("span", { className: "home-label" }, "Shortcuts"),
+          h("dl", { className: "help-terms" },
+            ...term(h("span", null, h("kbd", null, "/"), " or ", h("kbd", null, "Ctrl"), "+", h("kbd", null, "K")), "Search machines and sessions"),
+            ...term(h("kbd", null, "?"), "This help"),
+            ...term(h("kbd", null, "Esc"), "Close a dialog"),
+          ),
+          h(
+            "div",
+            { className: "guide__footer" },
+            h("button", { className: "home-action", onClick: onShowGuide }, "Show the getting-started guide"),
+            h("a", { href: GUIDE_URL, target: "_blank", rel: "noopener noreferrer" }, "Read the full guide"),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /**
+   * A host's own UI inside the dashboard. The frame runs on the host-UI origin,
+   * so the host UI still cannot read or drive the Hub API; the bar sits outside
+   * the frame and never covers the host's own UI or branding.
+   */
+  function HostUiFrame({ instance, label, src, onClose }) {
+    return h(
+      "section",
+      { className: "host-frame", "aria-label": `${label} for ${instance.label}` },
+      h(
+        "div",
+        { className: "host-frame__bar" },
+        h("button", { className: "button button--quiet", onClick: onClose }, "‹ Overview"),
+        h(
+          "span",
+          { className: "host-frame__title" },
+          h(StatusDot, { status: instance.status }),
+          h("strong", null, instance.label),
+          h("small", null, label),
+        ),
+        h(
+          "button",
+          { className: "button button--quiet", onClick: () => window.open(src, "_blank", "noopener") },
+          "Open in new tab",
+        ),
+      ),
+      h("iframe", {
+        className: "host-frame__view",
+        src,
+        title: `${label} for ${instance.label}`,
+        allow: "clipboard-read; clipboard-write; microphone; fullscreen",
+      }),
     );
   }
 
@@ -708,8 +1388,8 @@
         h("div", { className: "session-meta" },
           h(StatusBadge, { status: session.status }),
           h("span", null, session.agent.name),
-          h("span", { className: "session-id", title: session.id }, `Session ${shortId(session.id)}`),
-          h("span", null, `Updated ${formatTime(session.lastEventAt)}`),
+          h("span", { className: "session-id", title: session.id }, shortId(session.id)),
+          h("span", null, `updated ${timeAgo(session.lastEventAt)}`),
         ),
         ),
         h("div", { className: "session-detail__actions" },
@@ -732,7 +1412,7 @@
       h(
         "div",
         { className: "terminal", "aria-label": "Session terminal output" },
-        h("div", { className: "terminal__bar" }, h("span", null, "OUTPUT"), h("span", null, session.id)),
+        h("div", { className: "terminal__bar" }, h("span", null, "Terminal"), h("span", null, session.id)),
       h("div", {
         ref: terminalHostRef,
         className: "terminal__output",
@@ -748,7 +1428,9 @@
   }
 
   function CreateSessionDialog({ instances, preferredInstanceId, onClose, onCreated, setError }) {
-    const [instanceId, setInstanceId] = useState(preferredInstanceId || instances[0]?.id || "");
+    const [instanceId, setInstanceId] = useState(
+      instances.some((item) => item.id === preferredInstanceId) ? preferredInstanceId : instances[0]?.id || "",
+    );
     const instance = instances.find((item) => item.id === instanceId);
     const readyWorkspaces = (instance?.workspaces || []).filter((workspace) => workspace.health === "ready");
     const allAgents = instance?.agents || [];
@@ -991,17 +1673,17 @@
             allAgents.length > 0 && h(
               "small",
               null,
-              "Shell (raw CLI) is a bare Codeman terminal. CLI options launch a provider inside that shell.",
+              "Shell (raw CLI) is a bare terminal on the host. CLI options launch a provider inside that shell.",
             ),
           ),
           !readyAgents.length && allAgents.length > 0
-            && h("small", null, "No ready agents yet — check Worker Codeman mode, or install/authenticate a provider CLI."),
+            && h("small", null, "No ready agents yet — check the host's agent configuration, or install/authenticate a provider CLI."),
           !allAgents.length
             && h("small", null, "Run Check health on the instance after the Worker is online."),
           h(
             "label",
             { className: "field" },
-            h("span", null, "Session name <em>optional</em>"),
+            h("span", null, "Session name ", h("em", null, "optional")),
             h("input", { value: title, onChange: (event) => setTitle(event.target.value), placeholder: "e.g. Fix the auth flow", maxLength: 120 }),
           ),
           h(
