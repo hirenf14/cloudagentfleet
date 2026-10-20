@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cloud Agent Fleet</title>
+  <meta name="description" content="One private dashboard for the coding agents on all your machines: start and watch sessions, open full workspaces, from any device on your tailnet.">
+  <meta name="theme-color" content="#000000">
+  <meta property="og:title" content="Cloud Agent Fleet">
+  <meta property="og:description" content="One private dashboard for the coding agents on all your machines.">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="wrap">
+      <a class="brand" href="./"><span class="brand__mark" aria-hidden="true">✦</span>Cloud Agent Fleet</a>
+      <nav class="site-nav" aria-label="Site">
+        <a href="docs/getting-started.html">Docs</a>
+        <a class="optional" href="#install">Install</a>
+        <a class="optional" href="docs/security.html">Security</a>
+        <a href="https://github.com/hirenf14/cloudagentfleet">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div class="wrap">
+        <span class="eyebrow"><span class="dot"></span>Open source · self-hosted · private by default</span>
+        <h1>One private dashboard for the coding agents on all your machines</h1>
+        <p>Start agent sessions, watch them, and type into them. Open each machine's full workspace. From your laptop or phone, without opening a single port.</p>
+        <div class="hero__actions">
+          <a class="button button--primary" href="docs/getting-started.html">Get started</a>
+          <a class="button" href="https://github.com/hirenf14/cloudagentfleet">View on GitHub</a>
+        </div>
+        <div class="hero__command"><span>$</span><code>npm install --global @cloudagentfleet/hub</code></div>
+      </div>
+    </section>
+
+    <section aria-label="Dashboard preview">
+      <div class="wrap">
+        <div class="preview" role="img" aria-label="The dashboard: machines and sessions on the left, a machine's page on the right">
+          <div class="preview__chrome"><i></i><i></i><i></i><span>https://hub.your-tailnet.ts.net/_fleet/</span></div>
+          <div class="preview__body">
+            <div class="preview__side">
+              <div class="preview__brand"><span class="brand__mark">✦</span>Cloud Agent Fleet<span class="live"></span></div>
+              <div class="preview__label">Recent</div>
+              <div class="preview__row"><span class="dot dot--on"></span>Fix flaky auth tests<span class="age">2m ago</span></div>
+              <div class="preview__row"><span class="dot dot--wait"></span>Migrate billing API<span class="age">9m ago</span></div>
+              <div class="preview__row"><span class="dot"></span>Bump dependencies<span class="age">1h ago</span></div>
+              <div class="preview__label">Machines <small>3/3 online</small></div>
+              <div class="preview__row preview__row--machine preview__row--active"><span class="dot dot--on"></span>studio-mac<span class="count">2</span></div>
+              <div class="preview__row preview__row--session"><span class="dot dot--on"></span>Fix flaky auth tests<span class="age">2m</span></div>
+              <div class="preview__row preview__row--session"><span class="dot dot--wait"></span>Migrate billing API<span class="age">9m</span></div>
+              <div class="preview__row preview__row--machine"><span class="dot dot--on"></span>build-server</div>
+              <div class="preview__row preview__row--machine"><span class="dot dot--on"></span>laptop (Open WebUI Computer)</div>
+            </div>
+            <div class="preview__main">
+              <h3>studio-mac</h3>
+              <div class="preview__meta">Codeman · Connected through the Worker connector</div>
+              <div class="preview__section">Start</div>
+              <div class="preview__action">Start a session</div>
+              <div class="preview__hint">Runs an agent in one of this machine's workspaces; you watch and type here.</div>
+              <div class="preview__action">Open Codeman UI</div>
+              <div class="preview__section">Continue</div>
+              <div class="preview__item">Fix flaky auth tests<small>Claude Code · Working · 2m ago</small></div>
+              <div class="preview__item">Migrate billing API<small>Cursor Agent · Needs input · 9m ago</small></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="how">
+      <div class="wrap">
+        <div class="section__head">
+          <h2>How it works</h2>
+          <p>One Hub, one Worker per machine. Each machine offers Codeman, Open WebUI Computer, or both.</p>
+        </div>
+        <div class="flow">
+          <div class="flow__box">
+            <h3>Hub</h3>
+            <p>The dashboard you sign in to. Runs on a server or your main machine, published privately on your tailnet.</p>
+            <ul><li><span class="dot dot--on"></span>Dashboard and sign-in</li><li><span class="dot dot--on"></span>List of machines</li></ul>
+          </div>
+          <div class="flow__arrow">⟵ outbound only ⟶</div>
+          <div class="flow__box">
+            <h3>Worker</h3>
+            <p>A small service on each machine. It connects out to the Hub, so the machine never opens a port.</p>
+            <ul><li><span class="dot dot--on"></span>Keeps the backends running</li><li><span class="dot dot--on"></span>Relays sessions and UIs</li></ul>
+          </div>
+          <div class="flow__arrow">runs</div>
+          <div class="flow__box">
+            <h3>Codeman · Open WebUI Computer</h3>
+            <p>Pick one or both per machine. Your coding agents (Claude Code, Cursor, and others) run inside them.</p>
+            <ul><li><span class="dot dot--on"></span>Codeman: agent sessions in terminals</li><li><span class="dot dot--on"></span>Open WebUI Computer: a full workspace</li></ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="features">
+      <div class="wrap">
+        <div class="section__head">
+          <h2>Everything your agents are doing, in one place</h2>
+          <p>Built for people who run agents on more than one machine and want to check on them from anywhere.</p>
+        </div>
+        <div class="grid">
+          <div class="card"><span class="card__tag">Sessions</span><h3>Start, watch, and type</h3><p>Launch an agent in any approved workspace on any machine and follow its terminal live from the dashboard.</p></div>
+          <div class="card"><span class="card__tag">Workspaces</span><h3>A full workspace, inside</h3><p>Open WebUI Computer's files, editor, terminal, app previews, and agent chat open inside the dashboard, already signed in.</p></div>
+          <div class="card"><span class="card__tag">Machines</span><h3>Windows, macOS, Linux</h3><p>Codeman runs in WSL on Windows and Open WebUI Computer natively, so it works with your Windows folders.</p></div>
+          <div class="card"><span class="card__tag">Network</span><h3>No open ports</h3><p>Workers connect out to the Hub. Reach the Hub over your tailnet with Tailscale Serve; nothing faces the internet.</p></div>
+          <div class="card"><span class="card__tag">Setup</span><h3>One guided pass</h3><p><code>cloudagentfleet init</code> installs what you pick, runs the services, enrolls the machine, and tells you what's next.</p></div>
+          <div class="card"><span class="card__tag">Fleet</span><h3>Calm at any size</h3><p>Search, recent sessions across machines, and a sidebar that folds what's done so busy machines stay readable.</p></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="install">
+      <div class="wrap">
+        <div class="section__head">
+          <h2>Install</h2>
+          <p>Two standalone installs. Downloads include Node.js; npm needs Node.js 22.6 or newer. Then run <code>cloudagentfleet init</code>.</p>
+        </div>
+        <div class="install">
+          <div class="install__card" data-edition="hub">
+            <h3>Hub</h3>
+            <p>On the server or machine that hosts the dashboard. Includes the dashboard, and a Worker if this machine should offer agents too.</p>
+            <div class="tabs" role="tablist" aria-label="Hub install method"></div>
+            <pre class="code"></pre>
+          </div>
+          <div class="install__card" data-edition="worker">
+            <h3>Worker</h3>
+            <p>On each machine whose agents you want to reach. <code>init</code> asks what it offers and connects it to your Hub.</p>
+            <div class="tabs" role="tablist" aria-label="Worker install method"></div>
+            <pre class="code"></pre>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="start">
+      <div class="wrap">
+        <div class="section__head">
+          <h2>Up and running in three steps</h2>
+          <p>The dashboard walks you through the rest with a built-in Getting started checklist.</p>
+        </div>
+        <div class="steps">
+          <div class="step"><h3>Start the Hub</h3><p>Install the Hub and run <code>cloudagentfleet init</code>. It runs as a service, offers Tailscale Serve, and prints your dashboard address and password.</p></div>
+          <div class="step"><h3>Add your machines</h3><p>Install the Worker on each machine and run <code>init</code>. Pick Codeman, Open WebUI Computer, or both, plus any coding agents.</p></div>
+          <div class="step"><h3>Work from anywhere</h3><p>Open the dashboard, pick a machine, and start a session or open its workspace, from any device on your tailnet.</p></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="security">
+      <div class="wrap">
+        <div class="section__head">
+          <h2>Private by design</h2>
+          <p>Your machines, your network, your accounts. <a href="docs/security.html">Read the security model</a>.</p>
+        </div>
+        <div class="grid grid--2">
+          <div class="card"><h3>Loopback Hub, tailnet access</h3><p>The Hub listens on 127.0.0.1. Tailscale Serve publishes it to your tailnet only; restrict it further with ACLs.</p></div>
+          <div class="card"><h3>Isolated machine UIs</h3><p>Each machine's own UI runs on a separate origin, so it cannot use your dashboard session or call the Hub API.</p></div>
+          <div class="card"><h3>Passwords stay on their machine</h3><p>Open WebUI Computer's password never leaves its machine; the Hub only relays a session.</p></div>
+          <div class="card"><h3>Your provider logins</h3><p>Claude, Cursor, and other agents sign in on each machine themselves. Cloud Agent Fleet never handles provider credentials.</p></div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap">
+      <span>Cloud Agent Fleet · open source</span>
+      <span><a href="docs/getting-started.html">Docs</a> · <a href="https://github.com/hirenf14/cloudagentfleet">GitHub</a> · <a href="https://www.npmjs.com/package/@cloudagentfleet/hub">npm</a></span>
+    </div>
+  </footer>
+
+  <script>
+    // Install commands per edition and method; kept in step with docs/GETTING-STARTED.md.
+    const DOWNLOAD = "https://github.com/hirenf14/cloudagentfleet/releases/latest/download";
+    const METHODS = [["npm", "npm"], ["linux", "Linux"], ["macos", "macOS"], ["windows", "Windows"]];
+    const PLATFORM = { linux: "linux-x64", macos: "darwin-arm64", windows: "win32-x64" };
+    function commands(edition, method) {
+      if (method === "npm") return `npm install --global @cloudagentfleet/${edition}\ncloudagentfleet init`;
+      const asset = `cloudagentfleet-${edition}-${PLATFORM[method]}`;
+      if (method === "windows") {
+        return `# PowerShell (not inside WSL)\nmkdir -Force $HOME\\cloudagentfleet; cd $HOME\\cloudagentfleet\ncurl.exe -fsSLO ${DOWNLOAD}/${asset}.tar.gz\ntar -xzf ${asset}.tar.gz\n.\\${asset}\\cloudagentfleet.cmd init`;
+      }
+      return `${method === "macos" ? "# Apple silicon (Intel Macs: use npm)\n" : ""}mkdir -p ~/cloudagentfleet && cd ~/cloudagentfleet\ncurl -fsSLO ${DOWNLOAD}/${asset}.tar.gz\ntar -xzf ${asset}.tar.gz\n./${asset}/cloudagentfleet init`;
+    }
+    const detected = /win/i.test(navigator.platform) ? "windows" : /mac/i.test(navigator.platform) ? "macos" : "linux";
+    for (const card of document.querySelectorAll(".install__card")) {
+      const edition = card.dataset.edition;
+      const tabs = card.querySelector(".tabs");
+      const code = card.querySelector(".code");
+      const show = (method) => {
+        for (const button of tabs.children) button.setAttribute("aria-selected", String(button.dataset.method === method));
+        const text = commands(edition, method);
+        code.innerHTML = "";
+        for (const line of text.split("\n")) {
+          const span = document.createElement("span");
+          if (line.startsWith("#")) span.className = "c";
+          span.textContent = `${line}\n`;
+          code.append(span);
+        }
+        const copy = document.createElement("button");
+        copy.className = "copy";
+        copy.textContent = "Copy";
+        copy.addEventListener("click", async () => {
+          try {
+            await navigator.clipboard.writeText(text.split("\n").filter((line) => !line.startsWith("#")).join("\n"));
+            copy.textContent = "Copied";
+            setTimeout(() => { copy.textContent = "Copy"; }, 1500);
+          } catch {
+            copy.textContent = "Select and copy";
+          }
+        });
+        code.append(copy);
+      };
+      for (const [method, label] of METHODS) {
+        const button = document.createElement("button");
+        button.role = "tab";
+        button.dataset.method = method;
+        button.textContent = label;
+        button.addEventListener("click", () => show(method));
+        tabs.append(button);
+      }
+      show(detected);
+    }
+  </script>
+</body>
+</html>

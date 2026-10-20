@@ -139,6 +139,19 @@ bundles or UI, or include `src/`, `bin/`, TypeScript, tests, or draft UI files.
 `pnpm package:standalone` builds this platform's two archives from
 `dist/cli-bundle/` with a private Node runtime.
 
+## Website and docs site
+
+The site at https://hirenf14.github.io/cloudagentfleet/ is the landing page in
+`site/` plus the docs pages rendered from `docs/*.md` (the list is in
+`scripts/build-site.mjs`). Edit the markdown in `docs/`; the **Pages** workflow
+rebuilds and deploys on every push to `master` that touches `site/` or
+`docs/`. Preview locally:
+
+```bash
+pnpm site:build          # writes site-dist/
+npx serve site-dist      # or any static server
+```
+
 ## Branch and pull request workflow
 
 1. Create a branch from `master` for one focused change.

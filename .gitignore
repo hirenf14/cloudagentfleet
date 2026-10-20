@@ -11,3 +11,4 @@ data/
 coverage/
 .DS_Store
 *.tsbuildinfo
+site-dist/
