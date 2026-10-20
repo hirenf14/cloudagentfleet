@@ -913,12 +913,14 @@ function sendLoginPage(response: ServerResponse, authEnabled: boolean): void {
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Cloud Agent Fleet — Sign in</title>
 <style>
-body{margin:0;min-height:100vh;display:grid;place-items:center;background:#090c10;color:#d7dee7;font:16px system-ui,sans-serif}
-main{width:min(360px,calc(100vw - 48px));padding:28px;border:1px solid #253044;border-radius:14px;background:#111722;box-shadow:0 20px 60px #0008}
-h1{margin:0 0 8px;font-size:22px}p{color:#98a6ba;margin:0 0 22px}
-label{display:grid;gap:8px;color:#b9c5d6}input{padding:12px;border:1px solid #3a465b;border-radius:8px;background:#090c10;color:inherit;font:inherit}
-button{width:100%;margin-top:16px;padding:12px;border:0;border-radius:8px;background:#77e0af;color:#07110d;font:600 15px system-ui;cursor:pointer}
-#error{min-height:20px;margin-top:12px;color:#ff8585}
+body{margin:0;min-height:100vh;display:grid;place-items:center;background:#000;color:#d4d4d4;font:12px/16px Inter,-apple-system,BlinkMacSystemFont,ui-sans-serif,system-ui,"Segoe UI",sans-serif}
+main{width:min(300px,calc(100vw - 48px))}
+h1{margin:0;color:#f5f5f5;font-size:18px;font-weight:500;line-height:28px}p{margin:2px 0 24px;color:#8a8a8a}
+label{display:grid;gap:6px;color:#8a8a8a;font-size:11px}input{height:32px;padding:0 10px;border:1px solid rgb(255 255 255/11%);border-radius:8px;outline:0;background:#000;color:#d4d4d4;font:inherit}
+input:focus{border-color:rgb(255 255 255/28%)}
+button{width:100%;height:32px;margin-top:12px;border:0;border-radius:8px;background:#d4d4d4;color:#000;font:500 12px/16px inherit;font-family:inherit;cursor:pointer}
+button:hover{background:#fff}
+#error{min-height:16px;margin-top:10px;color:#f87171}
 </style></head>
 <body><main><h1>Cloud Agent Fleet</h1><p>Sign in to the private fleet Hub.</p>
 <form id="login"><label>Password<input id="password" type="password" autocomplete="current-password" required autofocus></label>

@@ -61,8 +61,8 @@ export function sendNotice(
   });
   response.end(`<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>Cloud Agent Fleet</title>
-<style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#090c10;color:#d7dee7;font:16px system-ui,sans-serif}
-main{max-width:420px;padding:28px;border:1px solid #253044;border-radius:14px;background:#111722}a{color:#77e0af}</style></head>
+<style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#000;color:#d4d4d4;font:12px/16px Inter,-apple-system,BlinkMacSystemFont,ui-sans-serif,system-ui,"Segoe UI",sans-serif}
+main{max-width:360px;padding:0 24px}p{margin:0 0 10px}a{color:#8a8a8a}a:hover{color:#f5f5f5}</style></head>
 <body><main><p>${escapeHtml(message)}</p><p><a href="${escapeHtml(link.href)}">${escapeHtml(link.label)}</a></p></main></body></html>`);
 }
 

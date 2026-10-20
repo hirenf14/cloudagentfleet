@@ -22,11 +22,11 @@
   };
 
   const TERMINAL_THEME = {
-    background: "#090c10",
-    foreground: "#d7dee7",
-    cursor: "#a7f3d0",
-    cursorAccent: "#090c10",
-    selectionBackground: "#334155",
+    background: "#0a0a0a",
+    foreground: "#d4d4d4",
+    cursor: "#d4d4d4",
+    cursorAccent: "#0a0a0a",
+    selectionBackground: "#404040",
     black: "#20262e",
     red: "#ff6b6b",
     green: "#4ade80",
@@ -122,6 +122,7 @@
   const ENDED_STATUSES = new Set(["completed", "failed", "stopped"]);
   const LIVE_SESSIONS_SHOWN = 3;
   const RECENT_SESSIONS_SHOWN = 5;
+  const MACHINES_SHOWN = 6;
 
   function byLastActivity(left, right) {
     return new Date(right.lastEventAt || right.createdAt).getTime()
@@ -200,7 +201,6 @@
     return h(
       "div",
       { className: "empty-state" },
-      h("div", { className: "empty-state__icon", "aria-hidden": "true" }, "◇"),
       h("h2", null, title),
       children && h("p", null, children),
       action,
@@ -224,6 +224,10 @@
     // Instances whose every live session, or whose ended sessions, are listed.
     const [expandedLive, setExpandedLive] = useState(() => new Set());
     const [expandedEnded, setExpandedEnded] = useState(() => new Set());
+    const [query, setQuery] = useState("");
+    const [showAllMachines, setShowAllMachines] = useState(false);
+    // Machine id -> open (true) or closed (false), when the user toggled it.
+    const [machineOpen, setMachineOpen] = useState(() => new Map());
     const [hostUiOrigin, setHostUiOrigin] = useState(null);
 
     useEffect(() => {
@@ -364,19 +368,28 @@
       return next;
     });
     const sessionKey = (session) => `${session.instanceId}/${session.id}`;
-    const sessionRow = (session, detail) => h(
+    const sessionRow = (session, context) => h(
       "button",
       {
         className: `session-row ${selectedSessionKey === sessionKey(session) ? "session-row--selected" : ""}`,
         key: sessionKey(session),
+        title: `${session.title} · ${session.agent.name} · ${STATUS_LABELS[session.status] || session.status}`,
         onClick: () => {
           setSelectedInstanceId(session.instanceId);
           setSelectedSessionKey(sessionKey(session));
+          setEmbeddedInstanceId(null);
         },
       },
       h("span", { className: `session-row__indicator session-row__indicator--${session.status}` }),
-      h("span", { className: "session-row__copy" }, h("strong", null, session.title), h("small", null, detail)),
-      session.needsInput && h("span", { className: "needs-input-dot", title: "Needs input" }),
+      h(
+        "span",
+        { className: "session-row__copy" },
+        h("span", { className: "session-row__title" }, session.title),
+        context && h("span", { className: "session-row__context" }, context),
+      ),
+      session.needsInput
+        ? h("span", { className: "needs-input-dot", title: "Needs input" })
+        : h("span", { className: "session-row__age" }, timeAgo(session.lastEventAt || session.createdAt)),
     );
     // Under each machine: live sessions first (capped), ended ones folded,
     // and the selected session always visible.
@@ -389,10 +402,9 @@
       const shownLive = showAllLive ? live : live.slice(0, LIVE_SESSIONS_SHOWN);
       const hiddenSelected = [...live.slice(shownLive.length), ...(showEnded ? [] : ended)]
         .filter((session) => selectedSessionKey === sessionKey(session));
-      const detail = (session) => `${session.agent.name} · ${STATUS_LABELS[session.status] || session.status} · ${timeAgo(session.lastEventAt || session.createdAt)}`;
       return [
-        ...shownLive.map((session) => sessionRow(session, detail(session))),
-        ...hiddenSelected.map((session) => sessionRow(session, detail(session))),
+        ...shownLive.map((session) => sessionRow(session)),
+        ...hiddenSelected.map((session) => sessionRow(session)),
         live.length > LIVE_SESSIONS_SHOWN && h(
           "button",
           { className: "session-toggle", key: "more", onClick: () => toggle(setExpandedLive, instanceId) },
@@ -408,9 +420,43 @@
           },
           `${showEnded ? "▾" : "▸"} ${ended.length} ended`,
         ),
-        ...(showEnded ? ended.map((session) => sessionRow(session, detail(session))) : []),
+        ...(showEnded ? ended.map((session) => sessionRow(session)) : []),
       ];
     };
+
+    // Search shows every match, uncapped; otherwise machines and sessions are capped.
+    const needle = query.trim().toLowerCase();
+    const sessionMatches = (session) => !needle
+      || session.title.toLowerCase().includes(needle)
+      || session.agent.name.toLowerCase().includes(needle);
+    const machineMatches = (instance) => !needle
+      || instance.label.toLowerCase().includes(needle)
+      || (sessionsByInstance.get(instance.id) || []).some(sessionMatches);
+    const orderedMachines = [...instances]
+      .filter(machineMatches)
+      .sort((left, right) => Number(right.status === "online") - Number(left.status === "online"));
+    const cappedMachines = needle || showAllMachines ? orderedMachines : orderedMachines.slice(0, MACHINES_SHOWN);
+    const shownMachines = cappedMachines.some((instance) => instance.id === selectedInstanceId)
+      ? cappedMachines
+      : [...cappedMachines, ...orderedMachines.filter((instance) => instance.id === selectedInstanceId)];
+    const isMachineOpen = (instance) => {
+      if (needle) return true;
+      if (machineOpen.has(instance.id)) return machineOpen.get(instance.id);
+      const live = (sessionsByInstance.get(instance.id) || []).some((session) => !ENDED_STATUSES.has(session.status));
+      return instance.id === selectedInstanceId || live;
+    };
+    const toggleMachine = (instance) => setMachineOpen((current) => new Map(current).set(instance.id, !isMachineOpen(instance)));
+    const machineSessionRows = (instanceId) => needle
+      ? (sessionsByInstance.get(instanceId) || []).filter(sessionMatches).map((session) => sessionRow(session))
+      : instanceSessionRows(instanceId);
+
+    async function signOut() {
+      try {
+        await api("/api/auth/logout", { method: "POST" });
+      } finally {
+        window.location.reload();
+      }
+    }
 
     async function stopSession() {
       if (!selectedSession || !selectedInstance) return;
@@ -440,112 +486,227 @@
       }
     }
 
+    const onlineCount = instances.filter((instance) => instance.status === "online").length;
+    const selectedSessions = selectedInstance ? sessionsByInstance.get(selectedInstance.id) || [] : [];
+    const selectedLive = selectedSessions.filter((session) => !ENDED_STATUSES.has(session.status));
+    const selectedEnded = selectedSessions.filter((session) => ENDED_STATUSES.has(session.status)).slice(0, 5);
+    const openHostUi = () => {
+      if (hasFeature(selectedInstance, "native-ui-proxy") && hostUiOrigin) {
+        setEmbeddedInstanceId(selectedInstance.id);
+      } else if (hasFeature(selectedInstance, "native-ui-proxy")) {
+        window.open(`${FLEET}/api/fleet/select/${encodeURIComponent(selectedInstance.id)}`, "_blank", "noopener");
+      } else if (hasFeature(selectedInstance, "native-ui-link") && selectedInstance.launchUrl) {
+        window.open(selectedInstance.launchUrl, "_blank", "noopener,noreferrer");
+      }
+    };
+    const checkHealth = async () => {
+      try {
+        await api(`/api/instances/${encodeURIComponent(selectedInstance.id)}/health`, { method: "POST" });
+        await refresh(true);
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : "Unable to check instance health");
+      }
+    };
+    const homeSessionLink = (session) => h(
+      "button",
+      {
+        className: "home-item",
+        key: sessionKey(session),
+        onClick: () => setSelectedSessionKey(sessionKey(session)),
+      },
+      h("span", { className: "home-item__title" }, session.title),
+      h("span", { className: "home-item__meta" }, `${session.agent.name} · ${STATUS_LABELS[session.status] || session.status} · ${timeAgo(session.lastEventAt || session.createdAt)}`),
+    );
+
+    const instanceHome = selectedInstance && h(
+      "section",
+      { className: "instance-overview" },
+      h(
+        "div",
+        { className: "instance-overview__title" },
+        h("h2", null, selectedInstance.label),
+        h(StatusBadge, { status: selectedInstance.status }),
+      ),
+      h("p", { className: "instance-overview__meta" }, `${backendLabel(backends, selectedInstance)} · ${connectionLabel(selectedInstance)}`),
+      // The Hub mediates (and policy-checks) sessions only through the sessions feature.
+      !hasFeature(selectedInstance, "sessions") && h(
+        "p",
+        { className: "policy-note", role: "note" },
+        "This host's own UI is not mediated by the Hub: folder policy is not enforced there, and anyone signed in to it has full shell access.",
+      ),
+      h("span", { className: "home-label" }, "Start"),
+      h(
+        "div",
+        { className: "overview-actions" },
+        h(
+          "button",
+          {
+            className: "home-action",
+            onClick: () => setShowCreate(true),
+            disabled: selectedInstance.status !== "online" || !hasFeature(selectedInstance, "sessions"),
+          },
+          selectedInstance.status === "online" ? "Start a session" : "Instance unavailable",
+        ),
+        h(
+          "button",
+          {
+            className: "home-action",
+            onClick: openHostUi,
+            disabled: !hasFeature(selectedInstance, "native-ui-proxy")
+              && !(hasFeature(selectedInstance, "native-ui-link") && selectedInstance.launchUrl),
+            title: hasFeature(selectedInstance, "native-ui-proxy")
+              ? `Open ${backendLabel(backends, selectedInstance)}'s own UI for this host here, through the Hub.`
+              : hasFeature(selectedInstance, "native-ui-link")
+                ? `Open ${backendLabel(backends, selectedInstance)} in a new tab (signs in separately)`
+                : "This host's UI is not available through the Hub",
+          },
+          `Open ${backendLabel(backends, selectedInstance)} UI`,
+        ),
+        h("button", { className: "home-action", onClick: checkHealth }, "Check health"),
+      ),
+      selectedLive.length > 0 && h("span", { className: "home-label" }, "Continue"),
+      selectedLive.map(homeSessionLink),
+      selectedEnded.length > 0 && h("span", { className: "home-label" }, "Recent"),
+      selectedEnded.map(homeSessionLink),
+      h("span", { className: "home-label" }, "Details"),
+      h(
+        "dl",
+        { className: "overview-grid" },
+        h("div", null, h("dt", null, "Workspaces"), h("dd", null, selectedInstance.workspaces.length)),
+        h("div", null, h("dt", null, "Agents ready"), h("dd", null, selectedInstance.agents.filter((agent) => agent.ready).length)),
+        h("div", null, h("dt", null, "Last seen"), h("dd", null, formatTime(selectedInstance.lastSeenAt))),
+      ),
+    );
+
     return h(
       "div",
-      { className: "app-shell" },
+      { className: `app-shell ${embeddedInstance ? "app-shell--embedded" : ""}` },
       h(
-        "header",
-        { className: "topbar" },
+        "aside",
+        { className: "sidebar", "aria-label": "Fleet machines and sessions" },
         h(
           "div",
-          { className: "brand" },
+          { className: "sidebar__brand" },
           h("span", { className: "brand__mark", "aria-hidden": "true" }, "✦"),
-          h("div", null, h("strong", null, "Cloud Agent Fleet"), h("span", null, "Multi-host Hub")),
+          h("strong", null, "Cloud Agent Fleet"),
+          h("span", {
+            className: `connection-state__dot connection-state__dot--${streamStatus}`,
+            title: streamStatus === "live" ? "Live updates" : "Reconnecting…",
+            "aria-label": streamStatus === "live" ? "Live updates" : "Reconnecting",
+            role: "status",
+          }),
         ),
+        h(
+          "label",
+          { className: "sidebar__search" },
+          h("span", { className: "sidebar__search-icon", "aria-hidden": "true" }, "⌕"),
+          h("input", {
+            type: "search",
+            placeholder: "Search",
+            value: query,
+            onChange: (event) => setQuery(event.target.value),
+            "aria-label": "Search machines and sessions",
+          }),
+        ),
+        loading
+          ? h("div", { className: "skeleton-list", "aria-label": "Loading instances" }, h("span"), h("span"), h("span"))
+          : instances.length === 0
+            ? h(EmptyState, { title: "No machines yet" }, "Enroll a machine to see it here.")
+            : h(
+              "nav",
+              { className: "instance-list" },
+              !needle && recentSessions.length > 0 && h(
+                "section",
+                { className: "sidebar-section", "aria-label": "Recent sessions" },
+                h("span", { className: "sidebar-section__title" }, "Recent"),
+                recentSessions.map((session) => sessionRow(session, instanceLabels.get(session.instanceId) || session.instanceId)),
+              ),
+              h(
+                "section",
+                { className: "sidebar-section", "aria-label": "Machines" },
+                h(
+                  "span",
+                  { className: "sidebar-section__title" },
+                  "Machines",
+                  h("span", { className: "sidebar-section__count" }, `${onlineCount}/${instances.length} online`),
+                ),
+                orderedMachines.length === 0 && h("p", { className: "sidebar-empty" }, "No matches"),
+                shownMachines.map((instance) => {
+                  const instanceSessions = sessionsByInstance.get(instance.id) || [];
+                  const live = instanceSessions.filter((session) => !ENDED_STATUSES.has(session.status)).length;
+                  const open = isMachineOpen(instance);
+                  return h(
+                    "div",
+                    { className: "instance-group", key: instance.id },
+                    h(
+                      "div",
+                      { className: `instance-row ${selectedInstanceId === instance.id && !selectedSession ? "instance-row--selected" : ""}` },
+                      instanceSessions.length > 0
+                        ? h(
+                          "button",
+                          {
+                            className: "instance-row__toggle",
+                            "aria-expanded": open,
+                            "aria-label": `${open ? "Hide" : "Show"} sessions of ${instance.label}`,
+                            onClick: () => toggleMachine(instance),
+                          },
+                          open ? "▾" : "▸",
+                        )
+                        : h("span", { className: "instance-row__toggle instance-row__toggle--empty", "aria-hidden": "true" }),
+                      h(
+                        "button",
+                        {
+                          className: "instance-card",
+                          title: instanceSummary(backendLabel(backends, instance), instanceSessions),
+                          onClick: () => {
+                            // Show this instance's overview, not a session from another instance.
+                            setSelectedInstanceId(instance.id);
+                            setSelectedSessionKey(null);
+                            setEmbeddedInstanceId(null);
+                          },
+                          "aria-pressed": selectedInstanceId === instance.id,
+                        },
+                        h(StatusDot, { status: instance.status }),
+                        h("span", { className: "instance-card__copy" }, instance.label),
+                        live > 0 && h("span", { className: "instance-card__count", title: `${live} active` }, live),
+                      ),
+                    ),
+                    open && machineSessionRows(instance.id),
+                  );
+                }),
+                !needle && orderedMachines.length > MACHINES_SHOWN && h(
+                  "button",
+                  { className: "session-toggle session-toggle--machines", onClick: () => setShowAllMachines((value) => !value) },
+                  showAllMachines ? "Show fewer machines" : `Show all ${orderedMachines.length} machines`,
+                ),
+              ),
+            ),
         h(
           "div",
-          { className: "connection-state", "aria-live": "polite" },
-          h("span", { className: `connection-state__dot connection-state__dot--${streamStatus}` }),
-          streamStatus === "live" ? "Live updates" : "Reconnecting…",
-          refreshing && h("span", { className: "refresh-label" }, " · Refreshing"),
+          { className: "sidebar__footer" },
+          h("span", null, `${onlineCount} online · ${sessions.length} sessions`, refreshing ? " · syncing" : ""),
+          h("button", { className: "sidebar__signout", onClick: () => void signOut() }, "Sign out"),
         ),
-      ),
-      error && h(
-        "div",
-        { className: "alert", role: "alert" },
-        h("strong", null, "Couldn’t update the fleet"),
-        h("span", null, error),
-        h("button", { className: "button button--quiet", onClick: () => void refresh() }, "Try again"),
       ),
       h(
-        "div",
-        { className: `workspace-layout ${embeddedInstance ? "workspace-layout--embedded" : ""}` },
-        h(
-          "aside",
-          { className: "sidebar", "aria-label": "Fleet instances and sessions" },
-          h(
-            "div",
-            { className: "sidebar__heading" },
-            h("div", null, h("span", { className: "eyebrow" }, "Fleet"), h("h1", null, "Instances")),
-            h(
-              "span",
-              { className: "count-pill", "aria-label": `${instances.length} instances` },
-              instances.length,
-            ),
-          ),
-          loading
-            ? h("div", { className: "skeleton-list", "aria-label": "Loading instances" }, h("span"), h("span"), h("span"))
-            : instances.length === 0
-              ? h(EmptyState, { title: "No instances yet" }, "Enroll a machine to see it here.")
-              : h(
-                "nav",
-                { className: "instance-list" },
-                recentSessions.length > 0 && h(
-                  "section",
-                  { className: "sidebar-section", "aria-label": "Recent sessions" },
-                  h("span", { className: "sidebar-section__title" }, "Recent"),
-                  recentSessions.map((session) => sessionRow(
-                    session,
-                    `${instanceLabels.get(session.instanceId) || session.instanceId} · ${STATUS_LABELS[session.status] || session.status} · ${timeAgo(session.lastEventAt || session.createdAt)}`,
-                  )),
-                ),
-                h("span", { className: "sidebar-section__title" }, "Machines"),
-                instances.map((instance) => h(
-                  "div",
-                  { className: "instance-group", key: instance.id },
-                  h(
-                    "button",
-                    {
-                      className: `instance-card ${selectedInstanceId === instance.id ? "instance-card--selected" : ""}`,
-                      onClick: () => {
-                        // Show this instance's overview, not a session from another instance.
-                        setSelectedInstanceId(instance.id);
-                        setSelectedSessionKey(null);
-                        setEmbeddedInstanceId(null);
-                      },
-                      "aria-pressed": selectedInstanceId === instance.id,
-                    },
-                    h(StatusDot, { status: instance.status }),
-                    h(
-                      "span",
-                      { className: "instance-card__copy" },
-                      h("strong", null, instance.label),
-                      h("small", null, instanceSummary(backendLabel(backends, instance), sessionsByInstance.get(instance.id) || [])),
-                    ),
-                    h("span", { className: "instance-card__chevron", "aria-hidden": "true" }, "›"),
-                  ),
-                  instanceSessionRows(instance.id),
-                )),
-              ),
-          h(
-            "div",
-            { className: "sidebar__footer" },
-            h("span", null, `${instances.filter((instance) => instance.status === "online").length} online`),
-            h("span", null, `${sessions.length} total sessions`),
-          ),
+        "main",
+        { className: `main-content ${embeddedInstance ? "main-content--embedded" : ""}` },
+        error && h(
+          "div",
+          { className: "alert", role: "alert" },
+          h("strong", null, "Couldn’t update the fleet"),
+          h("span", null, error),
+          h("button", { className: "button button--quiet", onClick: () => void refresh() }, "Try again"),
         ),
-        h(
-          "main",
-          { className: `main-content ${embeddedInstance ? "main-content--embedded" : ""}` },
-          embeddedInstance
-            ? h(HostUiFrame, {
-              key: embeddedInstance.id,
-              instance: embeddedInstance,
-              label: backendLabel(backends, embeddedInstance),
-              src: `${hostUiOrigin}/_fleet/select/${encodeURIComponent(embeddedInstance.id)}`,
-              onClose: () => setEmbeddedInstanceId(null),
-            })
-            : selectedSession
+        embeddedInstance
+          ? h(HostUiFrame, {
+            key: embeddedInstance.id,
+            instance: embeddedInstance,
+            label: backendLabel(backends, embeddedInstance),
+            src: `${hostUiOrigin}/_fleet/select/${encodeURIComponent(embeddedInstance.id)}`,
+            onClose: () => setEmbeddedInstanceId(null),
+          })
+          : selectedSession
             ? h(
               SessionDetail,
               {
@@ -559,96 +720,12 @@
                 setError,
               },
             )
-            : h(
+            : instanceHome || (!loading && h(
               "section",
-              { className: "welcome-panel" },
-              h(
-                "div",
-                { className: "welcome-panel__content" },
-                h("span", { className: "eyebrow" }, "Control plane"),
-                h("h2", null, "Operate every machine in your fleet from one place."),
-                h("p", null, "Choose an instance to inspect its work, or start a new session in a ready workspace."),
-                h(
-                  "button",
-                  {
-                    className: "button button--primary",
-                    onClick: () => setShowCreate(true),
-                    disabled: !hasFeature(selectedInstance, "sessions"),
-                  },
-                  "Start a session",
-                ),
-              ),
-              h("div", { className: "welcome-panel__orb", "aria-hidden": "true" }, "✦"),
-            ),
-          selectedInstance && !selectedSession && !embeddedInstance && h(
-            "section",
-            { className: "instance-overview" },
-            h("span", { className: "eyebrow" }, "Selected instance"),
-            h("div", { className: "instance-overview__title" }, h("h2", null, selectedInstance.label), h(StatusBadge, { status: selectedInstance.status })),
-            h("p", null, `${backendLabel(backends, selectedInstance)} · ${connectionLabel(selectedInstance)}`),
-            // The Hub mediates (and policy-checks) sessions only through the sessions feature.
-            !hasFeature(selectedInstance, "sessions") && h(
-              "p",
-              { className: "policy-note", role: "note" },
-              "This host's own UI is not mediated by the Hub: folder policy is not enforced there, and anyone signed in to it has full shell access.",
-            ),
-            h(
-              "div",
-              { className: "overview-grid" },
-              h("div", null, h("span", null, "Workspaces"), h("strong", null, selectedInstance.workspaces.length)),
-              h("div", null, h("span", null, "Agents ready"), h("strong", null, selectedInstance.agents.filter((agent) => agent.ready).length)),
-              h("div", null, h("span", null, "Last seen"), h("strong", null, formatTime(selectedInstance.lastSeenAt))),
-            ),
-            h(
-              "div",
-              { className: "overview-actions" },
-              h(
-                "button",
-                {
-                  className: "button button--quiet",
-                  onClick: () => {
-                    if (hasFeature(selectedInstance, "native-ui-proxy") && hostUiOrigin) {
-                      setEmbeddedInstanceId(selectedInstance.id);
-                    } else if (hasFeature(selectedInstance, "native-ui-proxy")) {
-                      window.open(
-                        `${FLEET}/api/fleet/select/${encodeURIComponent(selectedInstance.id)}`,
-                        "_blank",
-                        "noopener",
-                      );
-                    } else if (hasFeature(selectedInstance, "native-ui-link") && selectedInstance.launchUrl) {
-                      window.open(selectedInstance.launchUrl, "_blank", "noopener,noreferrer");
-                    }
-                  },
-                  disabled: !hasFeature(selectedInstance, "native-ui-proxy")
-                    && !(hasFeature(selectedInstance, "native-ui-link") && selectedInstance.launchUrl),
-                  title: hasFeature(selectedInstance, "native-ui-proxy")
-                    ? `Open ${backendLabel(backends, selectedInstance)}'s own UI for this host here, through the Hub.`
-                    : hasFeature(selectedInstance, "native-ui-link")
-                      ? `Open ${backendLabel(backends, selectedInstance)} in a new tab (signs in separately)`
-                      : "This host's UI is not available through the Hub",
-                },
-                `Open ${backendLabel(backends, selectedInstance)} UI`,
-              ),
-              h(
-                "button",
-                { className: "button button--quiet", onClick: async () => {
-                  try {
-                    await api(`/api/instances/${encodeURIComponent(selectedInstance.id)}/health`, { method: "POST" });
-                    await refresh(true);
-                  } catch (cause) {
-                    setError(cause instanceof Error ? cause.message : "Unable to check instance health");
-                  }
-                } },
-                "Check health",
-              ),
-              h(
-                "button",
-                { className: "button button--primary", onClick: () => setShowCreate(true), disabled: selectedInstance.status !== "online" || !hasFeature(selectedInstance, "sessions") },
-                selectedInstance.status === "online" ? "Start a session" : "Instance unavailable",
-              ),
-            ),
-          ),
-        ),
+              { className: "instance-overview" },
+              h("div", { className: "instance-overview__title" }, h("h2", null, "No machines yet")),
+              h("p", { className: "instance-overview__meta" }, "Run cloudagentfleet setup on a machine, then enroll it."),
+            )),
       ),
       showCreate && h(
         CreateSessionDialog,
@@ -684,10 +761,10 @@
         h(
           "span",
           { className: "host-frame__title" },
+          h(StatusDot, { status: instance.status }),
           h("strong", null, instance.label),
-          h("small", null, `${label} · through the Hub`),
+          h("small", null, label),
         ),
-        h(StatusBadge, { status: instance.status }),
         h(
           "button",
           { className: "button button--quiet", onClick: () => window.open(src, "_blank", "noopener") },
@@ -906,8 +983,8 @@
         h("div", { className: "session-meta" },
           h(StatusBadge, { status: session.status }),
           h("span", null, session.agent.name),
-          h("span", { className: "session-id", title: session.id }, `Session ${shortId(session.id)}`),
-          h("span", null, `Updated ${formatTime(session.lastEventAt)}`),
+          h("span", { className: "session-id", title: session.id }, shortId(session.id)),
+          h("span", null, `updated ${timeAgo(session.lastEventAt)}`),
         ),
         ),
         h("div", { className: "session-detail__actions" },
@@ -930,7 +1007,7 @@
       h(
         "div",
         { className: "terminal", "aria-label": "Session terminal output" },
-        h("div", { className: "terminal__bar" }, h("span", null, "OUTPUT"), h("span", null, session.id)),
+        h("div", { className: "terminal__bar" }, h("span", null, "Terminal"), h("span", null, session.id)),
       h("div", {
         ref: terminalHostRef,
         className: "terminal__output",
