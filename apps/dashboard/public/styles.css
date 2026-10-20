@@ -115,6 +115,16 @@ h1, h2, p { margin: 0; }
 .overview-actions { display: flex; flex-wrap: wrap; gap: 9px; }
 
 .session-detail { max-width: 1100px; margin: 0 auto; }
+/* An embedded host UI fills the viewport; the sidebar scrolls on its own. */
+.workspace-layout--embedded { height: calc(100vh - 72px); min-height: 0; overflow: hidden; }
+.workspace-layout--embedded .sidebar { overflow-y: auto; }
+.main-content--embedded { padding: 0; min-height: 0; }
+.host-frame { display: flex; flex-direction: column; height: 100%; }
+.host-frame__bar { display: flex; align-items: center; gap: 12px; padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--panel); }
+.host-frame__title { display: flex; flex-direction: column; min-width: 0; margin-right: auto; }
+.host-frame__title strong, .host-frame__title small { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.host-frame__title small { color: var(--muted); font-size: 11px; }
+.host-frame__view { flex: 1; width: 100%; border: 0; background: #000; }
 .session-detail__header { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; margin-bottom: 26px; }
 .session-detail__actions { display: flex; flex-wrap: wrap; gap: 9px; }
 .breadcrumb { display: block; color: var(--subtle); font-size: 12px; }
@@ -175,6 +185,8 @@ h1, h2, p { margin: 0; }
   .sidebar__footer { padding: 11px 16px; }
   .instance-list { max-height: 29vh; }
   .main-content { padding: 25px 16px 40px; }
+  .workspace-layout--embedded { height: auto; overflow: visible; }
+  .host-frame { height: 80vh; }
   .welcome-panel { margin-top: 15px; padding: 30px 23px; }
   .welcome-panel__orb { display: none; }
   .instance-overview { margin-top: 15px; padding: 22px; }

@@ -96,9 +96,28 @@ backend, upstream cookies outside that allowlist never reach the browser, and
 Hub logout clears the bridged cookies. The proxy and WebSocket relay verify
 upstream TLS certificates for every non-loopback host.
 
-cptr prints a one-time setup token on each start; the Worker writes it to
-`~/.cloudagentfleet/cptr-setup-token` (owner-only), redacts it from
-`cptr.log`, and never prints it to service logs.
+cptr prints a one-time setup token on each start. The Worker uses it to
+create cptr's `fleet` account and keeps that password in
+`~/.cloudagentfleet/cptr-credentials.json` (owner-only); without automatic
+setup it writes the token to `~/.cloudagentfleet/cptr-setup-token`
+(owner-only). The token is redacted from `cptr.log` and never printed to
+service logs.
+
+Hub sign-in to cptr: when a browser signed in to the Hub opens a connector
+cptr without a cptr session, the Hub asks that cptr's own Worker
+(`cptr.session`, accepted only for the Worker's cptr instance) for one. The
+Worker signs in to its loopback cptr and returns only the session token; the
+Hub places it in the browser's per-instance HttpOnly cookie. cptr's password
+never leaves its machine, and anyone signed in to the Hub is signed in to
+cptr, which matches the Hub already gating that host UI. cptr's
+`trusted_header` mode is deliberately not used: through the tunnel every
+request reaches cptr from loopback, so any local process could claim a user.
+
+Framing: the dashboard sends `frame-ancestors 'none'` and `X-Frame-Options:
+DENY`. The host-UI origin may be framed only by itself (cptr frames its own
+previews) and the dashboard, which embeds host UIs; the proxy drops a
+backend's own `X-Frame-Options` and `frame-ancestors`. The embedded host UI
+stays on the host-UI origin, so it still cannot read or drive the Hub API.
 
 A cptr instance enrolled through the Worker connector is reached over a
 byte-stream tunnel on the Worker's outbound connection, so the cptr machine

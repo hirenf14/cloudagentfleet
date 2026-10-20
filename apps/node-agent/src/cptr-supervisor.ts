@@ -3,6 +3,7 @@ import { appendFileSync, chmodSync, existsSync, mkdirSync, writeFileSync } from 
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { envFlagFrom } from "./codeman-supervisor.ts";
+import { completeCptrSetup, cptrCredentialsPath } from "./cptr-session.ts";
 import type { SupervisorHandle } from "./supervisor.ts";
 
 const DEFAULT_READY_TIMEOUT_MS = 60_000;
@@ -20,6 +21,13 @@ export interface CptrSupervisorOptions {
   logPath?: string;
   /** Where the one-time setup token is written (0600); never printed. */
   tokenPath?: string;
+  /**
+   * Complete cptr's first-run setup with a generated `fleet` account (saved
+   * to `credentialsPath`, 0600) so the Hub can sign browsers in. Default on;
+   * `CLOUDAGENTFLEET_CPTR_AUTO_SETUP=false` leaves setup to the operator.
+   */
+  autoSetup?: boolean;
+  credentialsPath?: string;
   readyTimeoutMs?: number;
   pollIntervalMs?: number;
   fetchImpl?: typeof fetch;
@@ -151,6 +159,20 @@ export async function ensureCptr(options: CptrSupervisorOptions = {}): Promise<S
     }
     if (await isCptrReachable(baseUrl, fetchImpl)) {
       log(`Open WebUI Computer ready at ${baseUrl}`);
+      const autoSetup = options.autoSetup ?? envFlagFrom(process.env, "CLOUDAGENTFLEET_CPTR_AUTO_SETUP", true);
+      if (token && autoSetup && await needsSetup(baseUrl, fetchImpl)) {
+        const credentialsPath = options.credentialsPath ?? cptrCredentialsPath();
+        try {
+          const credentials = await completeCptrSetup({ baseUrl, token, credentialsPath, fetchImpl });
+          token = undefined;
+          log(
+            `Created Open WebUI Computer's ${credentials.username} account; the fleet dashboard signs you in. `
+            + `Its password is in ${credentialsPath} (owner-only).`,
+          );
+        } catch (error) {
+          log(`Could not complete Open WebUI Computer setup automatically: ${error instanceof Error ? error.message : error}`);
+        }
+      }
       if (token && await needsSetup(baseUrl, fetchImpl)) {
         writeFileSync(tokenPath, `${token}\n`, { mode: 0o600 });
         chmodSync(tokenPath, 0o600);

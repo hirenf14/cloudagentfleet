@@ -799,3 +799,56 @@ test("a durable Hub generates a Worker token and requires it", async () => {
     rmSync(directory, { recursive: true, force: true });
   }
 });
+
+test("only the dashboard may frame a host UI, and nothing may frame the dashboard", async () => {
+  const upstream = createServer((request, response) => {
+    if (request.url === "/api/health") {
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify({ status: "ok" }));
+      return;
+    }
+    response.writeHead(200, {
+      "content-type": "text/html",
+      "x-frame-options": "DENY",
+      "content-security-policy": "default-src 'self'; frame-ancestors 'none'",
+    });
+    response.end("<html></html>");
+  });
+  await listenHttp(upstream);
+  const app = createControllerServer({ statePath: "", uiPassword: "correct horse battery staple", uiCookieSecure: false });
+  const { baseUrl, hostUrl, close } = await listenBoth(app);
+  try {
+    const dashboard = await fetch(`${baseUrl}/_fleet/`);
+    assert.equal(dashboard.headers.get("content-security-policy"), "frame-ancestors 'none'");
+    assert.equal(dashboard.headers.get("x-frame-options"), "DENY");
+
+    const login = await fetch(`${baseUrl}/_fleet/api/auth/login`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ password: "correct horse battery staple" }),
+    });
+    const setCookie = login.headers.get("set-cookie") ?? "";
+    const hubCookies = `cloudagentfleet_session=${cookieValue(setCookie, "cloudagentfleet_session")}; `
+      + `cloudagentfleet_csrf=${cookieValue(setCookie, "cloudagentfleet_csrf")}`;
+    assert.equal((await fetch(`${baseUrl}/_fleet/api/instances`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: hubCookies, origin: baseUrl },
+      body: JSON.stringify({
+        id: "laptop-cptr",
+        label: "Laptop",
+        backend: "cptr",
+        connectionMode: "tailscale-url",
+        endpoint: `http://127.0.0.1:${(upstream.address() as { port: number }).port}`,
+      }),
+    })).status, 201);
+    const page = await fetch(`${hostUrl}/`, { headers: { cookie: `${hubCookies}; cloudagentfleet_instance=laptop-cptr` } });
+    assert.equal(page.status, 200);
+    assert.equal(page.headers.get("x-frame-options"), null, "the backend's own framing rule is replaced");
+    assert.equal(page.headers.get("content-security-policy"), `default-src 'self'; frame-ancestors 'self' ${baseUrl}`);
+    const notice = await fetch(`${hostUrl}/`);
+    assert.equal(notice.headers.get("content-security-policy"), `frame-ancestors 'self' ${baseUrl}`);
+  } finally {
+    await close();
+    await closeHttp(upstream);
+  }
+});

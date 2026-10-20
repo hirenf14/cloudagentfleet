@@ -92,3 +92,61 @@ test("CptrProxyAdapter bridges only cptr's session cookie and never alters its p
     upstream.close();
   }
 });
+
+test("CptrProxyAdapter signs a Hub browser in to cptr with a session from the Worker", async () => {
+  const upstreamCookies: Array<string | undefined> = [];
+  const upstream = createServer((request, response) => {
+    upstreamCookies.push(request.headers.cookie);
+    response.writeHead(200, { "content-type": "text/html" });
+    response.end("ok");
+  });
+  await new Promise<void>((resolve) => upstream.listen(0, "127.0.0.1", () => resolve()));
+  const port = (upstream.address() as AddressInfo).port;
+  let now = 1_000_000;
+  let signIns = 0;
+  let answer: unknown = { token: "aaa.bbb.ccc", expiresAt: now + 3_600_000 };
+  const adapter = new CptrProxyAdapter({
+    instance: { ...instance, endpoint: `http://127.0.0.1:${port}` },
+    signIn: async () => {
+      signIns += 1;
+      if (answer instanceof Error) throw answer;
+      return answer;
+    },
+    now: () => now,
+  });
+  const hub = createServer((request, response) => void adapter.proxyHttp(request, response));
+  await new Promise<void>((resolve) => hub.listen(0, "127.0.0.1", () => resolve()));
+  const url = `http://127.0.0.1:${(hub.address() as AddressInfo).port}/`;
+  const [browserCookie] = adapter.browserCookieNames;
+  try {
+    const first = await fetch(url);
+    assert.equal(upstreamCookies.at(-1), "cptr_session=aaa.bbb.ccc");
+    assert.deepEqual(first.headers.getSetCookie(), [
+      `${browserCookie}=aaa.bbb.ccc; HttpOnly; Path=/; SameSite=Lax; Max-Age=3600`,
+    ]);
+
+    // A browser that has its cptr cookie keeps using it; another reuses the cached session.
+    const second = await fetch(url, { headers: { cookie: `${browserCookie}=own.jwt.x` } });
+    assert.equal(upstreamCookies.at(-1), "cptr_session=own.jwt.x");
+    assert.deepEqual(second.headers.getSetCookie(), []);
+    await fetch(url);
+    assert.equal(signIns, 1);
+
+    // A failed or malformed sign-in shows cptr's own login, and is not retried at once.
+    now += 3_600_000;
+    answer = { token: "bad; Domain=evil.example", expiresAt: now + 3_600_000 };
+    const refused = await fetch(url);
+    assert.equal(upstreamCookies.at(-1), undefined);
+    assert.deepEqual(refused.headers.getSetCookie(), []);
+    answer = new Error("Worker has no credentials");
+    await fetch(url);
+    assert.equal(signIns, 2, "no retry within the back-off window");
+    now += 61_000;
+    answer = { token: "ddd.eee.fff", expiresAt: now + 3_600_000 };
+    await fetch(url);
+    assert.equal(upstreamCookies.at(-1), "cptr_session=ddd.eee.fff");
+  } finally {
+    hub.close();
+    upstream.close();
+  }
+});

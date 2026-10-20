@@ -18,7 +18,8 @@ export interface ControllerTransportOptions extends NodeAgentConfig {
   heartbeatIntervalMs?: number;
   reconnect?: boolean;
   reconnectDelayMs?: number;
-  connectorInstanceId?: string;
+  /** Instances this Worker serves over the connector (Codeman, and its cptr driver). */
+  connectorInstanceId?: string | readonly string[];
 }
 
 /**
@@ -34,7 +35,7 @@ export class ControllerTransport {
   private readonly heartbeatIntervalMs: number;
   private readonly reconnect: boolean;
   private readonly reconnectDelayMs: number;
-  private readonly connectorInstanceId?: string;
+  private readonly connectorInstanceIds?: ReadonlySet<string>;
   private readonly handledConnectorRequests = new Set<string>();
   private readonly abortController = new AbortController();
   private heartbeatTimer: ReturnType<typeof setInterval> | undefined;
@@ -47,7 +48,9 @@ export class ControllerTransport {
     this.heartbeatIntervalMs = options.heartbeatIntervalMs ?? 15_000;
     this.reconnect = options.reconnect ?? false;
     this.reconnectDelayMs = options.reconnectDelayMs ?? 1_000;
-    this.connectorInstanceId = options.connectorInstanceId;
+    this.connectorInstanceIds = options.connectorInstanceId === undefined
+      ? undefined
+      : new Set(typeof options.connectorInstanceId === "string" ? [options.connectorInstanceId] : options.connectorInstanceId);
   }
 
   async start(
@@ -128,7 +131,7 @@ export class ControllerTransport {
       errorCode: "connector_disabled",
     };
     try {
-      if (this.connectorInstanceId && request.instanceId !== this.connectorInstanceId) {
+      if (this.connectorInstanceIds && !this.connectorInstanceIds.has(request.instanceId)) {
         throw new Error("Connector instance authorization failed");
       }
       if (this.handledConnectorRequests.has(request.requestId)) {

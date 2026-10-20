@@ -191,6 +191,15 @@
     const [showCreate, setShowCreate] = useState(false);
     const [refreshing, setRefreshing] = useState(false);
     const [backends, setBackends] = useState([]);
+    // A host UI shown inside the dashboard (an iframe on the host-UI origin).
+    const [embeddedInstanceId, setEmbeddedInstanceId] = useState(null);
+    const [hostUiOrigin, setHostUiOrigin] = useState(null);
+
+    useEffect(() => {
+      api("/api/fleet/origins")
+        .then((data) => setHostUiOrigin(data.hostUiOrigin || null))
+        .catch(() => setHostUiOrigin(null));
+    }, []);
 
     useEffect(() => {
       api("/api/backends")
@@ -277,6 +286,10 @@
     const selectedSession = sessions.find(
       (session) => `${session.instanceId}/${session.id}` === selectedSessionKey,
     ) || null;
+    const embeddedInstance = !selectedSession && hostUiOrigin && selectedInstance
+      && selectedInstance.id === embeddedInstanceId && hasFeature(selectedInstance, "native-ui-proxy")
+      ? selectedInstance
+      : null;
 
     // Open the most recent session once, on first load; after that the operator's
     // choice (including an instance overview with no session open) sticks.
@@ -362,7 +375,7 @@
       ),
       h(
         "div",
-        { className: "workspace-layout" },
+        { className: `workspace-layout ${embeddedInstance ? "workspace-layout--embedded" : ""}` },
         h(
           "aside",
           { className: "sidebar", "aria-label": "Fleet instances and sessions" },
@@ -394,6 +407,7 @@
                         // Show this instance's overview, not a session from another instance.
                         setSelectedInstanceId(instance.id);
                         setSelectedSessionKey(null);
+                        setEmbeddedInstanceId(null);
                       },
                       "aria-pressed": selectedInstanceId === instance.id,
                     },
@@ -436,8 +450,16 @@
         ),
         h(
           "main",
-          { className: "main-content" },
-          selectedSession
+          { className: `main-content ${embeddedInstance ? "main-content--embedded" : ""}` },
+          embeddedInstance
+            ? h(HostUiFrame, {
+              key: embeddedInstance.id,
+              instance: embeddedInstance,
+              label: backendLabel(backends, embeddedInstance),
+              src: `${hostUiOrigin}/_fleet/select/${encodeURIComponent(embeddedInstance.id)}`,
+              onClose: () => setEmbeddedInstanceId(null),
+            })
+            : selectedSession
             ? h(
               SessionDetail,
               {
@@ -472,7 +494,7 @@
               ),
               h("div", { className: "welcome-panel__orb", "aria-hidden": "true" }, "✦"),
             ),
-          selectedInstance && !selectedSession && h(
+          selectedInstance && !selectedSession && !embeddedInstance && h(
             "section",
             { className: "instance-overview" },
             h("span", { className: "eyebrow" }, "Selected instance"),
@@ -499,8 +521,9 @@
                 {
                   className: "button button--quiet",
                   onClick: () => {
-                    if (hasFeature(selectedInstance, "native-ui-proxy")) {
-                      // The host takes over this origin outside /_fleet, so keep the dashboard tab.
+                    if (hasFeature(selectedInstance, "native-ui-proxy") && hostUiOrigin) {
+                      setEmbeddedInstanceId(selectedInstance.id);
+                    } else if (hasFeature(selectedInstance, "native-ui-proxy")) {
                       window.open(
                         `${FLEET}/api/fleet/select/${encodeURIComponent(selectedInstance.id)}`,
                         "_blank",
@@ -513,7 +536,7 @@
                   disabled: !hasFeature(selectedInstance, "native-ui-proxy")
                     && !(hasFeature(selectedInstance, "native-ui-link") && selectedInstance.launchUrl),
                   title: hasFeature(selectedInstance, "native-ui-proxy")
-                    ? `Open ${backendLabel(backends, selectedInstance)}'s own UI for this host in a new tab, on this Hub origin.`
+                    ? `Open ${backendLabel(backends, selectedInstance)}'s own UI for this host here, through the Hub.`
                     : hasFeature(selectedInstance, "native-ui-link")
                       ? `Open ${backendLabel(backends, selectedInstance)} in a new tab (signs in separately)`
                       : "This host's UI is not available through the Hub",
@@ -556,6 +579,41 @@
           setError,
         },
       ),
+    );
+  }
+
+  /**
+   * A host's own UI inside the dashboard. The frame runs on the host-UI origin,
+   * so the host UI still cannot read or drive the Hub API; the bar sits outside
+   * the frame and never covers the host's own UI or branding.
+   */
+  function HostUiFrame({ instance, label, src, onClose }) {
+    return h(
+      "section",
+      { className: "host-frame", "aria-label": `${label} for ${instance.label}` },
+      h(
+        "div",
+        { className: "host-frame__bar" },
+        h("button", { className: "button button--quiet", onClick: onClose }, "‹ Overview"),
+        h(
+          "span",
+          { className: "host-frame__title" },
+          h("strong", null, instance.label),
+          h("small", null, `${label} · through the Hub`),
+        ),
+        h(StatusBadge, { status: instance.status }),
+        h(
+          "button",
+          { className: "button button--quiet", onClick: () => window.open(src, "_blank", "noopener") },
+          "Open in new tab",
+        ),
+      ),
+      h("iframe", {
+        className: "host-frame__view",
+        src,
+        title: `${label} for ${instance.label}`,
+        allow: "clipboard-read; clipboard-write; microphone; fullscreen",
+      }),
     );
   }
 

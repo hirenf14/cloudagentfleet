@@ -17,6 +17,8 @@ export interface ProxyWebSocketOptions {
   cookies?: CookieBridge;
   /** Upstream connection override (a Worker tunnel stream) instead of dialing `endpoint`. */
   connect?: () => Duplex;
+  /** Upstream `Cookie` header to send instead of the bridged browser cookies (Hub sign-in). */
+  upstreamCookie?: string;
 }
 
 /**
@@ -45,7 +47,7 @@ export async function proxyWebSocket(
   if (options.authorization) headers.authorization = options.authorization;
   const protocol = request.headers["sec-websocket-protocol"];
   if (typeof protocol === "string") headers["sec-websocket-protocol"] = protocol;
-  const upstreamCookie = options.cookies?.toUpstream(request.headers.cookie);
+  const upstreamCookie = options.upstreamCookie ?? options.cookies?.toUpstream(request.headers.cookie);
   if (upstreamCookie) headers.cookie = upstreamCookie;
   const upstreamRequest = transport({
     hostname: endpoint.hostname,

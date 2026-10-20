@@ -25,6 +25,28 @@ export interface ProxyHttpOptions {
   cookies?: CookieBridge;
   /** Upstream connection override (a Worker tunnel stream) instead of dialing `endpoint`. */
   connect?: () => Duplex;
+  /** Upstream `Cookie` header to send instead of the bridged browser cookies (Hub sign-in). */
+  upstreamCookie?: string;
+  /** Extra browser `Set-Cookie` values (the bridged cookie for a Hub-made sign-in). */
+  setCookies?: readonly string[];
+}
+
+/**
+ * The Hub decides who may frame a host UI (only its dashboard), so a policy
+ * the Hub already set on the response replaces the upstream's own framing
+ * rules: `X-Frame-Options` and the `frame-ancestors` directive.
+ */
+function applyHubFramePolicy(response: ServerResponse, headers: Record<string, string | string[]>): void {
+  const hubPolicy = response.getHeader("content-security-policy");
+  if (typeof hubPolicy !== "string") return;
+  delete headers["x-frame-options"];
+  const upstream = headers["content-security-policy"];
+  if (upstream === undefined) return;
+  const directives = (Array.isArray(upstream) ? upstream.join("; ") : upstream)
+    .split(";")
+    .map((directive) => directive.trim())
+    .filter((directive) => directive && !/^frame-ancestors\b/i.test(directive));
+  headers["content-security-policy"] = [...directives, hubPolicy].join("; ");
 }
 
 /**
@@ -60,7 +82,7 @@ export async function proxyHttpRequest(
   }
   headers["accept-encoding"] = "identity";
   if (options.authorization) headers.authorization = options.authorization;
-  const upstreamCookie = options.cookies?.toUpstream(request.headers.cookie);
+  const upstreamCookie = options.upstreamCookie ?? options.cookies?.toUpstream(request.headers.cookie);
   if (upstreamCookie) headers.cookie = upstreamCookie;
   const upstreamRequest = transport({
     hostname: endpoint.hostname,
@@ -89,8 +111,12 @@ export async function proxyHttpRequest(
     const vary = String(responseHeaders.vary ?? "");
     if (!/(^|,)\s*(cookie|\*)\s*(,|$)/i.test(vary)) responseHeaders.vary = vary ? `${vary}, Cookie` : "Cookie";
     if (responseHeaders["cache-control"] === undefined) responseHeaders["cache-control"] = "private, no-cache";
-    const setCookies = options.cookies?.fromUpstream(upstreamResponse.headers["set-cookie"] ?? []);
-    if (setCookies && setCookies.length > 0) responseHeaders["set-cookie"] = setCookies;
+    applyHubFramePolicy(response, responseHeaders);
+    const setCookies = [
+      ...(options.setCookies ?? []),
+      ...(options.cookies?.fromUpstream(upstreamResponse.headers["set-cookie"] ?? []) ?? []),
+    ];
+    if (setCookies.length > 0) responseHeaders["set-cookie"] = setCookies;
     const location = responseHeaders.location;
     if (typeof location === "string") {
       try {

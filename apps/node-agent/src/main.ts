@@ -12,8 +12,10 @@ import {
 import { validateConfig, type NodeAgentConfig } from "./index.ts";
 import { ControllerTransport } from "./transport.ts";
 import { WorkerTunnels, type TunnelTarget } from "./tunnel.ts";
+import { CptrSessions } from "./cptr-session.ts";
 import type {
   CodemanAgentMode,
+  CodemanConnectorRequest,
   AgentProfile,
   WorkspaceDescriptor,
   WorkspacePolicy,
@@ -170,9 +172,13 @@ export async function runWorker(): Promise<void> {
     stopSupervised();
     throw error;
   }
+  const cptrInstanceId = process.env.CLOUDAGENTFLEET_CPTR_INSTANCE_ID ?? `${config.nodeId}-cptr`;
   const transport = new ControllerTransport({
     ...config,
-    connectorInstanceId: instanceId,
+    connectorInstanceId: [
+      ...(backends.includes("codeman") ? [instanceId] : []),
+      ...(backends.includes("cptr") ? [cptrInstanceId] : []),
+    ],
     reconnect: true,
   });
   const codeman = new CodemanClient({
@@ -207,22 +213,31 @@ export async function runWorker(): Promise<void> {
   };
   // cptr connector driver: the Hub reaches this machine's cptr through the
   // Worker's outbound connection instead of an inbound tailnet port.
+  const cptrUrl = process.env.CLOUDAGENTFLEET_CPTR_URL ?? "http://127.0.0.1:8000";
   const tunnels = backends.includes("cptr")
     ? new WorkerTunnels({
-        targets: new Map([[
-          process.env.CLOUDAGENTFLEET_CPTR_INSTANCE_ID ?? `${config.nodeId}-cptr`,
-          loopbackTarget(process.env.CLOUDAGENTFLEET_CPTR_URL ?? "http://127.0.0.1:8000"),
-        ]]),
+        targets: new Map([[cptrInstanceId, loopbackTarget(cptrUrl)]]),
         send: (message) => transport.send(message),
       })
     : undefined;
+  // Signs a Hub-authenticated browser in to this cptr without its password leaving the machine.
+  const cptrSessions = tunnels ? new CptrSessions({ baseUrl: cptrUrl }) : undefined;
+  const connectorRequest = async (request: CodemanConnectorRequest): Promise<unknown> => {
+    if (request.operation === "cptr.session") {
+      if (!cptrSessions || request.instanceId !== cptrInstanceId) {
+        throw new Error(`Open WebUI Computer sign-in is not served for ${request.instanceId}`);
+      }
+      return cptrSessions.session();
+    }
+    return codemanEnabled ? runtime.handleConnectorRequest(request) : codemanDisabled();
+  };
 
   process.once("SIGINT", shutdown);
   process.once("SIGTERM", shutdown);
   try {
     await transport.start(
       codemanEnabled ? (message) => runtime.handle(message) : codemanDisabled,
-      codemanEnabled ? (request) => runtime.handleConnectorRequest(request) : codemanDisabled,
+      connectorRequest,
       tunnels ? (message) => tunnels.handle(message) : undefined,
     );
   } catch (error) {

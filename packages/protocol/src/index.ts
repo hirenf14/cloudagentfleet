@@ -403,7 +403,9 @@ export type CodemanConnectorOperation =
   | "sessions.create"
   | "sessions.input"
   | "sessions.resize"
-  | "sessions.stop";
+  | "sessions.stop"
+  /** cptr driver: a cptr session for the browser, minted by the Worker (no password leaves the machine). */
+  | "cptr.session";
 
 export interface CodemanConnectorRequest {
   type: "codeman.request";
@@ -617,7 +619,8 @@ function isCodemanConnectorOperation(
     || value === "sessions.create"
     || value === "sessions.input"
     || value === "sessions.resize"
-    || value === "sessions.stop";
+    || value === "sessions.stop"
+    || value === "cptr.session";
 }
 
 function isSafeEndpoint(value: string): boolean {

@@ -169,10 +169,17 @@ cloudagentfleet enroll tailscale-url \
   --url https://laptop.tailnet.ts.net
 ```
 
-The Hub health-checks `/api/health`. **Open Open WebUI Computer UI** opens it in
-a new tab through the Hub's host-UI origin, so it is reachable wherever the Hub
-is; sign in once with cptr's own account (the Hub keeps that session separate
-from its own cookies). cptr's editor, terminal, port previews, and agent chat
+The Hub health-checks `/api/health`. **Open Open WebUI Computer UI** shows it
+inside the dashboard (or in its own tab with **Open in new tab**), served from
+the Hub's host-UI origin, so it is reachable wherever the Hub is. With the
+connector driver, signing in to the Hub signs you in to cptr too: on cptr's
+first start the Worker creates a `fleet` account and keeps its password in
+`~/.cloudagentfleet/cptr-credentials.json` (owner-only), and the Hub asks the
+Worker for a cptr session when your browser has none. The password never
+leaves that machine. For a cptr you set up yourself, put its account in that
+file as `{"username": "...", "password": "..."}`; otherwise cptr shows its own
+login. Over the tailnet (`tailscale-url`) you sign in to cptr yourself. cptr's
+editor, terminal, port previews, and agent chat
 (Claude Code, Codex, Cursor, and others it detects on the machine) all work
 through the Hub. On Windows, cptr's automatic port list relies on `wmic`, which
 current Windows 11 builds no longer include; open a dev server in cptr's

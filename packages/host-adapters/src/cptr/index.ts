@@ -40,7 +40,24 @@ export interface CptrAdapterOptions {
   fetchImpl?: typeof fetch;
   /** Worker connector tunnel; when set, cptr is reached through the Worker, not the tailnet. */
   connect?: () => Duplex;
+  /**
+   * Asks the Worker for a cptr session (connector `cptr.session`), so a browser
+   * signed in to the Hub is signed in to cptr too. cptr's password stays on
+   * the Worker's machine; the Hub only relays the session token.
+   */
+  signIn?: () => Promise<unknown>;
+  now?: () => number;
 }
+
+interface HubSignIn {
+  token: string;
+  expiresAt: number;
+}
+
+/** How long to wait for the Worker; an older Worker never answers. */
+const SIGN_IN_TIMEOUT_MS = 5_000;
+/** After a failed sign-in, show cptr's own login for a while instead of retrying. */
+const SIGN_IN_RETRY_MS = 60_000;
 
 abstract class CptrAdapter implements HostAdapter {
   readonly instance: HostInstance;
@@ -96,10 +113,54 @@ export class CptrLinkAdapter extends CptrAdapter {
 export class CptrProxyAdapter extends CptrAdapter implements NativeUiProxy {
   readonly features = CPTR_PROXY_FEATURES;
   private readonly cookies: CookieBridge;
+  private readonly signIn?: () => Promise<unknown>;
+  private readonly now: () => number;
+  private session: HubSignIn | undefined;
+  private pendingSession: Promise<HubSignIn | undefined> | undefined;
+  private signInRetryAt = 0;
 
   constructor(options: CptrAdapterOptions) {
     super(options);
     this.cookies = namespacedCookieBridge(this.instance.id, [CPTR_SESSION_COOKIE]);
+    this.signIn = options.signIn;
+    this.now = options.now ?? Date.now;
+  }
+
+  /** A cptr session for a browser that has none yet; undefined shows cptr's own login. */
+  private async hubSignIn(): Promise<HubSignIn | undefined> {
+    if (!this.signIn) return undefined;
+    if (this.session && this.session.expiresAt - SIGN_IN_RETRY_MS > this.now()) return this.session;
+    if (this.now() < this.signInRetryAt) return undefined;
+    this.pendingSession ??= withTimeout(this.signIn(), SIGN_IN_TIMEOUT_MS)
+      .then((value) => {
+        const session = parseSignIn(value);
+        if (!session) throw new Error("Unexpected sign-in response");
+        return session;
+      })
+      .catch(() => {
+        this.signInRetryAt = this.now() + SIGN_IN_RETRY_MS;
+        return undefined;
+      })
+      .finally(() => {
+        this.pendingSession = undefined;
+      });
+    const session = await this.pendingSession;
+    if (session) this.session = session;
+    return session;
+  }
+
+  /** Sends the Hub-made session upstream and stores it under the bridged browser cookie. */
+  private async signInOptions(request: IncomingMessage): Promise<{ upstreamCookie?: string; setCookies?: string[] }> {
+    if (this.cookies.toUpstream(request.headers.cookie)) return {};
+    const session = await this.hubSignIn();
+    if (!session) return {};
+    const maxAge = Math.max(0, Math.floor((session.expiresAt - this.now()) / 1000));
+    return {
+      upstreamCookie: `${CPTR_SESSION_COOKIE}=${session.token}`,
+      setCookies: this.cookies.fromUpstream([
+        `${CPTR_SESSION_COOKIE}=${session.token}; HttpOnly; Path=/; SameSite=Lax; Max-Age=${maxAge}`,
+      ]),
+    };
   }
 
   get nativeUi(): NativeUiProxy {
@@ -118,6 +179,7 @@ export class CptrProxyAdapter extends CptrAdapter implements NativeUiProxy {
       // cptr's in-app browser routes preview resources by Referer.
       forwardReferer: true,
       cookies: this.cookies,
+      ...await this.signInOptions(request),
     });
   }
 
@@ -129,8 +191,34 @@ export class CptrProxyAdapter extends CptrAdapter implements NativeUiProxy {
       path: `${requestUrl.pathname}${requestUrl.search}`,
       label: "Open WebUI Computer",
       cookies: this.cookies,
+      upstreamCookie: (await this.signInOptions(request)).upstreamCookie,
     });
   }
+}
+
+function parseSignIn(value: unknown): HubSignIn | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  const { token, expiresAt } = value as { token?: unknown; expiresAt?: unknown };
+  // A JWT: anything else could inject cookie attributes.
+  if (typeof token !== "string" || !/^[A-Za-z0-9._-]+$/.test(token)) return undefined;
+  if (typeof expiresAt !== "number" || !Number.isFinite(expiresAt)) return undefined;
+  return { token, expiresAt };
+}
+
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("Timed out")), ms);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error: unknown) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
 }
 
 export const cptrBackend: BackendDefinition = {
@@ -145,7 +233,11 @@ export const cptrBackend: BackendDefinition = {
     if (instance.connectionMode === "connector") {
       const openStream = connector?.openStream;
       if (!openStream) throw new Error(`Connector tunnel is not configured: ${instance.id}`);
-      return new CptrProxyAdapter({ instance, connect: () => openStream() });
+      return new CptrProxyAdapter({
+        instance,
+        connect: () => openStream(),
+        signIn: () => connector.request("cptr.session"),
+      });
     }
     return instance.capabilities.includes(CPTR_LINK_CAPABILITY)
       ? new CptrLinkAdapter({ instance })

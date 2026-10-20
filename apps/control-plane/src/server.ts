@@ -166,6 +166,9 @@ export function createControllerServer(
   }
 
   const server = createServer(async (request, response) => {
+    // The dashboard is never framed: it holds the Hub session.
+    response.setHeader("content-security-policy", "frame-ancestors 'none'");
+    response.setHeader("x-frame-options", "DENY");
     try {
       const target = resolveHubUrl(request);
       const hubPath = target.url.pathname;

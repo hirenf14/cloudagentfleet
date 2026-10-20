@@ -55,6 +55,7 @@ test("ensureCptr starts cptr on loopback, captures the setup token, and owns the
     const handle = await ensureCptr({
       baseUrl: "http://127.0.0.1:8123",
       logPath: join(directory, "cptr.log"),
+      autoSetup: false,
       fetchImpl: fakeFetch(state),
       spawnImpl: (command, args, options) => {
         spawned.push([command, ...args]);
@@ -134,4 +135,46 @@ test("resolveCptrCommand finds cptr outside a service's minimal PATH", () => {
   assert.equal(resolveCptrCommand({}, () => false, "/home/op", "linux"), "cptr");
   const windowsBin = join("C:/Users/op", ".local", "bin", "cptr.exe");
   assert.equal(resolveCptrCommand({}, (path) => path === windowsBin, "C:/Users/op", "win32"), windowsBin);
+});
+
+test("ensureCptr completes first-run setup with a fleet account kept on this machine", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "cloudagentfleet-cptr-"));
+  try {
+    const state = { up: false, needsSetup: true };
+    let setupBody: Record<string, unknown> | undefined;
+    const fetchImpl = (async (url: string | URL | Request, init?: RequestInit) => {
+      if (new URL(String(url)).pathname === "/api/auth/setup") {
+        setupBody = JSON.parse(String(init?.body));
+        state.needsSetup = false;
+        return Response.json({ ok: true });
+      }
+      return fakeFetch(state)(url, init);
+    }) as typeof fetch;
+    const logs: string[] = [];
+    const child = fakeChild();
+    await ensureCptr({
+      baseUrl: "http://127.0.0.1:8125",
+      logPath: join(directory, "cptr.log"),
+      credentialsPath: join(directory, "cptr-credentials.json"),
+      fetchImpl,
+      spawnImpl: () => {
+        setTimeout(() => {
+          (child.stdout as PassThrough).write(`\n  ➜  http://127.0.0.1:8125/?token=${TOKEN}\n`);
+          state.up = true;
+        }, 5);
+        return child;
+      },
+      sleep: (ms) => new Promise((resolve) => setTimeout(resolve, Math.min(ms, 5))),
+      log: (message) => logs.push(message),
+    });
+    const saved = JSON.parse(readFileSync(join(directory, "cptr-credentials.json"), "utf8"));
+    assert.equal(setupBody?.token, TOKEN);
+    assert.equal(setupBody?.username, "fleet");
+    assert.deepEqual(saved, { username: "fleet", password: setupBody?.password });
+    assert.ok(String(saved.password).length >= 24);
+    assert.ok(!logs.some((line) => line.includes(String(saved.password))), "the password is never logged");
+    assert.throws(() => readFileSync(join(directory, "cptr-setup-token")), /ENOENT/, "no token file is left behind");
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
 });

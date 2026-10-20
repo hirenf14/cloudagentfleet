@@ -34,6 +34,13 @@ export function createHostUiServer(options: HostUiServerOptions): Server {
   const dashboard = (request: IncomingMessage) => `${originFor(request, "hub", origins)}/_fleet/`;
 
   const server = createServer(async (request, response) => {
+    // Only the dashboard (which embeds host UIs) and the host UI itself (cptr
+    // frames its own previews) may frame this origin; the proxy replaces any
+    // framing rules the backend sends with this one.
+    response.setHeader(
+      "content-security-policy",
+      `frame-ancestors 'self' ${originFor(request, "hub", origins)}`,
+    );
     try {
       const url = new URL(request.url ?? "/", "http://host-ui.local");
       const auth = uiAuth.authenticate(request, undefined);
