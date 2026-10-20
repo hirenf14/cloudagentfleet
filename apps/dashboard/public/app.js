@@ -534,7 +534,7 @@
               ),
               h(
                 "button",
-                { className: "button button--primary", onClick: () => setShowCreate(true), disabled: selectedInstance.status !== "online" },
+                { className: "button button--primary", onClick: () => setShowCreate(true), disabled: selectedInstance.status !== "online" || !hasFeature(selectedInstance, "sessions") },
                 selectedInstance.status === "online" ? "Start a session" : "Instance unavailable",
               ),
             ),
@@ -544,7 +544,7 @@
       showCreate && h(
         CreateSessionDialog,
         {
-          instances,
+          instances: instances.filter((instance) => hasFeature(instance, "sessions")),
           preferredInstanceId: selectedInstanceId,
           onClose: () => setShowCreate(false),
           onCreated: async (session) => {
@@ -802,7 +802,9 @@
   }
 
   function CreateSessionDialog({ instances, preferredInstanceId, onClose, onCreated, setError }) {
-    const [instanceId, setInstanceId] = useState(preferredInstanceId || instances[0]?.id || "");
+    const [instanceId, setInstanceId] = useState(
+      instances.some((item) => item.id === preferredInstanceId) ? preferredInstanceId : instances[0]?.id || "",
+    );
     const instance = instances.find((item) => item.id === instanceId);
     const readyWorkspaces = (instance?.workspaces || []).filter((workspace) => workspace.health === "ready");
     const allAgents = instance?.agents || [];
