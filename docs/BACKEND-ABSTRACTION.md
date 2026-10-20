@@ -265,6 +265,13 @@ Original sketch:
   `claude-agent-sdk` next to cptr when Claude Code is present.
 - The dashboard offers Hub sessions only on hosts with the `sessions` feature,
   so a cptr host cannot be picked in the start-session dialog.
+- On Windows, cptr runs natively by default while Codeman stays in WSL: one
+  saved config starts a WSL Worker (Codeman) and a native Worker
+  `<id>-windows` (cptr). The cptr supervisor starts cptr with
+  `PYTHONUTF8=1`, since piped output in the Windows code page made cptr's
+  startup banner crash it. Verified end to end: native cptr through the
+  tailnet Hub with a Windows workspace, the pywinpty terminal, cptr's Browser
+  tab on a Windows dev server, and Claude Code agent chat.
 
 Original Phase E sketch:
 

@@ -58,6 +58,13 @@ starting.
    whole-system access), and each backend's local URL (plus the Codeman mode).
    For cptr, setup shows its license, offers to install it with pipx, uv, or
    pip, and can publish it on the tailnet with `tailscale serve --https=8444`.
+   On Windows, setup asks whether cptr runs natively (the default) or in
+   WSL; Codeman always runs in WSL. With Codeman in WSL and cptr on Windows,
+   the saved config (`cptrExecution: "local"`) starts two Workers: `<id>` in
+   WSL and `<id>-windows` natively, and the cptr enroll command uses the
+   latter node id. Setup finds `cptr.exe` even when pip's user Scripts folder
+   is not on PATH, and defaults cptr's port to the first free one from 8000
+   (WSL forwards its ports to Windows).
    Setup also asks how the Hub reaches cptr: through the Worker connector
    (the default; `enroll connector --backend cptr`, no inbound port) or over
    the tailnet (`enroll tailscale-url --backend cptr`), and prints the matching
@@ -89,7 +96,13 @@ cloudagentfleet worker remove    # stops and unregisters the service
 project workspaces. `worker install` records the installing shell's PATH in
 the service so Codeman sessions and cptr find the agent CLIs (`claude`,
 `codex`, `agent`); `cloudagentfleet run` exits with the Worker's own exit code
-so the service manager restarts a failed Worker.
+so the service manager restarts a failed Worker. On Windows, `worker install`
+registers a Task Scheduler task with a logon trigger for the current user (no
+administrator rights) that runs `cloudagentfleet run --restart --log` in a
+headless console: `--restart` restarts failed Workers after 5 seconds (the
+headless console does not pass exit codes to Task Scheduler) and `--log`
+appends their output to `~/.cloudagentfleet/worker.log`. `worker stop` ends
+the task, which closes the console and every Worker attached to it.
 
 Official provider plan requirements, administrator approval, browser login, and
 one-time environment secrets remain provider-owned. Cloud Agent Fleet checks

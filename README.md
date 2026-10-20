@@ -75,6 +75,18 @@ Worker enrolls over outbound SSE/HTTP and executes fallback jobs through
 Codeman's `/api/v1/sessions` API. Direct Tailscale mode does not require the
 Worker for browser terminal traffic.
 
+On Windows, run setup from a normal (not WSL) terminal. Codeman needs tmux, so
+it always runs in WSL; Open WebUI Computer runs natively on Windows by default
+(setup asks), so it works with your Windows folders and tools:
+
+| Backends | Where the Worker runs |
+| --- | --- |
+| `codeman` | WSL |
+| `cptr` | Windows |
+| `codeman,cptr` | Two Workers: `<id>` in WSL for Codeman, `<id>-windows` on Windows for cptr |
+
+`cloudagentfleet run` starts both Workers and stops them together.
+
 ## Enroll a Codeman host
 
 ```bash
@@ -162,7 +174,10 @@ a new tab through the Hub's host-UI origin, so it is reachable wherever the Hub
 is; sign in once with cptr's own account (the Hub keeps that session separate
 from its own cookies). cptr's editor, terminal, port previews, and agent chat
 (Claude Code, Codex, Cursor, and others it detects on the machine) all work
-through the Hub. Add `--link-only` to a tailscale-url instance to have the
+through the Hub. On Windows, cptr's automatic port list relies on `wmic`, which
+current Windows 11 builds no longer include; open a dev server in cptr's
+Browser tab (`http://localhost:<port>`) instead. Add `--link-only` to a
+tailscale-url instance to have the
 dashboard open cptr's URL directly instead. Hub folder policy does not apply
 inside cptr. Cloud Agent Fleet does not bundle or modify cptr; its use is
 governed by the Open WebUI Computer license.
@@ -184,6 +199,11 @@ cloudagentfleet worker remove
 `worker install` records the PATH of the shell that runs it, so Codeman
 sessions and cptr find `claude`, `codex`, and `agent` the way your shell does.
 Reinstall the service after installing a new agent CLI somewhere else.
+
+On Windows the service is a Task Scheduler task that starts at your logon and
+needs no administrator rights. It runs without a window, restarts failed
+Workers after 5 seconds, and writes their output to
+`%USERPROFILE%\.cloudagentfleet\worker.log`.
 
 ## Private Hub access with Tailscale Serve
 

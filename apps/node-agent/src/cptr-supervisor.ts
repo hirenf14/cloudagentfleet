@@ -37,10 +37,11 @@ export function resolveCptrCommand(
   env: NodeJS.ProcessEnv = process.env,
   pathExists: (path: string) => boolean = existsSync,
   home: string = homedir(),
+  platform: NodeJS.Platform = process.platform,
 ): string {
   const configured = env.CLOUDAGENTFLEET_CPTR_COMMAND?.trim();
   if (configured) return configured;
-  const userBin = join(home, ".local", "bin", "cptr");
+  const userBin = join(home, ".local", "bin", platform === "win32" ? "cptr.exe" : "cptr");
   return pathExists(userBin) ? userBin : "cptr";
 }
 
@@ -110,7 +111,13 @@ export async function ensureCptr(options: CptrSupervisorOptions = {}): Promise<S
   const child = (options.spawnImpl ?? spawn)(
     options.command ?? resolveCptrCommand(),
     ["run", "--headless", "--host", target.hostname.replace(/^\[|\]$/g, ""), "--port", port],
-    { stdio: ["ignore", "pipe", "pipe"], windowsHide: true },
+    {
+      stdio: ["ignore", "pipe", "pipe"],
+      windowsHide: true,
+      // On Windows, Python writes piped output in the ANSI code page, and
+      // cptr's startup banner then fails to encode and exits.
+      env: { ...process.env, PYTHONUTF8: "1", PYTHONIOENCODING: "utf-8" },
+    },
   );
   const capture = (chunk: Buffer) => {
     const text = chunk.toString("utf8");

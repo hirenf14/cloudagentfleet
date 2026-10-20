@@ -1,6 +1,7 @@
 import { spawn, spawnSync } from "node:child_process";
 import {
   chmodSync,
+  createWriteStream,
   existsSync,
   mkdirSync,
   readFileSync,
@@ -221,6 +222,77 @@ function detectEnvironment() {
   };
 }
 
+/**
+ * Where Open WebUI Computer runs. On Windows it runs natively by default so
+ * it sees Windows folders; Codeman still needs WSL (tmux).
+ */
+async function chooseCptrExecution(environment) {
+  if (environment.platform !== "windows" || environment.inWsl || !environment.wsl) return environment.execution;
+  const place = (await ask("Run Open WebUI Computer natively on Windows or in WSL (windows, wsl)", "windows"))
+    .trim()
+    .toLowerCase();
+  if (place !== "windows" && place !== "wsl") throw new Error("Answer windows or wsl");
+  return place === "windows" ? "local" : "wsl";
+}
+
+/**
+ * The Worker processes a saved config runs. A Windows machine with Codeman
+ * in WSL and cptr on Windows runs two: the WSL Worker keeps the node id, and
+ * a native Worker `<node>-windows` serves cptr.
+ */
+export function workerProcesses(config) {
+  const backends = Array.isArray(config.backends) && config.backends.length > 0 ? config.backends : ["codeman"];
+  const cptrExecution = config.cptrExecution ?? config.execution;
+  if (!backends.includes("codeman") || !backends.includes("cptr") || cptrExecution === config.execution) {
+    return [{ ...config, backends }];
+  }
+  const { cptrUrl: _cptrUrl, ...codemanConfig } = config;
+  return [
+    { ...codemanConfig, backends: ["codeman"] },
+    {
+      ...config,
+      execution: cptrExecution,
+      backends: ["cptr"],
+      nodeId: `${config.nodeId}-windows`,
+      name: `${config.name} (Windows)`,
+      cptrInstanceId: config.cptrInstanceId ?? `${config.nodeId}-cptr`,
+    },
+  ];
+}
+
+/** Absolute path of cptr where it runs, since Worker services have a minimal PATH. */
+function findCptrCommand(placement) {
+  if (placement.execution === "wsl" || process.platform !== "win32") {
+    return runWhereWorkerRuns(placement, "command -v cptr").stdout?.trim().split("\n").at(-1) || undefined;
+  }
+  const found = command("where.exe", ["cptr"], { shell: false }).stdout?.trim().split(/\r?\n/)[0];
+  if (found) return found;
+  // `pip install --user` puts cptr.exe in a Scripts folder that is often not on PATH.
+  const candidates = [join(homedir(), ".local", "bin", "cptr.exe")];
+  for (const python of ["py", "python3", "python"]) {
+    const scripts = command(python, ["-c", "import sysconfig; print(sysconfig.get_path('scripts', 'nt_user'))"], {
+      shell: false,
+      timeout: 10_000,
+    }).stdout?.trim();
+    if (scripts) candidates.push(join(scripts, "cptr.exe"));
+  }
+  return candidates.find((candidate) => existsSync(candidate));
+}
+
+/** First loopback port from `start` that nothing listens on (WSL forwards its ports to Windows). */
+async function freeLocalPort(start) {
+  const { createServer } = await import("node:net");
+  for (let port = start; port < start + 50; port += 1) {
+    const free = await new Promise((resolvePort) => {
+      const server = createServer();
+      server.once("error", () => resolvePort(false));
+      server.listen(port, "127.0.0.1", () => server.close(() => resolvePort(true)));
+    });
+    if (free) return port;
+  }
+  return start;
+}
+
 function printEnvironment(environment) {
   console.log(`Platform: ${environment.platform}${environment.inWsl ? " (WSL)" : ""}`);
   console.log(`Execution target: ${environment.execution}`);
@@ -399,7 +471,7 @@ async function installCptr(environment) {
   if (!await confirm(`Install Open WebUI Computer with \`${installCommand}\`?`, true)) return false;
   const result = runWhereWorkerRuns(environment, installCommand, { timeout: 10 * 60 * 1000, capture: false });
   if (result.status !== 0) return false;
-  if (runWhereWorkerRuns(environment, "cptr --help").status !== 0) {
+  if (!findCptrCommand(environment)) {
     console.log("cptr installed but is not on PATH yet; add the installer's bin directory to PATH, then rerun setup.");
     return false;
   }
@@ -472,31 +544,42 @@ export function workerEnvironment(config) {
   };
 }
 
-function runWorker(config) {
+/** Starts one Worker process; with `log`, its output goes to that stream instead of ours. */
+function runWorker(config, log) {
   const env = workerEnvironment(config);
   const workerScript = resolveWorkerScript();
   const runtimeRoot = dirname(workerScript);
+  const stdio = log ? ["ignore", "pipe", "pipe"] : "inherit";
+  const attach = (child) => {
+    child.stdout?.pipe(log, { end: false });
+    child.stderr?.pipe(log, { end: false });
+    return child;
+  };
   if (config.execution !== "wsl") {
-    return spawn(
+    return attach(spawn(
       process.execPath,
       [workerScript.endsWith(".ts") ? "--experimental-strip-types" : "", workerScript].filter(Boolean),
       {
       cwd: runtimeRoot,
       env: { ...process.env, ...env },
-      stdio: "inherit",
+      stdio,
       },
-    );
+    ));
   }
 
-  const commandLine = [
-    `cd ${shellQuote(toWslPath(runtimeRoot))}`,
-    ...Object.entries(env).map(([key, value]) => `${key}=${shellQuote(value)}`),
+  return attach(spawn("wsl.exe", ["-d", wslDistro, "-e", "bash", "-lc", wslWorkerCommandLine(workerScript, env)], {
+    cwd: runtimeRoot,
+    stdio,
+  }));
+}
+
+/** The bash command that starts the Worker in WSL; its settings must be exported to reach node. */
+export function wslWorkerCommandLine(workerScript, env) {
+  return [
+    `cd ${shellQuote(toWslPath(dirname(workerScript)))}`,
+    ...Object.entries(env).map(([key, value]) => `export ${key}=${shellQuote(value)}`),
     `exec node ${workerScript.endsWith(".ts") ? "--experimental-strip-types " : ""}${shellQuote(toWslPath(workerScript))}`,
   ].join(" && ");
-  return spawn("wsl.exe", ["-d", wslDistro, "-e", "bash", "-lc", commandLine], {
-    cwd: runtimeRoot,
-    stdio: "inherit",
-  });
 }
 
 async function setup() {
@@ -525,13 +608,16 @@ async function setup() {
     const installed = await installCursorCli(environment);
     if (installed) environment.cursorCli = true;
   }
+  const cptrExecution = useCptr ? await chooseCptrExecution(environment) : undefined;
+  const cptrPlacement = { ...environment, execution: cptrExecution ?? environment.execution };
+  if (useCptr && cptrExecution !== environment.execution) {
+    environment.cptr = Boolean(findCptrCommand(cptrPlacement));
+  }
   if (useCptr && !environment.cptr) {
-    environment.cptr = await installCptr(environment);
+    environment.cptr = await installCptr(cptrPlacement);
   }
   // Record cptr's absolute path: Worker services run with a minimal PATH.
-  const cptrCommand = useCptr && environment.cptr
-    ? runWhereWorkerRuns(environment, "command -v cptr").stdout?.trim().split("\n").at(-1)
-    : undefined;
+  const cptrCommand = useCptr && environment.cptr ? findCptrCommand(cptrPlacement) : undefined;
 
   const controllerUrl = await ask("\nController URL", "http://127.0.0.1:8787");
   const nodeId = await ask("Worker ID", hostname().toLowerCase().replaceAll(/[^a-z0-9-]/g, "-"));
@@ -543,7 +629,10 @@ async function setup() {
   if (!modes.includes(codemanMode)) throw new Error(`Unsupported Codeman mode: ${codemanMode}`);
   const codemanUrl = useCodeman ? await ask("Codeman URL", "http://127.0.0.1:3000") : "http://127.0.0.1:3000";
   const cptrUrl = useCptr
-    ? safeEndpoint(await ask("Open WebUI Computer local URL", "http://127.0.0.1:8000"), "Open WebUI Computer URL")
+    ? safeEndpoint(
+      await ask("Open WebUI Computer local URL", `http://127.0.0.1:${await freeLocalPort(8000)}`),
+      "Open WebUI Computer URL",
+    )
     : undefined;
   // The cptr driver: through this Worker's outbound connector (no inbound
   // port), or directly over the tailnet.
@@ -560,7 +649,9 @@ async function setup() {
     name,
     controllerUrl,
     authToken,
-    execution: environment.execution,
+    // The single-Worker placement: Codeman's when it is used, else cptr's.
+    execution: useCodeman ? environment.execution : cptrPlacement.execution,
+    ...(useCptr ? { cptrExecution: cptrPlacement.execution } : {}),
     workspacePolicy,
     workspaces: discoverWorkspaces(
       workspacePolicy,
@@ -582,12 +673,20 @@ async function setup() {
   console.log(`\nSaved Worker configuration: ${configPath}`);
   console.log(`Discovered ${config.workspaces.length} workspace(s).`);
 
+  const processes = workerProcesses(config);
+  if (processes.length > 1) {
+    console.log(
+      "\nCodeman runs in WSL and Open WebUI Computer natively on Windows: `cloudagentfleet run` starts "
+      + `two Workers, ${processes[0].nodeId} (WSL) and ${processes[1].nodeId} (Windows).`,
+    );
+  }
+  const cptrNodeId = processes.find((entry) => entry.backends.includes("cptr"))?.nodeId ?? nodeId;
   if (useCptr && cptrAccess === "connector") {
     console.log([
       "",
       "Enroll Open WebUI Computer through this Worker once it is running:",
       `  cloudagentfleet enroll connector --backend cptr --controller-url ${controllerUrl} \\`,
-      `    --node-id ${nodeId} --instance-id ${nodeId}-cptr --name "${name} (Open WebUI Computer)"`,
+      `    --node-id ${cptrNodeId} --instance-id ${nodeId}-cptr --name "${name} (Open WebUI Computer)"`,
       "On cptr's first start the Worker writes its one-time setup token to ~/.cloudagentfleet/cptr-setup-token;",
       "open the host from the dashboard and visit /?token=<token> to create cptr's admin account.",
     ].join("\n"));
@@ -625,7 +724,7 @@ async function setup() {
     if (useCodeman && !environment.codeman) {
       console.log("Worker will install/start Codeman under the hood …");
     }
-    superviseChild(runWorker(config));
+    await superviseChildren(processes.map((entry) => runWorker(entry)));
   } else {
     console.log("Run `cloudagentfleet run` to start the Worker.");
   }
@@ -843,7 +942,8 @@ function saveInstanceRegistration(registration) {
 function linkWorkerInstance(nodeId, instanceId, backend = "codeman") {
   try {
     const config = JSON.parse(readFileSync(configPath, "utf8"));
-    if (config.nodeId !== nodeId) return false;
+    const owner = workerProcesses(config).find((entry) => entry.nodeId === nodeId);
+    if (!owner || !owner.backends.includes(backend)) return false;
     if (backend === "cptr") config.cptrInstanceId = instanceId;
     else config.codemanInstanceId = instanceId;
     writeSafeJson(configPath, config);
@@ -1072,28 +1172,75 @@ async function hubCommand(args) {
   throw new Error(`Unknown Hub command: ${action}`);
 }
 
-function runSavedWorker() {
+/**
+ * `run --restart` restarts failed Workers itself after 5 seconds, and
+ * `run --log` appends their output to ~/.cloudagentfleet/worker.log. The
+ * Windows task uses both: its hidden console host neither shows output nor
+ * passes exit codes on to Task Scheduler.
+ */
+async function runSavedWorker({ restart = false, log = false } = {}) {
   const config = JSON.parse(readFileSync(configPath, "utf8"));
-  superviseChild(runWorker(config));
+  const logPath = join(dirname(configPath), "worker.log");
+  const output = log ? createWriteStream(logPath, { flags: "a", mode: 0o600 }) : undefined;
+  if (output) console.log(`Worker output: ${logPath}`);
+  for (;;) {
+    output?.write(`
+--- ${new Date().toISOString()} starting Worker ---
+`);
+    const exitCode = await superviseChildren(workerProcesses(config).map((entry) => runWorker(entry, output)));
+    if (!restart || stopRequested || exitCode === 0) return;
+    (output ?? process.stderr).write(`A Worker exited with code ${exitCode}; restarting in 5 seconds.
+`);
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 5000));
+  }
+}
+
+let supervisedChildren = [];
+let stopRequested = false;
+let stopForwarding = false;
+
+function forwardStop(signal) {
+  for (const child of supervisedChildren) {
+    if (child.exitCode === null && child.signalCode === null) child.kill(signal);
+  }
 }
 
 /**
- * Makes `cloudagentfleet run` stand in for the Worker process: stop signals
- * reach the Worker, and its exit status becomes ours, so a service manager
- * (systemd Restart=on-failure, launchd KeepAlive) sees a failed Worker as failed.
+ * Makes `cloudagentfleet run` stand in for its Worker processes: stop signals
+ * reach every Worker, and the first one to exit stops the rest and sets our
+ * exit status, so a service manager (systemd Restart=on-failure, launchd
+ * KeepAlive) sees a failed Worker as failed and restarts them together.
+ * Resolves with that exit status.
  */
-function superviseChild(child) {
-  const forward = (signal) => {
-    if (child.exitCode === null && child.signalCode === null) child.kill(signal);
-  };
-  process.on("SIGINT", () => forward("SIGINT"));
-  process.on("SIGTERM", () => forward("SIGTERM"));
-  child.once("error", (error) => {
-    console.error(`Could not start the Worker: ${error.message}`);
-    process.exitCode = 1;
-  });
-  child.once("exit", (code, signal) => {
-    process.exitCode = code ?? (signal === "SIGINT" || signal === "SIGTERM" ? 0 : 1);
+function superviseChildren(children) {
+  supervisedChildren = children;
+  if (!stopForwarding) {
+    stopForwarding = true;
+    for (const signal of ["SIGINT", "SIGTERM"]) {
+      process.on(signal, () => {
+        stopRequested = true;
+        forwardStop(signal);
+      });
+    }
+  }
+  return new Promise((resolveExit) => {
+    let settled = false;
+    const settle = (exitCode) => {
+      if (settled) return;
+      settled = true;
+      process.exitCode = exitCode;
+      forwardStop("SIGTERM");
+      resolveExit(exitCode);
+    };
+    for (const child of children) {
+      child.once("error", (error) => {
+        console.error(`Could not start the Worker: ${error.message}`);
+        settle(1);
+      });
+      child.once("exit", (code, signal) => {
+        settle(code ?? (signal === "SIGINT" || signal === "SIGTERM" ? 0 : 1));
+      });
+    }
   });
 }
 
@@ -1178,6 +1325,41 @@ export function systemdEnvironmentLine(name, value) {
   return `Environment="${escaped}"`;
 }
 
+/**
+ * Task Scheduler definition for the Windows Worker. A logon trigger scoped to
+ * the current user needs no administrator rights (`schtasks /SC ONLOGON`
+ * does), and a headless console host keeps a window from opening at logon.
+ */
+export function windowsWorkerTaskXml(user, executable, args) {
+  const xml = (value) => String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
+  const quote = (value) => `"${String(value).replaceAll('"', '\\"')}"`;
+  return [
+    '<?xml version="1.0" encoding="UTF-16"?>',
+    '<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">',
+    "  <RegistrationInfo><Description>Cloud Agent Fleet Worker</Description></RegistrationInfo>",
+    `  <Triggers><LogonTrigger><Enabled>true</Enabled><UserId>${xml(user)}</UserId></LogonTrigger></Triggers>`,
+    "  <Principals><Principal id=\"Author\">",
+    `    <UserId>${xml(user)}</UserId><LogonType>InteractiveToken</LogonType><RunLevel>LeastPrivilege</RunLevel>`,
+    "  </Principal></Principals>",
+    "  <Settings>",
+    "    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>",
+    "    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>",
+    "    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>",
+    "    <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>",
+    "  </Settings>",
+    "  <Actions Context=\"Author\"><Exec>",
+    "    <Command>conhost.exe</Command>",
+    `    <Arguments>${xml(["--headless", executable, ...args].map(quote).join(" "))}</Arguments>`,
+    "  </Exec></Actions>",
+    "</Task>",
+    "",
+  ].join("\r\n");
+}
+
 function installWorkerService() {
   if (!existsSync(configPath)) throw new Error(`Worker configuration not found: ${configPath}`);
   const service = workerServicePaths();
@@ -1223,10 +1405,14 @@ function installWorkerService() {
     ].join("\n"), { mode: 0o600 });
     serviceCommand("launchctl", ["load", "-w", service.path]);
   } else {
-    const taskCommand = `"${executable.replaceAll('"', '""')}" "${script.replaceAll('"', '""')}" ${action}`;
-    serviceCommand("schtasks.exe", [
-      "/Create", "/TN", service.name, "/TR", taskCommand, "/SC", "ONLOGON", "/RL", "LIMITED", "/F",
-    ]);
+    const user = process.env.USERDOMAIN ? `${process.env.USERDOMAIN}\\${process.env.USERNAME}` : process.env.USERNAME;
+    const taskPath = join(dirname(configPath), "worker-task.xml");
+    // schtasks reads task XML as UTF-16 with a byte order mark.
+    writeFileSync(taskPath, `﻿${windowsWorkerTaskXml(user, executable, [script, action, "--restart", "--log"])}`, {
+      encoding: "utf16le",
+      mode: 0o600,
+    });
+    serviceCommand("schtasks.exe", ["/Create", "/TN", service.name, "/XML", taskPath, "/F"]);
   }
   console.log(`Installed user-level Worker service: ${service.name}`);
   removeLegacyWorkerService();
@@ -1363,7 +1549,7 @@ if (isDirectCliEntrypoint()) {
       console.log("A legacy hosted-agents Worker service is still installed; run `cloudagentfleet worker install` to replace it.");
     }
     if (commandName === "setup") await setup();
-    else if (commandName === "run") runSavedWorker();
+    else if (commandName === "run") await runSavedWorker({ restart: process.argv.includes("--restart"), log: process.argv.includes("--log") });
     else if (commandName === "worker") workerServiceAction(process.argv[3] ?? "status");
     else if (commandName === "doctor") printEnvironment(detectEnvironment());
     else if (commandName === "start") await startJob();

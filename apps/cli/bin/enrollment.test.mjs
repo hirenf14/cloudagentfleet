@@ -7,6 +7,9 @@ import {
   parseBackendList,
   parseCptrAccess,
   workerEnvironment,
+  workerProcesses,
+  windowsWorkerTaskXml,
+  wslWorkerCommandLine,
   parseAgentProfiles,
   parseOptions,
   safeEndpoint,
@@ -239,4 +242,55 @@ test("the Worker service records the installer's PATH for systemd", () => {
     'Environment="PATH=/home/a/.local/bin:/usr/bin"',
   );
   assert.equal(systemdEnvironmentLine("PATH", '/odd "dir"/50%\\x'), 'Environment="PATH=/odd \\"dir\\"/50%%\\\\x"');
+});
+
+test("Codeman in WSL with cptr on Windows runs two Workers", () => {
+  const config = {
+    nodeId: "laptop",
+    name: "Laptop",
+    controllerUrl: "http://127.0.0.1:8787",
+    execution: "wsl",
+    cptrExecution: "local",
+    backends: ["codeman", "cptr"],
+    workspacePolicy: { mode: "folders", roots: ["E:\\work"] },
+    workspaces: [],
+    codemanMode: "shell",
+    codemanUrl: "http://127.0.0.1:3000",
+    cptrUrl: "http://127.0.0.1:8001",
+  };
+  const [wsl, windows] = workerProcesses(config);
+  assert.equal(workerProcesses(config).length, 2);
+  assert.deepEqual([wsl.nodeId, wsl.execution, wsl.backends], ["laptop", "wsl", ["codeman"]]);
+  assert.equal(workerEnvironment(wsl).CLOUDAGENTFLEET_CPTR_URL, undefined);
+  assert.equal(workerEnvironment(wsl).CLOUDAGENTFLEET_WORKSPACE_ROOTS, "/mnt/e/work");
+  assert.deepEqual([windows.nodeId, windows.execution, windows.backends], ["laptop-windows", "local", ["cptr"]]);
+  const env = workerEnvironment(windows);
+  assert.equal(env.CLOUDAGENTFLEET_BACKENDS, "cptr");
+  assert.equal(env.CLOUDAGENTFLEET_CPTR_INSTANCE_ID, "laptop-cptr");
+  assert.equal(env.CLOUDAGENTFLEET_CPTR_URL, "http://127.0.0.1:8001");
+  assert.equal(env.CLOUDAGENTFLEET_WORKSPACE_ROOTS, "E:\\work");
+
+  // One placement (or a single backend) keeps one Worker.
+  assert.equal(workerProcesses({ ...config, cptrExecution: "wsl" }).length, 1);
+  assert.equal(workerProcesses({ ...config, backends: ["cptr"], execution: "local" }).length, 1);
+  assert.equal(workerProcesses({ ...config, cptrExecution: undefined }).length, 1);
+});
+
+test("the Windows Worker task needs no admin and runs headless with restarts", () => {
+  const task = windowsWorkerTaskXml("PC\\op & co", "C:\\node\\node.exe", ["C:\\caf\\cli.mjs", "run", "--restart"]);
+  assert.ok(task.includes("<LogonTrigger><Enabled>true</Enabled><UserId>PC\\op &amp; co</UserId></LogonTrigger>"));
+  assert.ok(task.includes("<RunLevel>LeastPrivilege</RunLevel>"));
+  assert.ok(task.includes("<Command>conhost.exe</Command>"));
+  assert.ok(task.includes(
+    "<Arguments>&quot;--headless&quot; &quot;C:\\node\\node.exe&quot; &quot;C:\\caf\\cli.mjs&quot; "
+    + "&quot;run&quot; &quot;--restart&quot;</Arguments>",
+  ));
+});
+
+test("the WSL Worker command exports its settings to node", () => {
+  const line = wslWorkerCommandLine("E:/caf/dist/worker.mjs", { CLOUDAGENTFLEET_NODE_ID: "it's-me" });
+  assert.equal(
+    line,
+    "cd '/mnt/e/caf/dist' && export CLOUDAGENTFLEET_NODE_ID='it'\"'\"'s-me' && exec node '/mnt/e/caf/dist/worker.mjs'",
+  );
 });
