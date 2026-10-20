@@ -10,6 +10,7 @@ import {
   parseAgentProfiles,
   parseOptions,
   safeEndpoint,
+  systemdEnvironmentLine,
   parseHubOptions,
   runTailscale,
   serveHub,
@@ -230,4 +231,12 @@ test("workerEnvironment turns off Codeman management on a cptr-only machine", ()
   assert.equal(legacy.CLOUDAGENTFLEET_BACKENDS, "codeman");
   assert.equal(legacy.CLOUDAGENTFLEET_MANAGE_CODEMAN, "true");
   assert.equal(legacy.CLOUDAGENTFLEET_CPTR_URL, undefined);
+});
+
+test("the Worker service records the installer's PATH for systemd", () => {
+  assert.equal(
+    systemdEnvironmentLine("PATH", "/home/a/.local/bin:/usr/bin"),
+    'Environment="PATH=/home/a/.local/bin:/usr/bin"',
+  );
+  assert.equal(systemdEnvironmentLine("PATH", '/odd "dir"/50%\\x'), 'Environment="PATH=/odd \\"dir\\"/50%%\\\\x"');
 });

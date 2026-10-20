@@ -1168,6 +1168,16 @@ function workerServiceCommand() {
   return [process.execPath, fileURLToPath(import.meta.url), "run"];
 }
 
+/**
+ * systemd `Environment=` line. Services start with a minimal PATH, so the
+ * Worker records the installer's PATH: Codeman sessions and cptr agents must
+ * find claude, codex and agent the way the user's shell does.
+ */
+export function systemdEnvironmentLine(name, value) {
+  const escaped = `${name}=${value}`.replaceAll("\\", "\\\\").replaceAll('"', '\\"').replaceAll("%", "%%");
+  return `Environment="${escaped}"`;
+}
+
 function installWorkerService() {
   if (!existsSync(configPath)) throw new Error(`Worker configuration not found: ${configPath}`);
   const service = workerServicePaths();
@@ -1181,6 +1191,7 @@ function installWorkerService() {
       "",
       "[Service]",
       `ExecStart=${shellQuote(executable)} ${shellQuote(script)} ${action}`,
+      ...(process.env.PATH ? [systemdEnvironmentLine("PATH", process.env.PATH)] : []),
       "Restart=on-failure",
       "RestartSec=5",
       "",
@@ -1203,6 +1214,9 @@ function installWorkerService() {
       "<plist version=\"1.0\"><dict>",
       `<key>Label</key><string>${service.name}</string>`,
       `<key>ProgramArguments</key><array><string>${xml(executable)}</string><string>${xml(script)}</string><string>${action}</string></array>`,
+      ...(process.env.PATH
+        ? [`<key>EnvironmentVariables</key><dict><key>PATH</key><string>${xml(process.env.PATH)}</string></dict>`]
+        : []),
       "<key>RunAtLoad</key><true/><key>KeepAlive</key><true/>",
       "</dict></plist>",
       "",
