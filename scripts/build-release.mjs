@@ -52,6 +52,11 @@ async function emptyDir(path) {
   await Promise.all(entries.map((entry) => rm(join(path, entry), { recursive: true, force: true })));
 }
 
+// npm packs a LICENSE only from the package folder; the root one is the source of truth.
+for (const dir of ["control-plane", "node-agent", "dashboard"]) {
+  await cp(join(root, "LICENSE"), join(root, "apps", dir, "LICENSE"));
+}
+
 await emptyDir(join(root, "dist"));
 await emptyDir(join(root, "apps", "control-plane", "dist"));
 await emptyDir(join(root, "apps", "node-agent", "dist"));

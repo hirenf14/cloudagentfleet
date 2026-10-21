@@ -2,6 +2,7 @@
   "name": "cloudagentfleet",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "description": "Cloud Agent Fleet monorepo — Hub, UI, and Worker packages.",
   "repository": {
     "type": "git",
