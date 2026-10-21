@@ -1,5 +1,11 @@
 # @cloudagentfleet/hub
 
+## 0.2.1
+
+### Patch Changes
+
+- [#12](https://github.com/hirenf14/cloudagentfleet/pull/12) [`3e323c5`](https://github.com/hirenf14/cloudagentfleet/commit/3e323c55611d989f79bfe744bd46be7ed67b13b4) Thanks [@hirenf14](https://github.com/hirenf14)! - Cloud Agent Fleet is now released under the MIT license. The packages declare `"license": "MIT"` and include the license text, and the release archives ship `LICENSE` next to the Node.js license. Adds a code of conduct, a security policy with private vulnerability reporting, issue and pull request templates, and updated contribution guidelines.
+
 ## 0.2.0
 
 ### Minor Changes
