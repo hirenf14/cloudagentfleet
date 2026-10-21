@@ -1,0 +1,6 @@
+{
+  "name": "cloudagentfleet-site",
+  "private": true,
+  "type": "module",
+  "description": "Landing page and docs assets. Not published; lets Node treat highlight.js as an ES module."
+}

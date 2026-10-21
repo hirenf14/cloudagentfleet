@@ -8,8 +8,8 @@ is published with Funnel, and Cloud Agent Fleet never binds host-local `:80`
 or `:443`.
 
 ```text
-Browser → Serve :443  → Controller dashboard on 127.0.0.1:8787
-Browser → Serve :8443 → Controller host UIs  on 127.0.0.1:8788 → tailnet → hosts
+Browser → Serve :443  → Hub dashboard on 127.0.0.1:8787
+Browser → Serve :8443 → Hub host UIs  on 127.0.0.1:8788 → tailnet → hosts
 ```
 
 ## Hub UI via Tailscale Serve
@@ -37,7 +37,7 @@ cloudagentfleet hub serve
 `hub serve` checks the Tailscale CLI and local Hub health, then serves only the
 loopback Hub. Equivalent Serve command:
 
-```text
+```bash
 tailscale serve --bg http://127.0.0.1:8787
 ```
 

@@ -6,7 +6,7 @@ commands underneath it, for when you want every option or are scripting.
 
 ## Worker setup
 
-```text
+```bash
 cloudagentfleet init     # guided: installs what you pick, runs services, enrolls
 cloudagentfleet setup    # step by step: asks about every detail, configures only the Worker
 ```
@@ -21,7 +21,7 @@ Use `enroll` after the Hub and, for connector mode, the Worker have been
 started. The command registers the instance, saves only non-secret registration
 metadata locally, and verifies health through the Hub:
 
-```text
+```bash
 cloudagentfleet enroll connector \
   --controller-url https://controller.example.test \
   --instance-id codeman-linux-1 \
@@ -89,7 +89,7 @@ The persistent Worker is our own background process. It owns the outbound
 connection, heartbeats, job delivery, Codeman supervision, and connector
 requests for hosts the Hub cannot reach directly.
 
-```text
+```bash
 cloudagentfleet worker install   # systemd user unit, launchd agent, or Task Scheduler task
 cloudagentfleet worker start
 cloudagentfleet worker status

@@ -140,7 +140,6 @@ h1, h2, h3 { text-wrap: balance; }
 .tabs button:hover { color: var(--text); }
 .tabs button[aria-checked="true"] { color: var(--strong); background: var(--active); }
 .code { position: relative; margin: 14px 0 0; padding: 14px 16px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--text); font-size: 13px; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; }
-.code .c { color: var(--subtle); }
 .copy { position: absolute; top: 8px; right: 8px; height: 26px; border: 0; padding: 0 9px; border-radius: 6px; color: var(--muted); background: var(--raised); font: inherit; font-family: Inter, system-ui, sans-serif; font-size: 12px; cursor: pointer; }
 .copy:hover { color: var(--strong); background: var(--hover); }
 
@@ -181,6 +180,17 @@ h1, h2, h3 { text-wrap: balance; }
 .prose ul, .prose ol { padding-left: 22px; }
 .prose li { margin: 6px 0; }
 .prose :not(pre) > code { padding: .1em .35em; border-radius: 5px; background: var(--raised); color: var(--strong); font-size: .86em; line-height: 1; overflow-wrap: anywhere; }
+/* Syntax colors (shell and JSON). */
+.tok-cmd { color: #7ee787; }
+.tok-sub { color: var(--strong); font-weight: 500; }
+.tok-flag { color: #79c0ff; }
+.tok-string { color: #e6c07b; }
+.tok-variable { color: #d2a8ff; }
+.tok-url { color: #a5d6ff; text-decoration: underline; text-decoration-color: var(--line-strong); text-underline-offset: 3px; }
+.tok-comment { color: var(--subtle); font-style: italic; }
+.tok-op { color: var(--muted); }
+.tok-key { color: #79c0ff; }
+.tok-number { color: #d2a8ff; }
 .prose pre.cmd { white-space: pre-wrap; overflow-wrap: anywhere; padding-right: 76px; }
 .prose pre .copy { top: 10px; right: 10px; }
 .prose pre { position: relative; margin: 20px 0; padding: 16px 18px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); font-size: 13px; line-height: 1.65; overflow-x: auto; tab-size: 2; }
