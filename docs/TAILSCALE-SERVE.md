@@ -17,7 +17,7 @@ Browser → Serve :8443 → Controller host UIs  on 127.0.0.1:8788 → tailnet �
 ### Prerequisites
 
 - Tailscale installed and connected on the Hub node (`tailscale status`).
-- Controller bound to loopback (`CLOUDAGENTFLEET_HOST=127.0.0.1`, the default).
+- Hub bound to loopback (`CLOUDAGENTFLEET_HOST=127.0.0.1`, the default).
 - Funnel disabled.
 - Operators reach only the Hub tag; the Hub reaches Codeman hosts. Operators
   get no direct Codeman grant.
@@ -41,19 +41,19 @@ loopback Hub. Equivalent Serve command:
 tailscale serve --bg http://127.0.0.1:8787
 ```
 
-Custom Controller port:
+Custom Hub port:
 
 ```bash
 CLOUDAGENTFLEET_HOST=127.0.0.1 CLOUDAGENTFLEET_PORT=9000 cloudagentfleet-hub
 cloudagentfleet hub serve --port 9000
 ```
 
-The command rejects non-loopback Controller binds.
+The command rejects non-loopback Hub binds.
 
 ### Hub password
 
 On first start with a durable data directory and no password env vars, the
-Controller generates a random UI password, stores it in `data/hub-ui-auth.json`,
+Hub generates a random UI password, stores it in `hub-ui-auth.json` in the Hub's data folder (`~/.cloudagentfleet/`),
 and prints the plaintext on **every** start until you replace it.
 
 ```bash
@@ -115,7 +115,7 @@ cloudagentfleet hub stop
 
 `hub stop` runs `tailscale serve reset` on this node. Use it only when this
 node's Serve routes are dedicated to Cloud Agent Fleet. It does not stop SSH,
-the Controller process, or Codeman.
+the Hub process, or Codeman.
 
 ## Optional: operator SSH on a dedicated port
 

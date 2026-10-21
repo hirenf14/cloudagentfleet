@@ -1,18 +1,23 @@
-# CLI Enrollment
+# CLI and enrollment
+
+Most people only need `cloudagentfleet init`, which sets up a machine and
+enrolls it ([Getting started](GETTING-STARTED.md)). This page covers the
+commands underneath it, for when you want every option or are scripting.
 
 ## Worker setup
 
 ```text
-cloudagentfleet setup
+cloudagentfleet init     # guided: installs what you pick, runs services, enrolls
+cloudagentfleet setup    # step by step: asks about every detail, configures only the Worker
 ```
 
-The command is the single supported path for adding a machine to a private
-fleet. It is safe to run repeatedly: an existing node identity is reused after
+Both are safe to run repeatedly: an existing node identity is reused after
 verification, and missing setup steps are shown before they are applied.
+`setup` is the long form of the Worker part of `init`.
 
 ## Codeman instance enrollment
 
-Use `enroll` after the Controller and, for connector mode, the Worker have been
+Use `enroll` after the Hub and, for connector mode, the Worker have been
 started. The command registers the instance, saves only non-secret registration
 metadata locally, and verifies health through the Hub:
 
@@ -42,7 +47,7 @@ Tailscale URL mode requires an HTTPS URL and does not enable Tailscale Serve.
 Use `--workspace-root` repeatedly or separate roots with `;`; use
 `--workspace-mode system` only when whole-system access is intentional.
 `--agent-mode` accepts a comma-separated list and `--agent-profile` uses
-`id:name:mode[:ready]`. The controller token is read from
+`id:name:mode[:ready]`. The Worker token is read from
 `CLOUDAGENTFLEET_AUTH_TOKEN` and is never written to the instance metadata file.
 Use `--no-health` only to defer verification while a connector Worker is
 starting.
@@ -72,7 +77,7 @@ starting.
    `cptr`; the Worker serves the cptr driver only for its own cptr instance
    (`CLOUDAGENTFLEET_CPTR_INSTANCE_ID`, default `<node>-cptr`).
 4. Save the configuration to `~/.cloudagentfleet/worker.json` (user-only, mode
-   `0600`). The Controller token comes from `CLOUDAGENTFLEET_AUTH_TOKEN` or the
+   `0600`). The Worker token comes from `CLOUDAGENTFLEET_AUTH_TOKEN` or the
    "Hub Worker token" prompt (the contents of the Hub's `hub-worker-token`
    file) and is stored there so the Worker service can authenticate.
 5. Optionally start Codeman now, and with `--run` start the Worker. The Worker
@@ -82,7 +87,7 @@ starting.
 
 The persistent Worker is our own background process. It owns the outbound
 connection, heartbeats, job delivery, Codeman supervision, and connector
-requests for hosts the Controller cannot reach directly.
+requests for hosts the Hub cannot reach directly.
 
 ```text
 cloudagentfleet worker install   # systemd user unit, launchd agent, or Task Scheduler task
@@ -92,7 +97,7 @@ cloudagentfleet worker stop
 cloudagentfleet worker remove    # stops and unregisters the service
 ```
 
-`worker remove` does not revoke the node on the Controller and never deletes
+`worker remove` does not revoke the node on the Hub and never deletes
 project workspaces. `worker install` records the installing shell's PATH in
 the service so Codeman sessions and cptr find the agent CLIs (`claude`,
 `codex`, `agent`); `cloudagentfleet run` exits with the Worker's own exit code
@@ -116,11 +121,11 @@ provider readiness but does not perform provider login.
   Cursor or Anthropic API keys.
 - No software or service is installed without explicit confirmation.
 - Local configuration files are written user-only (`0600`).
-- The Controller token is read from `CLOUDAGENTFLEET_AUTH_TOKEN` and never
+- The Worker token is read from `CLOUDAGENTFLEET_AUTH_TOKEN` and never
   written to instance metadata (`instances.json`).
 
 ## Not yet implemented
 
 Single-use pairing codes, per-machine keypairs in the OS credential store, and
 signed self-update are planned (see `ROADMAP.md`). Until then, Workers
-authenticate with the shared Controller token.
+authenticate with the shared Worker token.

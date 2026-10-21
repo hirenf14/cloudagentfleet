@@ -61,10 +61,10 @@ lives only in the owner-only `hub-worker-token` file and the Worker's `0600`
 
 ### Accidental Hub publication
 
-The operator could expose the Controller or a Codeman endpoint to the public
+The operator could expose the Hub or a Codeman endpoint to the public
 internet, or grant the Hub to more tailnet users than intended.
 
-Controls: the Controller defaults to loopback, the Hub serving command rejects
+Controls: the Hub defaults to loopback, the Hub serving command rejects
 non-loopback binds and invokes Tailscale with shell execution disabled, and it
 creates one Hub route rather than per-instance routes. Tailscale ACLs must
 restrict the Hub to intended operators; Funnel must remain disabled. The

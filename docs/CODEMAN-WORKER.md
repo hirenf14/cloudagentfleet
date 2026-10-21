@@ -1,7 +1,7 @@
 # Codeman Worker
 
 The Worker is the machine-local execution side of Cloud Agent Fleet. It does not
-open an inbound listener. It enrolls with the Controller, consumes assignments
+open an inbound listener. It enrolls with the Hub, consumes assignments
 over an outbound Server-Sent Events stream, and posts lifecycle events back over
 HTTP.
 
@@ -27,7 +27,7 @@ codeman web
 On Windows, install and manage run inside WSL (same as setup). Native Windows
 without WSL remains unsupported for Codeman. Keep Codeman's authentication and
 provider login local to that machine. Cloud Agent Fleet does not copy those
-credentials to the Controller.
+credentials to the Hub.
 
 ## Configure and start with the CLI
 
@@ -51,7 +51,7 @@ default `true`). On `cloudagentfleet run` (or `setup --run`), those flags become
 can install/start Codeman without a separate `codeman web -d` on each host.
 To configure without launching, omit `--run`; later use `cloudagentfleet run`.
 
-Once a Worker is online, run this Controller-side selection flow:
+Once a Worker is online, run this Hub-side selection flow:
 
 ```bash
 cloudagentfleet start
@@ -75,13 +75,13 @@ cloudagentfleet enroll connector \
 The command checks `/api/instances/:id/health` after registration. For a
 Codeman endpoint already reachable over Tailscale, use
 `enroll tailscale-url --url https://<name>.<tailnet>.ts.net` instead. This is
-the preferred path for the native Codeman UI: the Controller proxies the
+the preferred path for the native Codeman UI: the Hub proxies the
 selected host's Codeman REST, SSE, and WebSocket traffic over the tailnet, so
 terminal input does not pass through the request-per-keystroke Worker path.
-The connector remains available for machines that cannot accept Controller
+The connector remains available for machines that cannot accept Hub
 connections. To serve the single private Hub, use the `hub serve` command
 described in [`TAILSCALE-SERVE.md`](TAILSCALE-SERVE.md).
-`CLOUDAGENTFLEET_AUTH_TOKEN` is read from the environment when the Controller
+`CLOUDAGENTFLEET_AUTH_TOKEN` is read from the environment when the Hub
 requires authentication.
 
 ## Start the Worker manually
@@ -125,9 +125,9 @@ requests.
    the required carriage return.
 5. Completion is synchronized using Codeman's stop/exit wait signal, then the
    clean `last-response` is posted as a `job.event`.
-6. Controller cancellation deletes the corresponding Codeman session.
+6. Hub cancellation deletes the corresponding Codeman session.
 
-The Controller normally sends a workspace ID. The dashboard can also send an
+The Hub normally sends a workspace ID. The dashboard can also send an
 explicit workspace path for a newly discovered location. The Worker checks
 health, Codeman readiness, and the approved-folder/system policy again before
 creating a session; paths outside the policy are rejected.
