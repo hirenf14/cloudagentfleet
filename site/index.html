@@ -12,6 +12,7 @@
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
+  <a class="skip" href="#content">Skip to content</a>
   <header class="site-header">
     <div class="wrap">
       <a class="brand" href="./"><span class="brand__mark" aria-hidden="true">✦</span>Cloud Agent Fleet</a>
@@ -24,7 +25,7 @@
     </div>
   </header>
 
-  <main>
+  <main id="content">
     <section class="hero">
       <div class="wrap">
         <span class="eyebrow"><span class="dot"></span>Open source · self-hosted · private by default</span>
@@ -34,7 +35,7 @@
           <a class="button button--primary" href="docs/getting-started.html">Get started</a>
           <a class="button" href="https://github.com/hirenf14/cloudagentfleet">View on GitHub</a>
         </div>
-        <div class="hero__command"><span>$</span><code>npm install --global @cloudagentfleet/hub</code></div>
+        <div class="hero__command"><span>$</span><code data-shell>npm install --global @cloudagentfleet/hub</code></div>
       </div>
     </section>
 
@@ -45,27 +46,34 @@
           <div class="preview__body">
             <div class="preview__side">
               <div class="preview__brand"><span class="brand__mark">✦</span>Cloud Agent Fleet<span class="live"></span></div>
+              <div class="preview__search"><span aria-hidden="true">⌕</span>Search</div>
               <div class="preview__label">Recent</div>
-              <div class="preview__row"><span class="dot dot--on"></span>Fix flaky auth tests<span class="age">2m ago</span></div>
-              <div class="preview__row"><span class="dot dot--wait"></span>Migrate billing API<span class="age">9m ago</span></div>
-              <div class="preview__row"><span class="dot"></span>Bump dependencies<span class="age">1h ago</span></div>
-              <div class="preview__label">Machines <small>3/3 online</small></div>
-              <div class="preview__row preview__row--machine preview__row--active"><span class="dot dot--on"></span>studio-mac<span class="count">2</span></div>
-              <div class="preview__row preview__row--session"><span class="dot dot--on"></span>Fix flaky auth tests<span class="age">2m</span></div>
-              <div class="preview__row preview__row--session"><span class="dot dot--wait"></span>Migrate billing API<span class="age">9m</span></div>
-              <div class="preview__row preview__row--machine"><span class="dot dot--on"></span>build-server</div>
-              <div class="preview__row preview__row--machine"><span class="dot dot--on"></span>laptop (Open WebUI Computer)</div>
+              <div class="preview__row"><span class="dot dot--on"></span><span class="t">Fix flaky auth tests</span><span class="ctx">studio-mac</span><span class="age">2m ago</span></div>
+              <div class="preview__row"><span class="dot dot--wait"></span><span class="t">Migrate billing API</span><span class="ctx">studio-mac</span><span class="need"></span></div>
+              <div class="preview__row"><span class="dot"></span><span class="t">Bump dependencies</span><span class="ctx">build-server</span><span class="age">1h ago</span></div>
+              <div class="preview__label">Machines <span class="tools"><small>3/3 online</small><b>+</b></span></div>
+              <div class="preview__row preview__row--machine preview__row--active"><span class="fold">▾</span><span class="dot dot--on"></span>studio-mac<span class="count">2</span></div>
+              <div class="preview__row preview__row--session"><span class="dot dot--on"></span><span class="t">Fix flaky auth tests</span><span class="age">2m</span></div>
+              <div class="preview__row preview__row--session"><span class="dot dot--wait"></span><span class="t">Migrate billing API</span><span class="need"></span></div>
+              <div class="preview__row preview__row--fold"><span class="fold">▸</span>6 ended</div>
+              <div class="preview__row preview__row--machine"><span class="fold"></span><span class="dot dot--on"></span>build-server</div>
+              <div class="preview__row preview__row--machine"><span class="fold"></span><span class="dot dot--on"></span>laptop (Open WebUI Computer)</div>
+              <div class="preview__footer"><span>3 online · 9 sessions</span><span class="links"><span>?</span><span>Sign out</span></span></div>
             </div>
             <div class="preview__main">
-              <h3>studio-mac</h3>
+              <div class="preview__heading"><span class="preview__title">studio-mac</span><span class="preview__pill"><span class="dot dot--on"></span>online</span></div>
               <div class="preview__meta">Codeman · Connected through the Worker connector</div>
               <div class="preview__section">Start</div>
               <div class="preview__action">Start a session</div>
-              <div class="preview__hint">Runs an agent in one of this machine's workspaces; you watch and type here.</div>
-              <div class="preview__action">Open Codeman UI</div>
+              <div class="preview__hint">Runs an agent (or a plain shell) in one of this machine's workspaces; you watch and type here.</div>
+              <div class="preview__action preview__action--off">Open Codeman UI</div>
+              <div class="preview__action">Check health</div>
+              <div class="preview__hint">Asks the machine whether it is reachable right now.</div>
               <div class="preview__section">Continue</div>
               <div class="preview__item">Fix flaky auth tests<small>Claude Code · Working · 2m ago</small></div>
               <div class="preview__item">Migrate billing API<small>Cursor Agent · Needs input · 9m ago</small></div>
+              <div class="preview__section">Recent</div>
+              <div class="preview__item">Bump dependencies<small>Claude Code · Stopped · 1h ago</small></div>
             </div>
           </div>
         </div>
@@ -123,19 +131,19 @@
           <h2>Install</h2>
           <p>Two standalone installs. Downloads include Node.js; npm needs Node.js 22.6 or newer. Then run <code>cloudagentfleet init</code>.</p>
         </div>
-        <div class="install">
-          <div class="install__card" data-edition="hub">
-            <h3>Hub</h3>
-            <p>On the server or machine that hosts the dashboard. Includes the dashboard, and a Worker if this machine should offer agents too.</p>
-            <div class="tabs" role="tablist" aria-label="Hub install method"></div>
-            <pre class="code"></pre>
+        <div class="install" id="install-panel">
+          <div class="install__controls">
+            <div class="install__field">
+              <span class="install__label" id="edition-label">Install on</span>
+              <div class="tabs" role="radiogroup" aria-labelledby="edition-label" data-group="edition"></div>
+            </div>
+            <div class="install__field">
+              <span class="install__label" id="method-label">With</span>
+              <div class="tabs" role="radiogroup" aria-labelledby="method-label" data-group="method"></div>
+            </div>
           </div>
-          <div class="install__card" data-edition="worker">
-            <h3>Worker</h3>
-            <p>On each machine whose agents you want to reach. <code>init</code> asks what it offers and connects it to your Hub.</p>
-            <div class="tabs" role="tablist" aria-label="Worker install method"></div>
-            <pre class="code"></pre>
-          </div>
+          <p class="install__what" id="install-what"></p>
+          <pre class="code" id="install-code"></pre>
         </div>
       </div>
     </section>
@@ -190,9 +198,16 @@
     </div>
   </footer>
 
-  <script>
+  <script type="module">
+    import { highlightShell } from "./highlight.js";
+    for (const element of document.querySelectorAll("[data-shell]")) element.innerHTML = highlightShell(element.textContent);
+
     // Install commands per edition and method; kept in step with docs/GETTING-STARTED.md.
     const DOWNLOAD = "https://github.com/hirenf14/cloudagentfleet/releases/latest/download";
+    const EDITIONS = [
+      ["hub", "Hub (the dashboard)", "On the server or machine that hosts the dashboard. Includes the dashboard, and a Worker if this machine should offer agents too."],
+      ["worker", "Worker (each machine you add)", "On each machine whose agents you want to reach. `init` asks what it offers and connects it to your Hub."],
+    ];
     const METHODS = [["npm", "npm"], ["linux", "Linux"], ["macos", "macOS"], ["windows", "Windows"]];
     const PLATFORM = { linux: "linux-x64", macos: "darwin-arm64", windows: "win32-x64" };
     function commands(edition, method) {
@@ -203,45 +218,43 @@
       }
       return `${method === "macos" ? "# Apple silicon (Intel Macs: use npm)\n" : ""}mkdir -p ~/cloudagentfleet && cd ~/cloudagentfleet\ncurl -fsSLO ${DOWNLOAD}/${asset}.tar.gz\ntar -xzf ${asset}.tar.gz\n./${asset}/cloudagentfleet init`;
     }
-    const detected = /win/i.test(navigator.platform) ? "windows" : /mac/i.test(navigator.platform) ? "macos" : "linux";
-    for (const card of document.querySelectorAll(".install__card")) {
-      const edition = card.dataset.edition;
-      const tabs = card.querySelector(".tabs");
-      const code = card.querySelector(".code");
-      const show = (method) => {
-        for (const button of tabs.children) button.setAttribute("aria-selected", String(button.dataset.method === method));
-        const text = commands(edition, method);
-        code.innerHTML = "";
-        for (const line of text.split("\n")) {
-          const span = document.createElement("span");
-          if (line.startsWith("#")) span.className = "c";
-          span.textContent = `${line}\n`;
-          code.append(span);
-        }
-        const copy = document.createElement("button");
-        copy.className = "copy";
-        copy.textContent = "Copy";
-        copy.addEventListener("click", async () => {
-          try {
-            await navigator.clipboard.writeText(text.split("\n").filter((line) => !line.startsWith("#")).join("\n"));
-            copy.textContent = "Copied";
-            setTimeout(() => { copy.textContent = "Copy"; }, 1500);
-          } catch {
-            copy.textContent = "Select and copy";
-          }
-        });
-        code.append(copy);
-      };
-      for (const [method, label] of METHODS) {
-        const button = document.createElement("button");
-        button.role = "tab";
-        button.dataset.method = method;
-        button.textContent = label;
-        button.addEventListener("click", () => show(method));
-        tabs.append(button);
+    const platform = navigator.platform || "";
+    const state = { edition: "hub", method: /win/i.test(platform) ? "windows" : /mac/i.test(platform) ? "macos" : "linux" };
+    const groups = { edition: document.querySelector('[data-group="edition"]'), method: document.querySelector('[data-group="method"]') };
+    const what = document.getElementById("install-what");
+    const code = document.getElementById("install-code");
+    function render() {
+      for (const [group, options] of [["edition", EDITIONS], ["method", METHODS]]) {
+        for (const button of groups[group].children) button.setAttribute("aria-checked", String(button.dataset.value === state[group]));
       }
-      show(detected);
+      what.textContent = EDITIONS.find(([id]) => id === state.edition)[2].replaceAll("`", "");
+      const text = commands(state.edition, state.method);
+      code.innerHTML = highlightShell(text);
+      const copy = document.createElement("button");
+      copy.className = "copy";
+      copy.textContent = "Copy";
+      copy.addEventListener("click", async () => {
+        try {
+          await navigator.clipboard.writeText(text.split("\n").filter((line) => !line.startsWith("#")).join("\n"));
+          copy.textContent = "Copied";
+          setTimeout(() => { copy.textContent = "Copy"; }, 1500);
+        } catch {
+          copy.textContent = "Select and copy";
+        }
+      });
+      code.append(copy);
     }
+    for (const [group, options] of [["edition", EDITIONS], ["method", METHODS]]) {
+      for (const [value, label] of options) {
+        const button = document.createElement("button");
+        button.setAttribute("role", "radio");
+        button.dataset.value = value;
+        button.textContent = label;
+        button.addEventListener("click", () => { state[group] = value; render(); });
+        groups[group].append(button);
+      }
+    }
+    render();
   </script>
 </body>
 </html>

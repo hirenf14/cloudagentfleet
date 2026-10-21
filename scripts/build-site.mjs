@@ -2,6 +2,7 @@ import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { marked } from "marked";
+import { highlight } from "../site/highlight.js";
 
 /**
  * Builds the GitHub Pages site into site-dist/: the landing page from site/,
@@ -17,7 +18,7 @@ const DOCS = [
   { file: "CLI-ENROLLMENT.md", slug: "cli", title: "CLI and enrollment" },
   { file: "TAILSCALE-SERVE.md", slug: "tailscale", title: "Tailscale Serve" },
   { file: "THREAT-MODEL.md", slug: "security", title: "Security" },
-  { file: "BACKEND-ABSTRACTION.md", slug: "backends", title: "How backends work" },
+  { file: "BACKENDS.md", slug: "backends", title: "Codeman and Open WebUI Computer" },
   { file: "CODEMAN-WORKER.md", slug: "codeman-worker", title: "Codeman Worker" },
   { file: "ROADMAP.md", slug: "roadmap", title: "Roadmap" },
   { file: "ACKNOWLEDGEMENTS.md", slug: "credits", title: "Credits" },
@@ -56,6 +57,15 @@ function renderDoc(markdown) {
     const anchor = level === 2 || level === 3 ? `<a class="anchor" href="#${id}" aria-label="Link to this section">#</a>` : "";
     return `<h${depth} id="${id}">${inner}${anchor}</h${depth}>`;
   });
+  // Shell and JSON blocks are colored. Command blocks wrap (so a long URL stays fully visible) and get a
+  // copy button; JSON and text diagrams scroll.
+  html = html.replace(/<pre><code class="language-([a-z0-9]+)">([\s\S]*?)<\/code><\/pre>/g, (whole, language, body) => {
+    const source = body.replaceAll("&lt;", "<").replaceAll("&gt;", ">").replaceAll("&quot;", '"').replaceAll("&#39;", "'").replaceAll("&amp;", "&");
+    const colored = highlight(source, language);
+    if (colored === undefined) return whole;
+    const command = language !== "json";
+    return `<pre class="${command ? "cmd " : ""}highlighted"><code class="language-${language}">${colored}</code></pre>`;
+  });
   html = html.replace(/href="([^"]+)"/g, (_, href) => `href="${escapeHtml(rewriteLink(href.replaceAll("&amp;", "&")))}"`);
   const title = markdown.match(/^#\s+(.+)$/m)?.[1] ?? "";
   return { html, toc, title };
@@ -74,6 +84,7 @@ function layout({ title, description, body, current }) {
   <link rel="stylesheet" href="../styles.css">
 </head>
 <body>
+  <a class="skip" href="#content">Skip to content</a>
   <header class="site-header">
     <div class="wrap">
       <a class="brand" href="../"><span class="brand__mark" aria-hidden="true">✦</span>Cloud Agent Fleet</a>
@@ -84,7 +95,25 @@ function layout({ title, description, body, current }) {
       </nav>
     </div>
   </header>
-  <main class="wrap">${body}</main>
+  <main class="wrap" id="content">${body}</main>
+  <script>
+    for (const pre of document.querySelectorAll(".prose pre.cmd")) {
+      const button = document.createElement("button");
+      button.className = "copy";
+      button.type = "button";
+      button.textContent = "Copy";
+      button.addEventListener("click", async () => {
+        try {
+          await navigator.clipboard.writeText(pre.querySelector("code").innerText.trimEnd());
+          button.textContent = "Copied";
+          setTimeout(() => { button.textContent = "Copy"; }, 1500);
+        } catch {
+          button.textContent = "Select and copy";
+        }
+      });
+      pre.append(button);
+    }
+  </script>
   <footer class="site-footer">
     <div class="wrap">
       <span>Cloud Agent Fleet · open source (MIT) · independent, not affiliated with Codeman or Open WebUI</span>
@@ -98,7 +127,7 @@ function layout({ title, description, body, current }) {
 
 await rm(out, { recursive: true, force: true });
 await mkdir(join(out, "docs"), { recursive: true });
-await cp(join(root, "site"), out, { recursive: true });
+await cp(join(root, "site"), out, { recursive: true, filter: (source) => !source.endsWith("package.json") });
 // GitHub Pages must serve files as-is (no Jekyll processing).
 await writeFile(join(out, ".nojekyll"), "");
 
@@ -107,13 +136,13 @@ for (const [index, doc] of DOCS.entries()) {
   const { html, toc, title } = renderDoc(markdown.replaceAll("\r\n", "\n"));
   const nav = DOCS.map((item) => `<a href="${item.slug}.html"${item.slug === doc.slug ? ' aria-current="page"' : ""}>${escapeHtml(item.title)}</a>`).join("");
   const outline = toc.length > 1
-    ? `<aside class="docs__toc" aria-label="On this page"><h4>On this page</h4>${toc.map((entry) => `<a class="depth-${entry.level}" href="#${entry.id}">${escapeHtml(entry.text)}</a>`).join("")}</aside>`
+    ? `<aside class="docs__toc" aria-label="On this page"><p class="docs__label">On this page</p>${toc.map((entry) => `<a class="depth-${entry.level}" href="#${entry.id}">${escapeHtml(entry.text)}</a>`).join("")}</aside>`
     : "<aside class=\"docs__toc\"></aside>";
   const previous = DOCS[index - 1];
   const next = DOCS[index + 1];
   const pager = `<nav class="docs__pager" aria-label="Pages">${previous ? `<a href="${previous.slug}.html"><small>Previous</small>${escapeHtml(previous.title)}</a>` : "<span></span>"}${next ? `<a href="${next.slug}.html"><small>Next</small>${escapeHtml(next.title)}</a>` : ""}</nav>`;
   const body = `<div class="docs">
-    <nav class="docs__nav" aria-label="Docs"><h4>Docs</h4>${nav}</nav>
+    <nav class="docs__nav" aria-label="Docs"><p class="docs__label">Docs</p>${nav}</nav>
     <article class="prose">${html}${pager}<p class="docs__edit"><a href="${REPO}/edit/master/docs/${doc.file}">Edit this page on GitHub</a></p></article>
     ${outline}
   </div>`;
