@@ -1,5 +1,11 @@
 # @cloudagentfleet/ui
 
+[![npm version](https://img.shields.io/npm/v/@cloudagentfleet/ui)](https://www.npmjs.com/package/@cloudagentfleet/ui)
+[![npm downloads](https://img.shields.io/npm/dm/@cloudagentfleet/ui)](https://www.npmjs.com/package/@cloudagentfleet/ui)
+[![License: MIT](https://img.shields.io/npm/l/@cloudagentfleet/ui)](https://github.com/hirenf14/cloudagentfleet/blob/master/LICENSE)
+[![Node.js](https://img.shields.io/node/v/@cloudagentfleet/ui)](https://nodejs.org)
+[![CI](https://img.shields.io/github/actions/workflow/status/hirenf14/cloudagentfleet/ci.yml?branch=master)](https://github.com/hirenf14/cloudagentfleet/actions/workflows/ci.yml)
+
 The Cloud Agent Fleet dashboard files (`dist/public/…`: HTML, CSS, JS), on
 their own.
 
