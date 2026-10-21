@@ -46,27 +46,34 @@
           <div class="preview__body">
             <div class="preview__side">
               <div class="preview__brand"><span class="brand__mark">✦</span>Cloud Agent Fleet<span class="live"></span></div>
+              <div class="preview__search"><span aria-hidden="true">⌕</span>Search</div>
               <div class="preview__label">Recent</div>
-              <div class="preview__row"><span class="dot dot--on"></span>Fix flaky auth tests<span class="age">2m ago</span></div>
-              <div class="preview__row"><span class="dot dot--wait"></span>Migrate billing API<span class="age">9m ago</span></div>
-              <div class="preview__row"><span class="dot"></span>Bump dependencies<span class="age">1h ago</span></div>
-              <div class="preview__label">Machines <small>3/3 online</small></div>
-              <div class="preview__row preview__row--machine preview__row--active"><span class="dot dot--on"></span>studio-mac<span class="count">2</span></div>
-              <div class="preview__row preview__row--session"><span class="dot dot--on"></span>Fix flaky auth tests<span class="age">2m</span></div>
-              <div class="preview__row preview__row--session"><span class="dot dot--wait"></span>Migrate billing API<span class="age">9m</span></div>
-              <div class="preview__row preview__row--machine"><span class="dot dot--on"></span>build-server</div>
-              <div class="preview__row preview__row--machine"><span class="dot dot--on"></span>laptop (Open WebUI Computer)</div>
+              <div class="preview__row"><span class="dot dot--on"></span><span class="t">Fix flaky auth tests</span><span class="ctx">studio-mac</span><span class="age">2m ago</span></div>
+              <div class="preview__row"><span class="dot dot--wait"></span><span class="t">Migrate billing API</span><span class="ctx">studio-mac</span><span class="need"></span></div>
+              <div class="preview__row"><span class="dot"></span><span class="t">Bump dependencies</span><span class="ctx">build-server</span><span class="age">1h ago</span></div>
+              <div class="preview__label">Machines <span class="tools"><small>3/3 online</small><b>+</b></span></div>
+              <div class="preview__row preview__row--machine preview__row--active"><span class="fold">▾</span><span class="dot dot--on"></span>studio-mac<span class="count">2</span></div>
+              <div class="preview__row preview__row--session"><span class="dot dot--on"></span><span class="t">Fix flaky auth tests</span><span class="age">2m</span></div>
+              <div class="preview__row preview__row--session"><span class="dot dot--wait"></span><span class="t">Migrate billing API</span><span class="need"></span></div>
+              <div class="preview__row preview__row--fold"><span class="fold">▸</span>6 ended</div>
+              <div class="preview__row preview__row--machine"><span class="fold"></span><span class="dot dot--on"></span>build-server</div>
+              <div class="preview__row preview__row--machine"><span class="fold"></span><span class="dot dot--on"></span>laptop (Open WebUI Computer)</div>
+              <div class="preview__footer"><span>3 online · 9 sessions</span><span class="links"><span>?</span><span>Sign out</span></span></div>
             </div>
             <div class="preview__main">
-              <div class="preview__title">studio-mac</div>
+              <div class="preview__heading"><span class="preview__title">studio-mac</span><span class="preview__pill"><span class="dot dot--on"></span>online</span></div>
               <div class="preview__meta">Codeman · Connected through the Worker connector</div>
               <div class="preview__section">Start</div>
               <div class="preview__action">Start a session</div>
-              <div class="preview__hint">Runs an agent in one of this machine's workspaces; you watch and type here.</div>
-              <div class="preview__action">Open Codeman UI</div>
+              <div class="preview__hint">Runs an agent (or a plain shell) in one of this machine's workspaces; you watch and type here.</div>
+              <div class="preview__action preview__action--off">Open Codeman UI</div>
+              <div class="preview__action">Check health</div>
+              <div class="preview__hint">Asks the machine whether it is reachable right now.</div>
               <div class="preview__section">Continue</div>
               <div class="preview__item">Fix flaky auth tests<small>Claude Code · Working · 2m ago</small></div>
               <div class="preview__item">Migrate billing API<small>Cursor Agent · Needs input · 9m ago</small></div>
+              <div class="preview__section">Recent</div>
+              <div class="preview__item">Bump dependencies<small>Claude Code · Stopped · 1h ago</small></div>
             </div>
           </div>
         </div>
