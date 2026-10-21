@@ -81,6 +81,7 @@ async function packageEdition({ name, edition, files, binaries }) {
   await mkdir(artifactRoot, { recursive: true });
   for (const file of files) await cp(join(cliBundle, file), join(artifactRoot, file), { recursive: true });
   await cp(process.execPath, join(artifactRoot, nodeName));
+  await cp(join(root, "LICENSE"), join(artifactRoot, "LICENSE"));
   // Node.js is MIT-licensed; redistributing its binary means shipping its notice.
   await writeFile(join(artifactRoot, "NODE-LICENSE.txt"), await nodeLicense());
   for (const binary of binaries) {
@@ -110,7 +111,7 @@ async function packageEdition({ name, edition, files, binaries }) {
     "",
     "Guide: https://hirenf14.github.io/cloudagentfleet/docs/getting-started.html",
     "",
-    "The bundled Node.js runtime is MIT-licensed (NODE-LICENSE.txt). Codeman, Open WebUI Computer,",
+    "Cloud Agent Fleet is MIT-licensed (LICENSE). The bundled Node.js runtime is MIT-licensed (NODE-LICENSE.txt). Codeman, Open WebUI Computer,",
     "and the coding agents are not included; init installs the ones you pick with their official",
     "installers, under their own licenses. Credits: https://hirenf14.github.io/cloudagentfleet/docs/credits.html",
     "",

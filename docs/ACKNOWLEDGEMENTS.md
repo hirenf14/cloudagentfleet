@@ -5,7 +5,8 @@ bundle, copy, or modify any of the projects below: `cloudagentfleet init`
 installs them with their own official installers, only after you confirm, and
 each stays under its own license and terms.
 
-Cloud Agent Fleet is an independent project. It is not affiliated with,
+Cloud Agent Fleet itself is released under the [MIT license](https://github.com/hirenf14/cloudagentfleet/blob/master/LICENSE).
+It is an independent project. It is not affiliated with,
 endorsed by, or sponsored by the authors of these projects; their names are
 used only to say what Cloud Agent Fleet works with.
 

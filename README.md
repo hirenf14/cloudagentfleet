@@ -239,9 +239,17 @@ modified: `init` installs them with their official installers when you pick
 them. Cloud Agent Fleet is independent and not affiliated with either project.
 See [Credits and third-party software](docs/ACKNOWLEDGEMENTS.md).
 
+## License
+
+[MIT](LICENSE). Codeman and Open WebUI Computer, which `init` can install,
+are separate projects under their own licenses; see [Credits](#credits).
+
 ## Contributing
 
 See [`CONTRIBUTING.md`](CONTRIBUTING.md).
+
+Please read the [code of conduct](CODE_OF_CONDUCT.md); report vulnerabilities
+privately as described in [SECURITY.md](SECURITY.md).
 
 ## Status
 

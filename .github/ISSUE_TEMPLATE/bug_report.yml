@@ -1,0 +1,53 @@
+name: Bug report
+description: Something does not work as documented
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. **Do not post secrets** (tokens, passwords, tailnet or machine names you want private).
+        For a security problem, use [private reporting](https://github.com/hirenf14/cloudagentfleet/security/advisories/new) instead.
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: "`npm ls -g @cloudagentfleet/hub @cloudagentfleet/worker`, or the `version` in the archive's release-manifest.json"
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: How did you install it?
+      options: [npm, Release archive, From source]
+    validations:
+      required: true
+  - type: dropdown
+    id: role
+    attributes:
+      label: Where does it happen?
+      options: [Hub / dashboard, Worker, "cloudagentfleet init or setup", Codeman backend, Open WebUI Computer backend, Docs or website, Not sure]
+    validations:
+      required: true
+  - type: input
+    id: system
+    attributes:
+      label: Operating system
+      description: "For example Windows 11 + WSL Ubuntu, macOS 15, Ubuntu 24.04"
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+  - type: textarea
+    id: logs
+    attributes:
+      label: Output or logs
+      description: "Worker output is in worker.log (Windows) or `journalctl --user -u cloudagentfleet-worker`. Remove secrets first."
+      render: shell

@@ -14,6 +14,7 @@ const packages = [
     required: [
       /^package\.json$/,
       /^README\.md$/,
+      /^LICENSE$/,
       /^dist\/cloudagentfleet-hub\.mjs$/,
       /^dist\/cloudagentfleet\.mjs$/,
       /^dist\/cloudagentfleet-worker\.mjs$/,
@@ -26,7 +27,7 @@ const packages = [
   {
     name: "@cloudagentfleet/ui",
     dir: "apps/dashboard",
-    required: [/^package\.json$/, /^README\.md$/, /^dist\/public\/[^/]+$/],
+    required: [/^package\.json$/, /^README\.md$/, /^LICENSE$/, /^dist\/public\/[^/]+$/],
     optional: [/^CHANGELOG\.md$/],
     forbidden: [/src\//, /\.ts$/, /design-draft/, /^public\//, /^bin\//],
   },
@@ -36,6 +37,7 @@ const packages = [
     required: [
       /^package\.json$/,
       /^README\.md$/,
+      /^LICENSE$/,
       /^dist\/cloudagentfleet\.mjs$/,
       /^dist\/cloudagentfleet-worker\.mjs$/,
     ],
@@ -105,6 +107,10 @@ for (const pkg of packages) {
   }
 
   const manifest = JSON.parse(readFileSync(join(root, pkg.dir, "package.json"), "utf8"));
+  if (manifest.license !== "MIT") {
+    console.error(`FAIL ${pkg.name}: package.json must declare "license": "MIT"`);
+    failed = true;
+  }
   if (manifest.files?.includes("src") || manifest.files?.includes("bin") || manifest.files?.includes("public")) {
     console.error(`FAIL ${pkg.name}: package.json files must be build output only (dist)`);
     failed = true;

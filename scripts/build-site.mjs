@@ -87,8 +87,8 @@ function layout({ title, description, body, current }) {
   <main class="wrap">${body}</main>
   <footer class="site-footer">
     <div class="wrap">
-      <span>Cloud Agent Fleet · independent, not affiliated with Codeman or Open WebUI</span>
-      <span><a href="../">Home</a> · <a href="credits.html">Credits</a> · <a href="${REPO}">GitHub</a> · <a href="https://www.npmjs.com/package/@cloudagentfleet/hub">npm</a></span>
+      <span>Cloud Agent Fleet · open source (MIT) · independent, not affiliated with Codeman or Open WebUI</span>
+      <span><a href="../">Home</a> · <a href="credits.html">Credits</a> · <a href="${REPO}/blob/master/LICENSE">MIT license</a> · <a href="${REPO}">GitHub</a> · <a href="https://www.npmjs.com/package/@cloudagentfleet/hub">npm</a></span>
     </div>
   </footer>
 </body>
