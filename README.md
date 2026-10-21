@@ -1,5 +1,20 @@
 # Cloud Agent Fleet
 
+[![CI](https://img.shields.io/github/actions/workflow/status/hirenf14/cloudagentfleet/ci.yml?branch=master)](https://github.com/hirenf14/cloudagentfleet/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/github/license/hirenf14/cloudagentfleet)](https://github.com/hirenf14/cloudagentfleet/blob/master/LICENSE)
+[![Docs](https://img.shields.io/github/deployments/hirenf14/cloudagentfleet/github-pages?label=docs)](https://hirenf14.github.io/cloudagentfleet/)
+[![Node.js](https://img.shields.io/node/v/@cloudagentfleet/hub)](https://nodejs.org)
+[![Release downloads](https://img.shields.io/github/downloads/hirenf14/cloudagentfleet/total?label=release%20downloads)](https://github.com/hirenf14/cloudagentfleet/releases)
+[![GitHub stars](https://img.shields.io/github/stars/hirenf14/cloudagentfleet)](https://github.com/hirenf14/cloudagentfleet/stargazers)
+[![Last commit](https://img.shields.io/github/last-commit/hirenf14/cloudagentfleet)](https://github.com/hirenf14/cloudagentfleet/commits/master)
+[![Open issues](https://img.shields.io/github/issues/hirenf14/cloudagentfleet)](https://github.com/hirenf14/cloudagentfleet/issues)
+
+| Package | Version | Downloads / month | Total downloads | Size |
+| --- | --- | --- | --- | --- |
+| [`@cloudagentfleet/hub`](https://www.npmjs.com/package/@cloudagentfleet/hub)<br><sub>Hub, dashboard, CLI, optional Worker</sub> | [![npm version](https://img.shields.io/npm/v/@cloudagentfleet/hub?label=)](https://www.npmjs.com/package/@cloudagentfleet/hub) | [![npm downloads per month](https://img.shields.io/npm/dm/@cloudagentfleet/hub?label=)](https://www.npmjs.com/package/@cloudagentfleet/hub) | [![npm total downloads](https://img.shields.io/npm/dt/@cloudagentfleet/hub?label=)](https://www.npmjs.com/package/@cloudagentfleet/hub) | [![npm unpacked size](https://img.shields.io/npm/unpacked-size/@cloudagentfleet/hub?label=)](https://www.npmjs.com/package/@cloudagentfleet/hub) |
+| [`@cloudagentfleet/worker`](https://www.npmjs.com/package/@cloudagentfleet/worker)<br><sub>Worker and CLI for each machine</sub> | [![npm version](https://img.shields.io/npm/v/@cloudagentfleet/worker?label=)](https://www.npmjs.com/package/@cloudagentfleet/worker) | [![npm downloads per month](https://img.shields.io/npm/dm/@cloudagentfleet/worker?label=)](https://www.npmjs.com/package/@cloudagentfleet/worker) | [![npm total downloads](https://img.shields.io/npm/dt/@cloudagentfleet/worker?label=)](https://www.npmjs.com/package/@cloudagentfleet/worker) | [![npm unpacked size](https://img.shields.io/npm/unpacked-size/@cloudagentfleet/worker?label=)](https://www.npmjs.com/package/@cloudagentfleet/worker) |
+| [`@cloudagentfleet/ui`](https://www.npmjs.com/package/@cloudagentfleet/ui)<br><sub>Dashboard files only (optional)</sub> | [![npm version](https://img.shields.io/npm/v/@cloudagentfleet/ui?label=)](https://www.npmjs.com/package/@cloudagentfleet/ui) | [![npm downloads per month](https://img.shields.io/npm/dm/@cloudagentfleet/ui?label=)](https://www.npmjs.com/package/@cloudagentfleet/ui) | [![npm total downloads](https://img.shields.io/npm/dt/@cloudagentfleet/ui?label=)](https://www.npmjs.com/package/@cloudagentfleet/ui) | [![npm unpacked size](https://img.shields.io/npm/unpacked-size/@cloudagentfleet/ui?label=)](https://www.npmjs.com/package/@cloudagentfleet/ui) |
+
 **[Website and docs](https://hirenf14.github.io/cloudagentfleet/)**
 
 One private dashboard for the coding agents on all your machines: Claude Code,

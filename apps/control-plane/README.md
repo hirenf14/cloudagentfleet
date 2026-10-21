@@ -1,5 +1,11 @@
 # @cloudagentfleet/hub
 
+[![npm version](https://img.shields.io/npm/v/@cloudagentfleet/hub)](https://www.npmjs.com/package/@cloudagentfleet/hub)
+[![npm downloads](https://img.shields.io/npm/dm/@cloudagentfleet/hub)](https://www.npmjs.com/package/@cloudagentfleet/hub)
+[![License: MIT](https://img.shields.io/npm/l/@cloudagentfleet/hub)](https://github.com/hirenf14/cloudagentfleet/blob/master/LICENSE)
+[![Node.js](https://img.shields.io/node/v/@cloudagentfleet/hub)](https://nodejs.org)
+[![CI](https://img.shields.io/github/actions/workflow/status/hirenf14/cloudagentfleet/ci.yml?branch=master)](https://github.com/hirenf14/cloudagentfleet/actions/workflows/ci.yml)
+
 The Cloud Agent Fleet **Hub**: the private dashboard (included) and the fleet
 API, with the `cloudagentfleet` CLI to run it as a service. It also carries
 the Worker, for when the Hub's own machine should offer its agents too.

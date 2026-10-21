@@ -1,5 +1,11 @@
 # @cloudagentfleet/worker
 
+[![npm version](https://img.shields.io/npm/v/@cloudagentfleet/worker)](https://www.npmjs.com/package/@cloudagentfleet/worker)
+[![npm downloads](https://img.shields.io/npm/dm/@cloudagentfleet/worker)](https://www.npmjs.com/package/@cloudagentfleet/worker)
+[![License: MIT](https://img.shields.io/npm/l/@cloudagentfleet/worker)](https://github.com/hirenf14/cloudagentfleet/blob/master/LICENSE)
+[![Node.js](https://img.shields.io/node/v/@cloudagentfleet/worker)](https://nodejs.org)
+[![CI](https://img.shields.io/github/actions/workflow/status/hirenf14/cloudagentfleet/ci.yml?branch=master)](https://github.com/hirenf14/cloudagentfleet/actions/workflows/ci.yml)
+
 The Cloud Agent Fleet **Worker** and the `cloudagentfleet` CLI: install it on
 each machine whose coding agents you want in your fleet's dashboard. Requires
 Node.js 22.6+; nothing else.
