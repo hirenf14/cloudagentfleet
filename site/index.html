@@ -124,19 +124,19 @@
           <h2>Install</h2>
           <p>Two standalone installs. Downloads include Node.js; npm needs Node.js 22.6 or newer. Then run <code>cloudagentfleet init</code>.</p>
         </div>
-        <div class="install">
-          <div class="install__card" data-edition="hub">
-            <h3>Hub</h3>
-            <p>On the server or machine that hosts the dashboard. Includes the dashboard, and a Worker if this machine should offer agents too.</p>
-            <div class="tabs" role="tablist" aria-label="Hub install method"></div>
-            <pre class="code"></pre>
+        <div class="install" id="install-panel">
+          <div class="install__controls">
+            <div class="install__field">
+              <span class="install__label" id="edition-label">Install on</span>
+              <div class="tabs" role="radiogroup" aria-labelledby="edition-label" data-group="edition"></div>
+            </div>
+            <div class="install__field">
+              <span class="install__label" id="method-label">With</span>
+              <div class="tabs" role="radiogroup" aria-labelledby="method-label" data-group="method"></div>
+            </div>
           </div>
-          <div class="install__card" data-edition="worker">
-            <h3>Worker</h3>
-            <p>On each machine whose agents you want to reach. <code>init</code> asks what it offers and connects it to your Hub.</p>
-            <div class="tabs" role="tablist" aria-label="Worker install method"></div>
-            <pre class="code"></pre>
-          </div>
+          <p class="install__what" id="install-what"></p>
+          <pre class="code" id="install-code"></pre>
         </div>
       </div>
     </section>
@@ -194,6 +194,10 @@
   <script>
     // Install commands per edition and method; kept in step with docs/GETTING-STARTED.md.
     const DOWNLOAD = "https://github.com/hirenf14/cloudagentfleet/releases/latest/download";
+    const EDITIONS = [
+      ["hub", "Hub (the dashboard)", "On the server or machine that hosts the dashboard. Includes the dashboard, and a Worker if this machine should offer agents too."],
+      ["worker", "Worker (each machine you add)", "On each machine whose agents you want to reach. `init` asks what it offers and connects it to your Hub."],
+    ];
     const METHODS = [["npm", "npm"], ["linux", "Linux"], ["macos", "macOS"], ["windows", "Windows"]];
     const PLATFORM = { linux: "linux-x64", macos: "darwin-arm64", windows: "win32-x64" };
     function commands(edition, method) {
@@ -204,45 +208,49 @@
       }
       return `${method === "macos" ? "# Apple silicon (Intel Macs: use npm)\n" : ""}mkdir -p ~/cloudagentfleet && cd ~/cloudagentfleet\ncurl -fsSLO ${DOWNLOAD}/${asset}.tar.gz\ntar -xzf ${asset}.tar.gz\n./${asset}/cloudagentfleet init`;
     }
-    const detected = /win/i.test(navigator.platform) ? "windows" : /mac/i.test(navigator.platform) ? "macos" : "linux";
-    for (const card of document.querySelectorAll(".install__card")) {
-      const edition = card.dataset.edition;
-      const tabs = card.querySelector(".tabs");
-      const code = card.querySelector(".code");
-      const show = (method) => {
-        for (const button of tabs.children) button.setAttribute("aria-selected", String(button.dataset.method === method));
-        const text = commands(edition, method);
-        code.innerHTML = "";
-        for (const line of text.split("\n")) {
-          const span = document.createElement("span");
-          if (line.startsWith("#")) span.className = "c";
-          span.textContent = `${line}\n`;
-          code.append(span);
-        }
-        const copy = document.createElement("button");
-        copy.className = "copy";
-        copy.textContent = "Copy";
-        copy.addEventListener("click", async () => {
-          try {
-            await navigator.clipboard.writeText(text.split("\n").filter((line) => !line.startsWith("#")).join("\n"));
-            copy.textContent = "Copied";
-            setTimeout(() => { copy.textContent = "Copy"; }, 1500);
-          } catch {
-            copy.textContent = "Select and copy";
-          }
-        });
-        code.append(copy);
-      };
-      for (const [method, label] of METHODS) {
-        const button = document.createElement("button");
-        button.role = "tab";
-        button.dataset.method = method;
-        button.textContent = label;
-        button.addEventListener("click", () => show(method));
-        tabs.append(button);
+    const platform = navigator.platform || "";
+    const state = { edition: "hub", method: /win/i.test(platform) ? "windows" : /mac/i.test(platform) ? "macos" : "linux" };
+    const groups = { edition: document.querySelector('[data-group="edition"]'), method: document.querySelector('[data-group="method"]') };
+    const what = document.getElementById("install-what");
+    const code = document.getElementById("install-code");
+    function render() {
+      for (const [group, options] of [["edition", EDITIONS], ["method", METHODS]]) {
+        for (const button of groups[group].children) button.setAttribute("aria-checked", String(button.dataset.value === state[group]));
       }
-      show(detected);
+      what.textContent = EDITIONS.find(([id]) => id === state.edition)[2].replaceAll("`", "");
+      const text = commands(state.edition, state.method);
+      code.textContent = "";
+      for (const line of text.split("\n")) {
+        const span = document.createElement("span");
+        if (line.startsWith("#")) span.className = "c";
+        span.textContent = `${line}\n`;
+        code.append(span);
+      }
+      const copy = document.createElement("button");
+      copy.className = "copy";
+      copy.textContent = "Copy";
+      copy.addEventListener("click", async () => {
+        try {
+          await navigator.clipboard.writeText(text.split("\n").filter((line) => !line.startsWith("#")).join("\n"));
+          copy.textContent = "Copied";
+          setTimeout(() => { copy.textContent = "Copy"; }, 1500);
+        } catch {
+          copy.textContent = "Select and copy";
+        }
+      });
+      code.append(copy);
     }
+    for (const [group, options] of [["edition", EDITIONS], ["method", METHODS]]) {
+      for (const [value, label] of options) {
+        const button = document.createElement("button");
+        button.setAttribute("role", "radio");
+        button.dataset.value = value;
+        button.textContent = label;
+        button.addEventListener("click", () => { state[group] = value; render(); });
+        groups[group].append(button);
+      }
+    }
+    render();
   </script>
 </body>
 </html>

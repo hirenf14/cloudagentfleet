@@ -56,6 +56,8 @@ function renderDoc(markdown) {
     const anchor = level === 2 || level === 3 ? `<a class="anchor" href="#${id}" aria-label="Link to this section">#</a>` : "";
     return `<h${depth} id="${id}">${inner}${anchor}</h${depth}>`;
   });
+  // Command blocks wrap (so a long URL stays fully visible) and get a copy button; text diagrams scroll.
+  html = html.replace(/<pre><code class="language-(bash|sh|shell|powershell|console)">/g, '<pre class="cmd"><code class="language-$1">');
   html = html.replace(/href="([^"]+)"/g, (_, href) => `href="${escapeHtml(rewriteLink(href.replaceAll("&amp;", "&")))}"`);
   const title = markdown.match(/^#\s+(.+)$/m)?.[1] ?? "";
   return { html, toc, title };
@@ -86,6 +88,24 @@ function layout({ title, description, body, current }) {
     </div>
   </header>
   <main class="wrap" id="content">${body}</main>
+  <script>
+    for (const pre of document.querySelectorAll(".prose pre.cmd")) {
+      const button = document.createElement("button");
+      button.className = "copy";
+      button.type = "button";
+      button.textContent = "Copy";
+      button.addEventListener("click", async () => {
+        try {
+          await navigator.clipboard.writeText(pre.querySelector("code").innerText.trimEnd());
+          button.textContent = "Copied";
+          setTimeout(() => { button.textContent = "Copy"; }, 1500);
+        } catch {
+          button.textContent = "Select and copy";
+        }
+      });
+      pre.append(button);
+    }
+  </script>
   <footer class="site-footer">
     <div class="wrap">
       <span>Cloud Agent Fleet · open source (MIT) · independent, not affiliated with Codeman or Open WebUI</span>
