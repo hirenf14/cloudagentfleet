@@ -154,10 +154,7 @@ export class CodemanClient {
       const sessionId = typeof session.id === "string" ? session.id : "";
       if (!sessionId) return session;
       try {
-        const terminal = await this.requestData<{
-          terminalBuffer?: string;
-          status?: string;
-        }>(`/api/v1/sessions/${encodeURIComponent(sessionId)}/terminal?tail=20000`);
+        const terminal = await this.terminal(sessionId, 20000);
         return {
           ...session,
           ...(terminal.terminalBuffer === undefined ? {} : { terminalBuffer: terminal.terminalBuffer }),
@@ -167,6 +164,17 @@ export class CodemanClient {
         return session;
       }
     }));
+  }
+
+  async terminal(
+    sessionId: string,
+    tail: number,
+    signal?: AbortSignal,
+  ): Promise<{ terminalBuffer?: string; status?: string }> {
+    return this.requestData<{ terminalBuffer?: string; status?: string }>(
+      `/api/v1/sessions/${encodeURIComponent(sessionId)}/terminal?tail=${tail}`,
+      { signal },
+    );
   }
 
   async startInteractive(sessionId: string): Promise<void> {
@@ -342,6 +350,8 @@ export interface CodemanWorkerRuntimeOptions {
   agentProfiles?: AgentProfile[];
   cursorCommand?: string;
   claudeCommand?: string;
+  /** How long a new session's terminal must stay unchanged before the first prompt is typed. */
+  settleMs?: number;
 }
 
 interface ActiveJob {
@@ -363,6 +373,7 @@ export class CodemanWorkerRuntime {
   private readonly agentProfiles: AgentProfile[];
   private readonly cursorCommand?: string;
   private readonly claudeCommand?: string;
+  private readonly settleMs: number;
   private readonly activeJobs = new Map<string, ActiveJob>();
 
   constructor(options: CodemanWorkerRuntimeOptions) {
@@ -376,6 +387,7 @@ export class CodemanWorkerRuntime {
     this.agentProfiles = options.agentProfiles?.map((agent) => ({ ...agent })) ?? [];
     this.cursorCommand = options.cursorCommand;
     this.claudeCommand = options.claudeCommand;
+    this.settleMs = options.settleMs ?? 1500;
   }
 
   async handle(message: ControlMessage): Promise<void> {
@@ -495,7 +507,10 @@ export class CodemanWorkerRuntime {
         idempotencyKey: job.idempotencyKey,
       });
       await this.send({ type: "job.event", jobId: job.id, event: "started", sessionId: session.id });
-      if (!followUp) await this.client.startInteractive(session.id);
+      if (!followUp) {
+        await this.client.startInteractive(session.id);
+        await this.waitForSettled(session.id, abortController.signal);
+      }
       const input = await this.client.sendPrompt(
         session.id,
         job.prompt,
@@ -506,7 +521,24 @@ export class CodemanWorkerRuntime {
       if (input.wait?.timedOut || !input.wait) {
         await this.client.waitForCompletion(session.id, abortController.signal);
       }
-      const response = await this.readResponse(session.id, abortController.signal);
+      let response = await this.readResponse(session.id, abortController.signal);
+      // An agent that is still starting can take the typed text but drop the Enter. If nothing came
+      // back and the prompt is still in the input box, press Enter again (twice at most).
+      for (let attempt = 0; attempt < 2 && !response.text.trim(); attempt += 1) {
+        if (!await this.promptStillTyped(session.id, job.prompt, abortController.signal)) break;
+        const retry = await this.client.sendPrompt(
+          session.id,
+          "",
+          `cloudagentfleet-${this.nodeId}-${job.id}`,
+          attempt + 2,
+          abortController.signal,
+        );
+        // Only keep waiting if the Enter got the agent working; an idle session never sends "stop".
+        if (retry.wait?.timedOut && (await this.client.terminal(session.id, 1, abortController.signal)).status === "busy") {
+          await this.client.waitForCompletion(session.id, abortController.signal);
+        }
+        response = await this.readResponse(session.id, abortController.signal);
+      }
       await this.send({
         type: "job.event",
         jobId: job.id,
@@ -553,6 +585,32 @@ export class CodemanWorkerRuntime {
     if (!active) return;
     active.abortController.abort();
     await this.client.deleteSession(active.sessionId);
+  }
+
+  /**
+   * Waits until a freshly started session's terminal stops changing (the agent's TUI has drawn its
+   * input box), so the first prompt isn't typed into a half-started agent. Gives up after 30s and
+   * lets the Enter retry in assign() cover what's left.
+   */
+  private async waitForSettled(sessionId: string, signal: AbortSignal): Promise<void> {
+    const step = Math.max(50, Math.min(500, this.settleMs / 3));
+    let last = "";
+    let quietFor = 0;
+    for (let waited = 0; waited < 30_000; waited += step) {
+      const buffer = (await this.client.terminal(sessionId, 4000, signal).catch(() => ({ terminalBuffer: "" }))).terminalBuffer ?? "";
+      quietFor = buffer && buffer === last ? quietFor + step : 0;
+      if (quietFor >= this.settleMs) return;
+      last = buffer;
+      await delay(step, signal);
+    }
+  }
+
+  /** Whether the start of the prompt is still on screen with no reply, i.e. it was typed but never sent. */
+  private async promptStillTyped(sessionId: string, prompt: string, signal: AbortSignal): Promise<boolean> {
+    const flat = (text: string) => text.replaceAll(/\x1b\[[0-9;?]*[A-Za-z]|\x1b\][^\x07]*\x07/g, "").replaceAll(/\s+/g, " ");
+    const head = flat(prompt).trim().slice(0, 40);
+    const { terminalBuffer = "" } = await this.client.terminal(sessionId, 4000, signal);
+    return head.length > 0 && flat(terminalBuffer).includes(head);
   }
 
   private async readResponse(

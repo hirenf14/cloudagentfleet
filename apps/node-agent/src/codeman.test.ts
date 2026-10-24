@@ -35,6 +35,9 @@ function fakeCodemanFetch(sessions: Array<Record<string, unknown>> = []) {
     if (url.endsWith("/api/v1/status")) {
       return Response.json({ success: true, data: { agents: [], capabilities: [] } });
     }
+    if (url.includes("/terminal?tail=")) {
+      return Response.json({ success: true, data: { terminalBuffer: "❯ ", status: "idle" } });
+    }
     if (url.endsWith("/interactive") && init?.method === "POST") {
       return Response.json({ success: true, data: {} });
     }
@@ -555,4 +558,47 @@ test("CodemanWorkerRuntime starts the agent a job asks for", async () => {
   });
   const create = fake.calls.find((call) => call.url.endsWith("/api/v1/sessions") && call.init?.method === "POST");
   assert.equal(JSON.parse(String(create?.init?.body)).mode, "codex");
+});
+
+test("CodemanWorkerRuntime waits for a new session to settle and re-sends a dropped Enter", async () => {
+  const fake = fakeCodemanFetch();
+  let entered = false;
+  const fetchImpl: typeof fetch = async (input, init) => {
+    const url = String(input);
+    if (url.includes("/terminal?tail=")) {
+      fake.calls.push({ url, init });
+      // The agent took the text but not the Enter: the prompt sits in the input box until a bare Enter arrives.
+      const buffer = entered ? "❯ Write the summary\nDone." : "\x1b[2m❯ \x1b[0mWrite   the summary";
+      return Response.json({ success: true, data: { terminalBuffer: buffer, status: "idle" } });
+    }
+    if (url.endsWith("/input") && JSON.parse(String(init?.body)).input === "\r") entered = true;
+    if (url.endsWith("/last-response")) {
+      fake.calls.push({ url, init });
+      return Response.json({ success: true, data: { text: entered ? "Done." : "", timestamp: Date.now() } });
+    }
+    return fake.fetchImpl(input, init);
+  };
+  const messages: NodeMessage[] = [];
+  const runtime = new CodemanWorkerRuntime({
+    client: new CodemanClient({ baseUrl: "http://127.0.0.1:3000", fetchImpl }),
+    nodeId: "worker-1",
+    workspaces: [workspace],
+    workspacePolicy: { mode: "folders", roots: ["C:/workspaces"] },
+    send: async (message) => { messages.push(message); },
+    settleMs: 100,
+  });
+  await runtime.handle({
+    type: "job.assign",
+    job: {
+      id: "job-enter", provider: "codeman", nodeId: "worker-1", workspaceId: workspace.id, prompt: "Write\nthe summary",
+      status: "queued", idempotencyKey: "enter-1", createdAt: new Date().toISOString(),
+    },
+  });
+
+  const urls = fake.calls.map((call) => call.url.replace("http://127.0.0.1:3000/api/v1/sessions", ""));
+  const firstInput = urls.indexOf("/session-1/input");
+  assert.ok(urls.slice(urls.indexOf("/session-1/interactive"), firstInput).some((u) => u.includes("/terminal")), "the first prompt waits for the terminal to settle");
+  assert.equal(urls.filter((u) => u === "/session-1/input").length, 2, "one prompt, one retried Enter");
+  const completed = messages.at(-1);
+  assert.equal(completed?.type === "job.event" ? completed.data : undefined, "Done.");
 });
