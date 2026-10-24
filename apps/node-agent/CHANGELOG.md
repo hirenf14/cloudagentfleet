@@ -1,5 +1,13 @@
 # @cloudagentfleet/worker
 
+## 0.3.2
+
+### Patch Changes
+
+- [#24](https://github.com/hirenf14/cloudagentfleet/pull/24) [`f290b6f`](https://github.com/hirenf14/cloudagentfleet/commit/f290b6f424265afcb74adec454a339f350740b4c) Thanks [@hirenf14](https://github.com/hirenf14)! - A follow-up job in an existing session now reports its own answer instead of the previous job's.
+
+- [#25](https://github.com/hirenf14/cloudagentfleet/pull/25) [`4597630`](https://github.com/hirenf14/cloudagentfleet/commit/4597630c882d53ca5b7880c179a6825a858ba2e5) Thanks [@hirenf14](https://github.com/hirenf14)! - Codex and other non-Claude agent jobs complete instead of failing with "Signal(s) stop never fire".
+
 ## 0.3.1
 
 ### Patch Changes
