@@ -309,6 +309,16 @@ export interface AgentJob {
   status: "queued" | "running" | "completed" | "failed" | "cancelled";
   idempotencyKey: string;
   createdAt: string;
+  /**
+   * The Codeman session the job runs in. Set by the Worker when the job
+   * starts; pass it on a later job to continue the same conversation.
+   */
+  sessionId?: string;
+  /** The agent's final answer, once the job completes. */
+  result?: string;
+  /** Why the job failed, when it fails. */
+  error?: string;
+  finishedAt?: string;
 }
 
 export type SessionStatus =
@@ -341,6 +351,11 @@ export interface CreateJobRequest {
   workspaceId: string;
   prompt: string;
   idempotencyKey: string;
+  /**
+   * Continue an earlier job's Codeman session instead of starting a new one.
+   * Only sessions the Worker created for jobs are accepted.
+   */
+  sessionId?: string;
 }
 
 export interface AuditEvent {
@@ -448,6 +463,8 @@ export type NodeMessage =
       jobId: string;
       event: "started" | "output" | "completed" | "failed" | "cancelled";
       data?: string;
+      /** The Codeman session the job runs in (sent with "started"). */
+      sessionId?: string;
     }
   | {
       type: "preview.open";

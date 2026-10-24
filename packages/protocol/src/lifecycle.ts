@@ -176,6 +176,7 @@ export class JobStore {
       status: "queued",
       idempotencyKey: request.idempotencyKey,
       createdAt: this.clock().toISOString(),
+      ...(request.sessionId ? { sessionId: request.sessionId } : {}),
     };
 
     this.jobs.set(job.id, job);
@@ -183,16 +184,26 @@ export class JobStore {
     return job;
   }
 
-  start(jobId: string): AgentJob {
-    return this.update(jobId, { status: "running" });
+  start(jobId: string, sessionId?: string): AgentJob {
+    return this.update(jobId, { status: "running", ...(sessionId ? { sessionId } : {}) });
   }
 
-  complete(jobId: string): AgentJob {
-    return this.update(jobId, { status: "completed" });
+  /** Marks the job done and keeps the agent's final answer. */
+  complete(jobId: string, result?: string): AgentJob {
+    return this.update(jobId, {
+      status: "completed",
+      ...(result !== undefined ? { result } : {}),
+      finishedAt: this.clock().toISOString(),
+    });
   }
 
-  fail(jobId: string): AgentJob {
-    return this.update(jobId, { status: "failed" });
+  /** Marks the job failed and keeps the reason. */
+  fail(jobId: string, error?: string): AgentJob {
+    return this.update(jobId, {
+      status: "failed",
+      ...(error !== undefined ? { error } : {}),
+      finishedAt: this.clock().toISOString(),
+    });
   }
 
   cancel(jobId: string): AgentJob {

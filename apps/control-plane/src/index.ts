@@ -129,13 +129,13 @@ export class ControlPlane {
     }
 
     if (message.event === "started") {
-      this.jobs.start(jobId);
+      this.jobs.start(jobId, message.sessionId);
       this.audit.append("job.started", "node", jobId, { nodeId });
     } else if (message.event === "completed") {
-      this.jobs.complete(jobId);
+      this.jobs.complete(jobId, message.data);
       this.audit.append("job.completed", "node", jobId, { nodeId });
     } else if (message.event === "failed") {
-      this.jobs.fail(jobId);
+      this.jobs.fail(jobId, message.data);
       this.audit.append("job.failed", "node", jobId, { nodeId });
     } else if (message.event === "cancelled") {
       if (job.status !== "cancelled") this.jobs.cancel(jobId);
@@ -245,6 +245,9 @@ export class ControlPlane {
   async createJob(request: CreateJobRequest): Promise<AgentJob> {
     const existing = this.jobs.getByIdempotencyKey(request.idempotencyKey);
     if (existing) return existing;
+    if (request.sessionId !== undefined && !/^[\w.:-]{1,200}$/.test(String(request.sessionId))) {
+      throw new Error("sessionId must be a Codeman session ID");
+    }
 
     const node = this.nodes.select(request.provider, request.nodeId);
     this.nodes.selectWorkspace(node.id, request.workspaceId, request.provider);

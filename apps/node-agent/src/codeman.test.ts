@@ -19,11 +19,15 @@ const workspace: WorkspaceDescriptor = {
   providers: { codeman: "ready" },
 };
 
-function fakeCodemanFetch() {
+function fakeCodemanFetch(sessions: Array<Record<string, unknown>> = []) {
   const calls: Array<{ url: string; init?: RequestInit }> = [];
   const fetchImpl: typeof fetch = async (input, init) => {
     const url = String(input);
     calls.push({ url, init });
+
+    if (url.endsWith("/api/v1/sessions") && (!init?.method || init.method === "GET")) {
+      return Response.json({ success: true, data: { sessions } });
+    }
 
     if (url.endsWith("/api/v1/sessions") && init?.method === "POST") {
       return Response.json({ success: true, data: { session: { id: "session-1" } } });
@@ -498,4 +502,37 @@ test("ControllerTransport survives a Controller restart and re-enrolls", async (
   assert.ok(enrollments >= 2, `re-enrolled after the restart (enrollments=${enrollments})`);
   assert.equal(connectedAfterRestart, true, "reconnected after re-enrolling");
   assert.ok(!(outcome instanceof Error) || outcome.name === "AbortError", "only a requested stop ends the loop");
+});
+
+test("CodemanWorkerRuntime continues an earlier job's session for a follow-up job", async () => {
+  const fake = fakeCodemanFetch([
+    { id: "session-1", name: "hosted-worker-1-job-1" },
+    { id: "session-mine", name: "Claude Code · app" },
+  ]);
+  const messages: NodeMessage[] = [];
+  const runtime = new CodemanWorkerRuntime({
+    client: new CodemanClient({ baseUrl: "http://127.0.0.1:3000", fetchImpl: fake.fetchImpl }),
+    nodeId: "worker-1",
+    workspaces: [workspace],
+    workspacePolicy: { mode: "folders", roots: ["C:/workspaces"] },
+    send: async (message) => { messages.push(message); },
+  });
+  const job = (id: string, sessionId: string) => ({
+    type: "job.assign" as const,
+    job: {
+      id, provider: "codeman" as const, nodeId: "worker-1", workspaceId: workspace.id, prompt: "Make it shorter",
+      status: "queued" as const, idempotencyKey: id, createdAt: new Date().toISOString(), sessionId,
+    },
+  });
+
+  await runtime.handle(job("job-2", "session-1"));
+  const posts = fake.calls.filter((call) => call.init?.method === "POST").map((call) => call.url.replace("http://127.0.0.1:3000", ""));
+  assert.deepEqual(posts, ["/api/v1/sessions/session-1/input"], "no new session, no restart: the prompt goes into the same session");
+  const started = messages.find((message) => message.type === "job.event" && message.event === "started");
+  assert.equal(started?.type === "job.event" ? started.sessionId : undefined, "session-1");
+  const completed = messages.at(-1);
+  assert.equal(completed?.type === "job.event" ? completed.data : undefined, "Codeman completed the task");
+
+  await assert.rejects(runtime.handle(job("job-3", "session-mine")), /was not started by a job/);
+  await assert.rejects(runtime.handle(job("job-4", "session-gone")), /Session not found/);
 });

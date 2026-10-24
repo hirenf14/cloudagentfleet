@@ -478,10 +478,13 @@ export class CodemanWorkerRuntime {
 
     const workspace = this.resolveWorkspace(job.workspaceId);
     const abortController = new AbortController();
-    const session = await this.client.createSession({
+    // A follow-up continues an earlier job's session (same conversation);
+    // otherwise the job gets a fresh session.
+    const followUp = job.sessionId ? await this.requireJobSession(job.sessionId) : undefined;
+    const session = followUp ?? await this.client.createSession({
       workingDir: workspace.canonicalPath,
       mode: this.mode,
-      name: `hosted-${this.nodeId}-${job.id}`,
+      name: `${this.jobSessionPrefix()}${job.id}`,
     });
     this.activeJobs.set(job.id, { sessionId: session.id, abortController });
 
@@ -491,12 +494,12 @@ export class CodemanWorkerRuntime {
         jobId: job.id,
         idempotencyKey: job.idempotencyKey,
       });
-      await this.send({ type: "job.event", jobId: job.id, event: "started" });
-      await this.client.startInteractive(session.id);
+      await this.send({ type: "job.event", jobId: job.id, event: "started", sessionId: session.id });
+      if (!followUp) await this.client.startInteractive(session.id);
       const input = await this.client.sendPrompt(
         session.id,
         job.prompt,
-        `cloudagentfleet-${this.nodeId}`,
+        `cloudagentfleet-${this.nodeId}-${job.id}`,
         1,
         abortController.signal,
       );
@@ -524,6 +527,25 @@ export class CodemanWorkerRuntime {
     } finally {
       this.activeJobs.delete(job.id);
     }
+  }
+
+  private jobSessionPrefix(): string {
+    return `hosted-${this.nodeId}-`;
+  }
+
+  /**
+   * Finds a session this Worker created for an earlier job. Sessions people
+   * started from the dashboard are refused, so a job can't type into them.
+   */
+  private async requireJobSession(sessionId: string): Promise<{ id: string }> {
+    const sessions = await this.client.listSessions();
+    const session = sessions.find((candidate) => candidate.id === sessionId);
+    if (!session) throw new Error(`Session not found on this Worker: ${sessionId}`);
+    const name = typeof session.name === "string" ? session.name : "";
+    if (!name.startsWith(this.jobSessionPrefix())) {
+      throw new Error(`Session ${sessionId} was not started by a job; follow-ups only continue job sessions`);
+    }
+    return { id: sessionId };
   }
 
   private async cancel(jobId: string): Promise<void> {

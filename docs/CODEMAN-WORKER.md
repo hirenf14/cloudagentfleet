@@ -124,8 +124,30 @@ requests.
 4. The Worker starts Codeman's interactive session and submits the prompt with
    the required carriage return.
 5. Completion is synchronized using Codeman's stop/exit wait signal, then the
-   clean `last-response` is posted as a `job.event`.
+   clean `last-response` is posted as a `job.event`. The Hub keeps it on the
+   job as `result` (or the reason as `error` when the job fails), so
+   `GET /api/jobs/:id` returns the agent's answer.
 6. Hub cancellation deletes the corresponding Codeman session.
+
+### Continuing a conversation
+
+A finished job keeps its Codeman session, and the job records it as
+`sessionId`. To continue the same conversation, create the next job with that
+`sessionId`:
+
+```json
+POST /api/jobs
+{ "provider": "codeman", "nodeId": "worker-1", "workspaceId": "workspace-app",
+  "prompt": "Make it shorter", "idempotencyKey": "thread-7-msg-2", "sessionId": "<sessionId from the earlier job>" }
+```
+
+The Worker types the prompt into that session instead of starting a new one.
+It only accepts sessions it created for jobs (named `hosted-<nodeId>-…`), so a
+job can't type into a session someone started from the dashboard.
+
+Agent permissions for jobs come from the workspace: Codeman starts the agent
+with its own command, so give a job a workspace whose `.claude/settings.json`
+(or the provider's equivalent) allows only the tools that job should use.
 
 The Hub normally sends a workspace ID. The dashboard can also send an
 explicit workspace path for a newly discovered location. The Worker checks
