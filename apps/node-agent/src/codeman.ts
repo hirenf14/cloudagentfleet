@@ -1,6 +1,6 @@
 import { mkdir, readdir, realpath, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import type { Dirent } from "node:fs";
+import { realpathSync, type Dirent } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import type {
   AgentJob,
@@ -386,7 +386,11 @@ export class CodemanWorkerRuntime {
     this.nodeId = options.nodeId;
     this.instanceId = options.instanceId ?? options.nodeId;
     this.workspaces = options.workspaces;
-    this.workspacePolicy = options.workspacePolicy;
+    // Candidates are compared by real path, so the roots must be real paths too: a root given through a
+    // symlink (macOS /var and /tmp, a linked projects folder) otherwise never matches anything.
+    this.workspacePolicy = options.workspacePolicy.mode === "folders"
+      ? { ...options.workspacePolicy, roots: options.workspacePolicy.roots.map(realRoot) }
+      : options.workspacePolicy;
     this.send = options.send;
     this.mode = options.mode ?? "claude";
     this.agentProfiles = options.agentProfiles?.map((agent) => ({ ...agent })) ?? [];
@@ -722,7 +726,8 @@ export class CodemanWorkerRuntime {
       ? trailingSeparator ? input : dirname(input)
       : process.cwd();
     const fragment = input && !trailingSeparator ? basename(input).toLowerCase() : "";
-    const directory = resolve(basePath);
+    // Check the folder's real path, like the roots: a typed /var/... is /private/var/... on macOS.
+    const directory = await realpath(resolve(basePath)).catch(() => resolve(basePath));
     if (!isPathAllowed(directory, this.workspacePolicy)) return [];
 
     let entries: Dirent[];
@@ -860,6 +865,15 @@ function isFileSystemError(error: unknown, ...codes: string[]): boolean {
     && error !== null
     && "code" in error
     && codes.includes(String(error.code));
+}
+
+/** A policy root's real path, or the root as given when it doesn't exist (yet). */
+function realRoot(root: string): string {
+  try {
+    return realpathSync(root);
+  } catch {
+    return root;
+  }
 }
 
 function delay(milliseconds: number, signal: AbortSignal): Promise<void> {
