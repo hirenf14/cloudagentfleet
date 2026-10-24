@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import assert from "node:assert/strict";
@@ -592,7 +592,7 @@ test("CodemanWorkerRuntime waits for a new session to settle and re-sends a drop
   await runtime.handle({
     type: "job.assign",
     job: {
-      id: "job-enter", provider: "codeman", nodeId: "worker-1", workspaceId: workspace.id, prompt: "Write\nthe summary",
+      id: "job-enter", provider: "codeman", nodeId: "worker-1", workspaceId: workspace.id, prompt: "Write the summary",
       status: "queued", idempotencyKey: "enter-1", createdAt: new Date().toISOString(),
     },
   });
@@ -726,4 +726,40 @@ test("CodemanWorkerRuntime ignores a reply that was there before a new session's
   });
   const completed = messages.at(-1);
   assert.equal(completed?.type === "job.event" ? completed.data : undefined, "first-ok");
+});
+
+test("CodemanWorkerRuntime hands a long or multi-line prompt over as a file", async () => {
+  const fake = fakeCodemanFetch();
+  const promptDir = await mkdtemp(join(tmpdir(), "cloudagentfleet-prompts-"));
+  const prompt = `# Your instructions (Skill: daily, ops nest)\n\n${"Check the pipeline. ".repeat(40)}\n\nWhat changed today?`;
+  let seen = "";
+  const fetchImpl: typeof fetch = async (input, init) => {
+    const url = String(input);
+    if (url.endsWith("/input")) {
+      const typed = JSON.parse(String(init?.body)).input as string;
+      const file = typed.match(/Read the file (\S+) and do what it asks/)?.[1];
+      seen = file ? await readFile(file, "utf8") : typed;
+    }
+    return fake.fetchImpl(input, init);
+  };
+  const messages: NodeMessage[] = [];
+  const runtime = new CodemanWorkerRuntime({
+    client: new CodemanClient({ baseUrl: "http://127.0.0.1:3000", fetchImpl }),
+    nodeId: "worker-1",
+    workspaces: [workspace],
+    workspacePolicy: { mode: "folders", roots: ["C:/workspaces"] },
+    send: async (message) => { messages.push(message); },
+    settleMs: 60,
+    promptDir,
+  });
+  await runtime.handle({
+    type: "job.assign",
+    job: {
+      id: "job-long", provider: "codeman", nodeId: "worker-1", workspaceId: workspace.id, prompt,
+      status: "queued", idempotencyKey: "long-1", createdAt: new Date().toISOString(),
+    },
+  });
+  assert.equal(seen, prompt, "the agent reads the whole prompt, newlines included");
+  assert.deepEqual(await readdir(promptDir), [], "the file is removed once the job ends");
+  await rm(promptDir, { recursive: true, force: true });
 });
