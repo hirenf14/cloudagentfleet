@@ -129,6 +129,13 @@ requests.
    `GET /api/jobs/:id` returns the agent's answer.
 6. Hub cancellation deletes the corresponding Codeman session.
 
+### Choosing the agent
+
+A job may name the agent Codeman starts for it with `agent` (one of Codeman's
+modes: `claude`, `codex`, `opencode`, `gemini`, …). Without it the Worker's
+configured mode is used. The agent must be installed and signed in on that
+Worker. Follow-ups continue the session's existing agent.
+
 ### Continuing a conversation
 
 A finished job keeps its Codeman session, and the job records it as

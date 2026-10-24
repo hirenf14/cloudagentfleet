@@ -163,6 +163,16 @@ test("enrolls, assigns, cancels, audits, and revokes a Worker", async () => {
     assert.equal(cancelled.job.status, "cancelled");
     assert.equal(messages[1]?.type, "job.cancel");
 
+    const badAgent = await fetch(`${baseUrl}/api/jobs`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        provider: "codeman", nodeId: registration.nodeId, workspaceId: "workspace-app",
+        prompt: "x", idempotencyKey: "bad-agent", agent: "rm-rf",
+      }),
+    });
+    assert.equal(badAgent.status, 400, "unknown agents are refused");
+
     const completedJobResponse = await fetch(`${baseUrl}/api/jobs`, {
       method: "POST",
       headers: { "content-type": "application/json" },

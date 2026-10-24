@@ -14,6 +14,7 @@ import type {
   NodeRegistration,
 } from "../../../packages/protocol/src/index.ts";
 import {
+  CODEMAN_AGENT_MODES,
   isTunnelMessage,
   validateCodemanConnectorResponse,
   validateCodemanConnectorSessionEvent,
@@ -247,6 +248,9 @@ export class ControlPlane {
     if (existing) return existing;
     if (request.sessionId !== undefined && !/^[\w.:-]{1,200}$/.test(String(request.sessionId))) {
       throw new Error("sessionId must be a Codeman session ID");
+    }
+    if (request.agent !== undefined && !(CODEMAN_AGENT_MODES as readonly string[]).includes(request.agent)) {
+      throw new Error(`agent must be one of ${CODEMAN_AGENT_MODES.join(", ")}`);
     }
 
     const node = this.nodes.select(request.provider, request.nodeId);

@@ -177,6 +177,7 @@ export class JobStore {
       idempotencyKey: request.idempotencyKey,
       createdAt: this.clock().toISOString(),
       ...(request.sessionId ? { sessionId: request.sessionId } : {}),
+      ...(request.agent ? { agent: request.agent } : {}),
     };
 
     this.jobs.set(job.id, job);

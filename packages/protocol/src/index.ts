@@ -314,6 +314,8 @@ export interface AgentJob {
    * starts; pass it on a later job to continue the same conversation.
    */
   sessionId?: string;
+  /** The agent Codeman starts for the job (unset: the Worker's configured mode). */
+  agent?: CodemanAgentMode;
   /** The agent's final answer, once the job completes. */
   result?: string;
   /** Why the job failed, when it fails. */
@@ -356,6 +358,8 @@ export interface CreateJobRequest {
    * Only sessions the Worker created for jobs are accepted.
    */
   sessionId?: string;
+  /** Which agent Codeman starts for a new session (default: the Worker's configured mode). */
+  agent?: CodemanAgentMode;
 }
 
 export interface AuditEvent {
