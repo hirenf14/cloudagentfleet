@@ -1,4 +1,5 @@
-import { readdir, realpath } from "node:fs/promises";
+import { mkdir, readdir, realpath, rm, writeFile } from "node:fs/promises";
+import { homedir } from "node:os";
 import type { Dirent } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import type {
@@ -353,6 +354,8 @@ export interface CodemanWorkerRuntimeOptions {
   claudeCommand?: string;
   /** How long a new session's terminal must stay unchanged before the first prompt is typed. */
   settleMs?: number;
+  /** Where long prompts are written for the agent to read (default ~/.cloudagentfleet/prompts). */
+  promptDir?: string;
 }
 
 interface ActiveJob {
@@ -375,6 +378,7 @@ export class CodemanWorkerRuntime {
   private readonly cursorCommand?: string;
   private readonly claudeCommand?: string;
   private readonly settleMs: number;
+  private readonly promptDir: string;
   private readonly activeJobs = new Map<string, ActiveJob>();
 
   constructor(options: CodemanWorkerRuntimeOptions) {
@@ -389,6 +393,7 @@ export class CodemanWorkerRuntime {
     this.cursorCommand = options.cursorCommand;
     this.claudeCommand = options.claudeCommand;
     this.settleMs = options.settleMs ?? 1500;
+    this.promptDir = options.promptDir ?? join(homedir(), ".cloudagentfleet", "prompts");
   }
 
   async handle(message: ControlMessage): Promise<void> {
@@ -501,6 +506,7 @@ export class CodemanWorkerRuntime {
       name: `${this.jobSessionPrefix()}${job.id}`,
     });
     this.activeJobs.set(job.id, { sessionId: session.id, abortController });
+    let promptFile: string | undefined;
 
     try {
       await this.send({
@@ -517,17 +523,21 @@ export class CodemanWorkerRuntime {
       // previous job's on a follow-up, or (for a new Codex session with no rollout yet) another
       // session's from the same folder. Only a newer one counts.
       const previous = await this.client.lastResponse(session.id, abortController.signal).catch(() => undefined);
+      promptFile = await this.promptFileFor(job);
+      const typed = promptFile
+        ? `Read the file ${promptFile} and do what it asks; it holds this whole request.`
+        : job.prompt;
       if (mode !== "claude") {
         // Only Claude Code has the hooks behind Codeman's stop/working signals; other agents
         // (Codex, OpenCode, ...) stay "idle" throughout, so watch the reply and the screen instead.
-        await this.client.sendInput(session.id, job.prompt);
+        await this.client.sendInput(session.id, typed);
         const response = await this.waitForReply(session.id, abortController.signal, previous);
         await this.send({ type: "job.event", jobId: job.id, event: "completed", data: response.text });
         return;
       }
       const input = await this.client.sendPrompt(
         session.id,
-        job.prompt,
+        typed,
         `cloudagentfleet-${this.nodeId}-${job.id}`,
         1,
         abortController.signal,
@@ -539,7 +549,7 @@ export class CodemanWorkerRuntime {
       // An agent that is still starting can take the typed text but drop the Enter. If nothing came
       // back and the prompt is still in the input box, press Enter again (twice at most).
       for (let attempt = 0; attempt < 2 && !response.text.trim(); attempt += 1) {
-        if (!await this.promptStillTyped(session.id, job.prompt, abortController.signal)) break;
+        if (!await this.promptStillTyped(session.id, typed, abortController.signal)) break;
         const retry = await this.client.sendPrompt(
           session.id,
           "",
@@ -572,7 +582,22 @@ export class CodemanWorkerRuntime {
       }
     } finally {
       this.activeJobs.delete(job.id);
+      if (promptFile) await rm(promptFile, { force: true });
     }
+  }
+
+  /**
+   * Writes a long or multi-line prompt to a file and returns its path, or returns undefined when the
+   * prompt is short enough to type. Typing a long prompt into an agent's TUI loses text (Claude Code
+   * folds a big burst into a paste placeholder and drops its start) and flattens newlines; a file
+   * keeps the whole request, and any agent can read it.
+   */
+  private async promptFileFor(job: AgentJob): Promise<string | undefined> {
+    if (job.prompt.length <= 400 && !job.prompt.includes("\n")) return undefined;
+    await mkdir(this.promptDir, { recursive: true });
+    const file = join(this.promptDir, `${job.id.replaceAll(/[^\w-]/g, "_")}.md`);
+    await writeFile(file, job.prompt, { mode: 0o600 });
+    return file;
   }
 
   private jobSessionPrefix(): string {
