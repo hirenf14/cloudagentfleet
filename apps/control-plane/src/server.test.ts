@@ -908,3 +908,22 @@ test("onboarding tells the dashboard where Workers connect, never the token", as
     rmSync(directory, { recursive: true, force: true });
   }
 });
+
+test("re-sends jobs a Worker never accepted when it reconnects", async () => {
+  const app = createControllerServer();
+  const worker = app.controlPlane.enrollNode(registration);
+  const lost: unknown[] = [];
+  app.controlPlane.registerConnection({ node: worker, send: async (message) => { lost.push(message); }, close: async () => undefined });
+  const job = await app.controlPlane.createJob({
+    provider: "codeman", nodeId: registration.nodeId, workspaceId: "workspace-app", prompt: "Run it", idempotencyKey: "lost-1",
+  });
+  assert.equal(lost.length, 1, "assigned on the connection that is about to drop");
+
+  const delivered: Array<{ type: string; job?: { id: string } }> = [];
+  app.controlPlane.registerConnection({ node: worker, send: async (message) => { delivered.push(message as never); }, close: async () => undefined });
+  assert.deepEqual(delivered.map((m) => [m.type, m.job?.id]), [["job.assign", job.id]]);
+
+  app.controlPlane.receiveNodeMessage(registration.nodeId, { type: "job.accept", jobId: job.id, idempotencyKey: "lost-1" });
+  app.controlPlane.registerConnection({ node: worker, send: async (message) => { delivered.push(message as never); }, close: async () => undefined });
+  assert.equal(delivered.length, 1, "an accepted job is not handed out again");
+});

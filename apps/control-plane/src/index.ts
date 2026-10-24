@@ -77,6 +77,11 @@ export class ControlPlane {
       this.tunnels.closeNode(connection.node.id, "Worker connection replaced");
     }
     this.connections.set(connection.node.id, connection);
+    // A job assigned while the Worker was reconnecting went to the old connection and was lost; the
+    // Worker never accepted it, so hand it out again. The Worker ignores a job it is already running.
+    for (const job of this.jobs.queuedFor(connection.node.id)) {
+      void connection.send({ type: "job.assign", job });
+    }
   }
 
   removeConnection(nodeId: string, connection?: NodeConnection): void {
