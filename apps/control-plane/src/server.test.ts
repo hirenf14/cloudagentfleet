@@ -184,6 +184,12 @@ test("enrolls, assigns, cancels, audits, and revokes a Worker", async () => {
       {
         type: "job.event",
         jobId: completedJob.job.id,
+        event: "started",
+        sessionId: "session-42",
+      },
+      {
+        type: "job.event",
+        jobId: completedJob.job.id,
         event: "completed",
         data: "done",
       },
@@ -202,6 +208,9 @@ test("enrolls, assigns, cancels, audits, and revokes a Worker", async () => {
       await fetch(`${baseUrl}/api/jobs/${completedJob.job.id}`),
     );
     assert.equal(completedState.job.status, "completed");
+    assert.equal(completedState.job.result, "done", "the agent's answer is kept on the job");
+    assert.equal(completedState.job.sessionId, "session-42", "so a follow-up job can continue it");
+    assert.ok(completedState.job.finishedAt);
 
     const auditResponse = await fetch(`${baseUrl}/api/audit`);
     const audit = await json(auditResponse);
@@ -213,6 +222,7 @@ test("enrolls, assigns, cancels, audits, and revokes a Worker", async () => {
         "job.created",
         "job.cancelled",
         "job.created",
+        "job.started",
         "job.completed",
       ],
     );

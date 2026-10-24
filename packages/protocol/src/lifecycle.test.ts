@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { NodeRegistry } from "./lifecycle.ts";
+import { JobStore, NodeRegistry } from "./lifecycle.ts";
 
 test("NodeRegistry marks a node offline once its heartbeat times out", () => {
   let now = new Date("2026-01-01T00:00:00.000Z");
@@ -19,4 +19,21 @@ test("NodeRegistry marks a node offline once its heartbeat times out", () => {
 
   registry.heartbeat({ nodeId: "worker-1", sentAt: now.toISOString(), capabilities: ["codeman"] });
   assert.equal(registry.list()[0]?.status, "online");
+});
+
+test("JobStore keeps the session, the answer and the failure reason", () => {
+  const now = new Date("2026-01-01T00:00:00.000Z");
+  const jobs = new JobStore(() => now);
+  const request = { provider: "codeman" as const, workspaceId: "w", prompt: "p", idempotencyKey: "k1" };
+
+  const job = jobs.create(request, "worker-1");
+  assert.equal(job.sessionId, undefined);
+  assert.equal(jobs.start(job.id, "session-1").sessionId, "session-1");
+  const done = jobs.complete(job.id, "All good");
+  assert.deepEqual([done.status, done.result, done.finishedAt], ["completed", "All good", now.toISOString()]);
+
+  const followUp = jobs.create({ ...request, idempotencyKey: "k2", sessionId: "session-1" }, "worker-1");
+  assert.equal(followUp.sessionId, "session-1", "a follow-up names the session it continues");
+  const failed = jobs.fail(followUp.id, "Codeman timed out");
+  assert.deepEqual([failed.status, failed.error], ["failed", "Codeman timed out"]);
 });
