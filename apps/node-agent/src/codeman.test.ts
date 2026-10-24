@@ -685,3 +685,45 @@ test("CodemanWorkerRuntime ends a hookless agent's turn on a fresh reply and a s
   assert.equal(completed?.type === "job.event" ? completed.event : undefined, "completed");
   assert.equal(completed?.type === "job.event" ? completed.data : undefined, "LGTM");
 });
+
+test("CodemanWorkerRuntime ignores a reply that was there before a new session's prompt", async () => {
+  const fake = fakeCodemanFetch();
+  let typed = false;
+  let frames = 0;
+  const fetchImpl: typeof fetch = async (input, init) => {
+    const url = String(input);
+    if (url.endsWith("/input")) {
+      typed = true;
+      return Response.json({ success: true, data: { delivered: true } });
+    }
+    if (url.includes("/terminal?tail=")) {
+      // The screen goes still early (frame 3) while only the other session's reply is available.
+      if (typed) frames += 1;
+      return Response.json({ success: true, data: { terminalBuffer: typed ? `frame ${Math.min(frames, 3)}` : "›", status: "idle" } });
+    }
+    if (url.endsWith("/last-response")) {
+      // Until this session's own reply exists, Codeman serves another session's from the same folder.
+      const own = typed && frames >= 12;
+      return Response.json({ success: true, data: own ? { text: "first-ok", timestamp: "t9" } : { text: "long-ok", timestamp: "t1" } });
+    }
+    return fake.fetchImpl(input, init);
+  };
+  const messages: NodeMessage[] = [];
+  const runtime = new CodemanWorkerRuntime({
+    client: new CodemanClient({ baseUrl: "http://127.0.0.1:3000", fetchImpl }),
+    nodeId: "worker-1",
+    workspaces: [workspace],
+    workspacePolicy: { mode: "folders", roots: ["C:/workspaces"] },
+    send: async (message) => { messages.push(message); },
+    settleMs: 60,
+  });
+  await runtime.handle({
+    type: "job.assign",
+    job: {
+      id: "job-new-codex", provider: "codeman", nodeId: "worker-1", workspaceId: workspace.id, prompt: "Reply first-ok",
+      status: "queued", idempotencyKey: "codex-3", createdAt: new Date().toISOString(), agent: "codex",
+    },
+  });
+  const completed = messages.at(-1);
+  assert.equal(completed?.type === "job.event" ? completed.data : undefined, "first-ok");
+});

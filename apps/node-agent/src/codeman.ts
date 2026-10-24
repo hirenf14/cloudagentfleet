@@ -513,10 +513,10 @@ export class CodemanWorkerRuntime {
         await this.client.startInteractive(session.id);
         await this.waitForSettled(session.id, abortController.signal);
       }
-      // A follow-up's session already has a last response (the previous job's); only a newer one is this job's.
-      const previous = followUp
-        ? await this.client.lastResponse(session.id, abortController.signal).catch(() => undefined)
-        : undefined;
+      // Whatever the session reports as its last response before the prompt is not this job's: the
+      // previous job's on a follow-up, or (for a new Codex session with no rollout yet) another
+      // session's from the same folder. Only a newer one counts.
+      const previous = await this.client.lastResponse(session.id, abortController.signal).catch(() => undefined);
       if (mode !== "claude") {
         // Only Claude Code has the hooks behind Codeman's stop/working signals; other agents
         // (Codex, OpenCode, ...) stay "idle" throughout, so watch the reply and the screen instead.
