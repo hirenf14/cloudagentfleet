@@ -1,5 +1,13 @@
 # @cloudagentfleet/hub
 
+## 0.3.0
+
+### Minor Changes
+
+- [#19](https://github.com/hirenf14/cloudagentfleet/pull/19) [`1439d8f`](https://github.com/hirenf14/cloudagentfleet/commit/1439d8f0513f364458f1ce2688414e135c2cbe71) Thanks [@hirenf14](https://github.com/hirenf14)! - Jobs can name the agent Codeman starts (`agent`: claude, codex, opencode, gemini, …); the Hub refuses unknown agents and the Worker falls back to its configured mode.
+
+- [#17](https://github.com/hirenf14/cloudagentfleet/pull/17) [`30a9195`](https://github.com/hirenf14/cloudagentfleet/commit/30a91954bd55a5caab5643b14663cd0bcdeecdeb) Thanks [@hirenf14](https://github.com/hirenf14)! - Jobs now return the agent's answer: `GET /api/jobs/:id` includes `result` (or `error`), the Codeman `sessionId` and `finishedAt`. A new job can pass an earlier job's `sessionId` to continue the same conversation; the Worker only accepts sessions it created for jobs.
+
 ## 0.2.1
 
 ### Patch Changes
