@@ -16,12 +16,12 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/hirenf14/cloudagentfleet.git",
+    "url": "git+https://github.com/techoblix/cloudagentfleet.git",
     "directory": "apps/control-plane"
   },
-  "homepage": "https://github.com/hirenf14/cloudagentfleet/tree/master/apps/control-plane#readme",
+  "homepage": "https://github.com/techoblix/cloudagentfleet/tree/master/apps/control-plane#readme",
   "bugs": {
-    "url": "https://github.com/hirenf14/cloudagentfleet/issues"
+    "url": "https://github.com/techoblix/cloudagentfleet/issues"
   },
   "publishConfig": {
     "access": "public",

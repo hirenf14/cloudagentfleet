@@ -6,11 +6,11 @@
   "description": "Cloud Agent Fleet monorepo — Hub, UI, and Worker packages.",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/hirenf14/cloudagentfleet.git"
+    "url": "git+https://github.com/techoblix/cloudagentfleet.git"
   },
-  "homepage": "https://github.com/hirenf14/cloudagentfleet#readme",
+  "homepage": "https://github.com/techoblix/cloudagentfleet#readme",
   "bugs": {
-    "url": "https://github.com/hirenf14/cloudagentfleet/issues"
+    "url": "https://github.com/techoblix/cloudagentfleet/issues"
   },
   "engines": {
     "node": ">=22.6.0"
