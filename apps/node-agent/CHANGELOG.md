@@ -1,5 +1,15 @@
 # @cloudagentfleet/worker
 
+## 0.3.4
+
+### Patch Changes
+
+- [#30](https://github.com/hirenf14/cloudagentfleet/pull/30) [`fe3dd2e`](https://github.com/hirenf14/cloudagentfleet/commit/fe3dd2e1cdf26ffd58868854fc78a2435991dc9a) Thanks [@hirenf14](https://github.com/hirenf14)! - The `cloudagentfleet` command works when run from the npm install (it exited silently through the bin symlink).
+
+- [#29](https://github.com/hirenf14/cloudagentfleet/pull/29) [`76c7292`](https://github.com/hirenf14/cloudagentfleet/commit/76c7292355fe627f604c329d017a473345f8c3c6) Thanks [@hirenf14](https://github.com/hirenf14)! - Long or multi-line job prompts reach the agent whole: the Worker writes them to a file the agent reads instead of typing them.
+
+- [#31](https://github.com/hirenf14/cloudagentfleet/pull/31) [`471a6d9`](https://github.com/hirenf14/cloudagentfleet/commit/471a6d96d410cd31c60d3dd85a79f51ff9d8037f) Thanks [@hirenf14](https://github.com/hirenf14)! - Workspace suggestions work when a workspace root is reached through a symlink (e.g. macOS /tmp or a linked projects folder).
+
 ## 0.3.3
 
 ## 0.3.2
