@@ -6,6 +6,7 @@ import {
   mkdirSync,
   readFileSync,
   readdirSync,
+  realpathSync,
   renameSync,
   unlinkSync,
   writeFileSync,
@@ -2204,10 +2205,16 @@ function help() {
 function isDirectCliEntrypoint() {
   const entry = process.argv[1];
   if (!entry) return false;
-  const normalized = entry.replaceAll("\\", "/");
+  // npm installs the bin as a symlink without the .mjs (…/bin/cloudagentfleet), so compare real paths.
+  let real = resolve(entry);
+  try {
+    real = realpathSync(entry);
+  } catch {
+    // Keep the given path when it can't be resolved.
+  }
   return (
-    normalized.endsWith("/cloudagentfleet.mjs")
-    || resolve(entry) === resolve(fileURLToPath(import.meta.url))
+    real.replaceAll("\\", "/").endsWith("/cloudagentfleet.mjs")
+    || real === resolve(fileURLToPath(import.meta.url))
   );
 }
 
