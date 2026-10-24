@@ -944,3 +944,21 @@ test("CodemanWorkerRuntime hands a long or multi-line prompt over as a file", as
   assert.deepEqual(await readdir(promptDir), [], "the file is removed once the job ends");
   await rm(promptDir, { recursive: true, force: true });
 });
+
+test("CodemanClient forwards Codeman's live terminal output (session id in `id`)", async () => {
+  // The exact frame Codeman 1.23 sends for live output; its session id is `id`, not `sessionId`.
+  const frames = 'event: session:terminal\ndata: {"id":"session-1","data":"line 42\\r\\n"}\n\n';
+  const fetchImpl: typeof fetch = async () => new Response(new ReadableStream({
+    start(controller) {
+      controller.enqueue(new TextEncoder().encode(frames));
+    },
+  }), { headers: { "content-type": "text/event-stream" } });
+  const client = new CodemanClient({ baseUrl: "http://127.0.0.1:3000", fetchImpl });
+  const event = await new Promise<{ sessionId: string; type: string; data: unknown }>((resolve, reject) => {
+    const stop = client.subscribeEvents((e) => { stop(); resolve(e); });
+    setTimeout(() => { stop(); reject(new Error("no event: the live output was dropped")); }, 2000);
+  });
+  assert.equal(event.sessionId, "session-1");
+  assert.equal(event.type, "session:terminal");
+  assert.equal(event.data, "line 42\r\n");
+});
