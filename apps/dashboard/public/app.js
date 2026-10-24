@@ -170,6 +170,28 @@
       .replace(/\n{3,}/g, "\n\n");
   }
 
+  // terminalUpdate:start
+  /**
+   * Works out what to write when a polled terminal buffer arrives. The Hub sends only the last 20,000
+   * characters, so once output passes that the window slides and the buffer no longer starts with what
+   * is on screen; the live stream also adds text the poll may not match exactly. Writing just the new
+   * tail (found after the last part already on screen) keeps the terminal steady; a full redraw is
+   * only for a buffer that doesn't match at all. Before this, every 2-second poll redrew it.
+   * @param {string} rendered - What the terminal shows (polled buffer plus streamed output).
+   * @param {string} next - The newly polled buffer.
+   * @returns {{reset: boolean, write: string}} Whether to clear first, and the text to write.
+   */
+  function terminalUpdate(rendered, next) {
+    if (next === rendered || rendered.endsWith(next)) return { reset: false, write: "" };
+    if (!rendered) return { reset: true, write: next };
+    if (next.startsWith(rendered)) return { reset: false, write: next.slice(rendered.length) };
+    const anchor = rendered.slice(-256);
+    const at = next.lastIndexOf(anchor);
+    if (at >= 0) return { reset: false, write: next.slice(at + anchor.length) };
+    return { reset: true, write: next };
+  }
+  // terminalUpdate:end
+
   function cleanLegacyTerminalBuffer(value) {
     const deviceReplyCount = (value.match(/0;276;0c1;2c/g) || []).length;
     if (deviceReplyCount < 3) return value;
@@ -237,7 +259,6 @@
     const [error, setError] = useState("");
     const [streamStatus, setStreamStatus] = useState("connecting");
     const [showCreate, setShowCreate] = useState(false);
-    const [refreshing, setRefreshing] = useState(false);
     const [backends, setBackends] = useState([]);
     // A host UI shown inside the dashboard (an iframe on the host-UI origin).
     const [embeddedInstanceId, setEmbeddedInstanceId] = useState(null);
@@ -298,7 +319,6 @@
 
     const refresh = useCallback(async (quiet = false) => {
       if (!quiet) setLoading(true);
-      else setRefreshing(true);
       try {
         const instanceData = await api("/api/instances");
         const nextInstances = instanceData.instances || [];
@@ -325,7 +345,6 @@
         setError(cause instanceof Error ? cause.message : "Unable to load fleet");
       } finally {
         setLoading(false);
-        setRefreshing(false);
       }
     }, []);
 
@@ -358,6 +377,9 @@
               ...event,
               version: (current?.version || 0) + 1,
             }));
+            // Output goes straight to the terminal; reloading the fleet on every chunk would poll the
+            // Hub (and each Codeman) many times a second while an agent types.
+            return;
           }
         } catch {
           // The periodic refresh remains the recovery path for malformed events.
@@ -803,7 +825,7 @@
         h(
           "div",
           { className: "sidebar__footer" },
-          h("span", null, `${onlineCount} online · ${sessions.length} sessions`, refreshing ? " · syncing" : ""),
+          h("span", null, `${onlineCount} online · ${sessions.length} sessions`),
           h("button", { className: "sidebar__signout", onClick: () => setShowHelp(true), "aria-label": "Help", title: "Help (?)" }, "?"),
           h("button", { className: "sidebar__signout", onClick: () => void signOut() }, "Sign out"),
         ),
@@ -1197,6 +1219,8 @@
     const terminalSizeRef = useRef("");
     const lastWrittenEventVersionRef = useRef(0);
     const renderedTerminalBufferRef = useRef("");
+    // When live output last arrived for this session; while it flows, polled snapshots are skipped.
+    const lastLiveOutputRef = useRef(0);
     const canInteract = instance && !TERMINAL_STATUSES.has(session.status);
     const workspace = instance?.workspaces.find((item) => item.id === session.workspaceId);
 
@@ -1340,20 +1364,30 @@
     useEffect(() => {
       const terminal = terminalRef.current;
       if (!terminal) return;
+      // The live stream appends exact bytes; a polled snapshot (tmux's redraw stream, the last 20K) would
+      // repaint the whole terminal and make it jump. Use snapshots only for the first paint and as a
+      // fallback when the live stream has been quiet for 10s.
+      if (Date.now() - lastLiveOutputRef.current < 10_000) return;
       const terminalBuffer = cleanLegacyTerminalBuffer(session.terminalBuffer);
       const renderedBuffer = renderedTerminalBufferRef.current;
-      if (terminalBuffer === renderedBuffer) return;
-      if (terminalBuffer && renderedBuffer && terminalBuffer.startsWith(renderedBuffer)) {
-        const delta = consumeRemoteEcho(terminalBuffer.slice(renderedBuffer.length));
+      const update = terminalUpdate(renderedBuffer, terminalBuffer);
+      if (!update.reset && !update.write) return;
+      if (!update.reset) {
+        const delta = consumeRemoteEcho(update.write);
         if (delta) terminal.write(delta);
+        // Keep only a recent window: matching needs the end of what is on screen, not all of it.
+        renderedTerminalBufferRef.current = (renderedBuffer + update.write).slice(-40_000);
       } else {
         localEchoRef.current = "";
-        terminal.reset();
-        if (terminalBuffer) terminal.write(terminalBuffer);
-        else if (session.terminalBuffer) terminal.writeln("This legacy session has corrupted terminal output. Start a new session.");
-        else terminal.writeln("Waiting for terminal output…");
+        // Clear and repaint in ONE write: reset() + write() let a blank frame render in between, which made the
+        // view jerk on every poll (the polled buffer is tmux's redraw stream, so most polls repaint).
+        const content = terminalBuffer
+          || (session.terminalBuffer
+            ? "This legacy session has corrupted terminal output. Start a new session.\r\n"
+            : "Waiting for terminal output…\r\n");
+        terminal.write(`\x1bc${content}`);
+        renderedTerminalBufferRef.current = terminalBuffer;
       }
-      renderedTerminalBufferRef.current = terminalBuffer;
       lastWrittenEventVersionRef.current = terminalEvent?.version || 0;
       terminal.scrollToBottom();
     }, [canInteract, consumeRemoteEcho, session.id, session.terminalBuffer]);
@@ -1371,7 +1405,8 @@
       }
       const delta = consumeRemoteEcho(terminalEvent.data);
       if (delta) terminal.write(delta);
-      renderedTerminalBufferRef.current += terminalEvent.data;
+      lastLiveOutputRef.current = Date.now();
+      renderedTerminalBufferRef.current = (renderedTerminalBufferRef.current + terminalEvent.data).slice(-40_000);
       terminal.scrollToBottom();
       lastWrittenEventVersionRef.current = terminalEvent.version;
     }, [consumeRemoteEcho, session.id, session.instanceId, terminalEvent]);
