@@ -1,5 +1,11 @@
 # @cloudagentfleet/hub
 
+## 0.3.4
+
+### Patch Changes
+
+- [#30](https://github.com/hirenf14/cloudagentfleet/pull/30) [`fe3dd2e`](https://github.com/hirenf14/cloudagentfleet/commit/fe3dd2e1cdf26ffd58868854fc78a2435991dc9a) Thanks [@hirenf14](https://github.com/hirenf14)! - The `cloudagentfleet` command works when run from the npm install (it exited silently through the bin symlink).
+
 ## 0.3.3
 
 ### Patch Changes
