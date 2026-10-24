@@ -2,9 +2,9 @@
 
 [![npm version](https://img.shields.io/npm/v/@cloudagentfleet/worker)](https://www.npmjs.com/package/@cloudagentfleet/worker)
 [![npm downloads](https://img.shields.io/npm/dm/@cloudagentfleet/worker)](https://www.npmjs.com/package/@cloudagentfleet/worker)
-[![License: MIT](https://img.shields.io/npm/l/@cloudagentfleet/worker)](https://github.com/hirenf14/cloudagentfleet/blob/master/LICENSE)
+[![License: MIT](https://img.shields.io/npm/l/@cloudagentfleet/worker)](https://github.com/techoblix/cloudagentfleet/blob/master/LICENSE)
 [![Node.js](https://img.shields.io/node/v/@cloudagentfleet/worker)](https://nodejs.org)
-[![CI](https://img.shields.io/github/actions/workflow/status/hirenf14/cloudagentfleet/ci.yml?branch=master)](https://github.com/hirenf14/cloudagentfleet/actions/workflows/ci.yml)
+[![CI](https://img.shields.io/github/actions/workflow/status/techoblix/cloudagentfleet/ci.yml?branch=master)](https://github.com/techoblix/cloudagentfleet/actions/workflows/ci.yml)
 
 The Cloud Agent Fleet **Worker** and the `cloudagentfleet` CLI: install it on
 each machine whose coding agents you want in your fleet's dashboard. Requires
@@ -47,5 +47,5 @@ Settings live in `~/.cloudagentfleet/worker.json`. By default the Worker
 starts Codeman and Open WebUI Computer when they are down
 (`manageCodeman` / `manageCptr` in that file turn this off).
 
-Guide: [Getting started](https://github.com/hirenf14/cloudagentfleet/blob/master/docs/GETTING-STARTED.md) ·
-Source: [hirenf14/cloudagentfleet](https://github.com/hirenf14/cloudagentfleet)
+Guide: [Getting started](https://github.com/techoblix/cloudagentfleet/blob/master/docs/GETTING-STARTED.md) ·
+Source: [techoblix/cloudagentfleet](https://github.com/techoblix/cloudagentfleet)

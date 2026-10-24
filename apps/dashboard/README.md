@@ -2,9 +2,9 @@
 
 [![npm version](https://img.shields.io/npm/v/@cloudagentfleet/ui)](https://www.npmjs.com/package/@cloudagentfleet/ui)
 [![npm downloads](https://img.shields.io/npm/dm/@cloudagentfleet/ui)](https://www.npmjs.com/package/@cloudagentfleet/ui)
-[![License: MIT](https://img.shields.io/npm/l/@cloudagentfleet/ui)](https://github.com/hirenf14/cloudagentfleet/blob/master/LICENSE)
+[![License: MIT](https://img.shields.io/npm/l/@cloudagentfleet/ui)](https://github.com/techoblix/cloudagentfleet/blob/master/LICENSE)
 [![Node.js](https://img.shields.io/node/v/@cloudagentfleet/ui)](https://nodejs.org)
-[![CI](https://img.shields.io/github/actions/workflow/status/hirenf14/cloudagentfleet/ci.yml?branch=master)](https://github.com/hirenf14/cloudagentfleet/actions/workflows/ci.yml)
+[![CI](https://img.shields.io/github/actions/workflow/status/techoblix/cloudagentfleet/ci.yml?branch=master)](https://github.com/techoblix/cloudagentfleet/actions/workflows/ci.yml)
 
 The Cloud Agent Fleet dashboard files (`dist/public/…`: HTML, CSS, JS), on
 their own.
@@ -21,4 +21,4 @@ Only the production UI build is published; draft and source files are not.
 - [`@cloudagentfleet/hub`](https://www.npmjs.com/package/@cloudagentfleet/hub)
 - [`@cloudagentfleet/worker`](https://www.npmjs.com/package/@cloudagentfleet/worker)
 
-Source and docs: [hirenf14/cloudagentfleet](https://github.com/hirenf14/cloudagentfleet)
+Source and docs: [techoblix/cloudagentfleet](https://github.com/techoblix/cloudagentfleet)

@@ -10,7 +10,7 @@ import { highlight } from "../site/highlight.js";
  */
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const out = join(root, "site-dist");
-const REPO = "https://github.com/hirenf14/cloudagentfleet";
+const REPO = "https://github.com/techoblix/cloudagentfleet";
 
 /** Published docs, in sidebar order. Other docs stay on GitHub. */
 const DOCS = [

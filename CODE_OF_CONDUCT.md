@@ -31,6 +31,6 @@ thread, and block people who do not follow it, and will explain the reason
 when they can.
 
 To report a problem, use the private
-[security advisory form](https://github.com/hirenf14/cloudagentfleet/security/advisories/new)
+[security advisory form](https://github.com/techoblix/cloudagentfleet/security/advisories/new)
 (choose "other" and describe the conduct issue) or contact a maintainer
 through their GitHub profile. Reports are handled in confidence.

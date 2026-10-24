@@ -2,7 +2,7 @@
 
 What works today, what we plan next, and what is further out. This is a
 direction, not a promise: order and scope change as people use it. To suggest
-something, [open an issue](https://github.com/hirenf14/cloudagentfleet/issues).
+something, [open an issue](https://github.com/techoblix/cloudagentfleet/issues).
 
 ## Works today
 

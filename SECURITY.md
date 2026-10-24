@@ -9,7 +9,7 @@ we treat security reports seriously. The design is in
 Please **do not open a public issue** for a vulnerability.
 
 Report it privately through GitHub:
-[Report a vulnerability](https://github.com/hirenf14/cloudagentfleet/security/advisories/new).
+[Report a vulnerability](https://github.com/techoblix/cloudagentfleet/security/advisories/new).
 Include what you found, the version (`npm ls -g @cloudagentfleet/hub` or the
 archive's `release-manifest.json`), and steps to reproduce it. Do not include
 real credentials or tokens.

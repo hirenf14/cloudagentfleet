@@ -34,7 +34,7 @@ CLIs on the machines under test.
 ## Clone and install
 
 ```bash
-git clone https://github.com/hirenf14/cloudagentfleet.git
+git clone https://github.com/techoblix/cloudagentfleet.git
 cd cloudagentfleet
 pnpm install
 ```
@@ -160,7 +160,7 @@ bundles or UI, or include `src/`, `bin/`, TypeScript, tests, or draft UI files.
 
 ## Website and docs site
 
-The site at https://hirenf14.github.io/cloudagentfleet/ is the landing page in
+The site at https://techoblix.github.io/cloudagentfleet/ is the landing page in
 `site/` plus the docs pages rendered from `docs/*.md` (the list is in
 `scripts/build-site.mjs`). Edit the markdown in `docs/`; the **Pages** workflow
 rebuilds and deploys on every push to `master` that touches `site/` or

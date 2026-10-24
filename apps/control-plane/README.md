@@ -2,9 +2,9 @@
 
 [![npm version](https://img.shields.io/npm/v/@cloudagentfleet/hub)](https://www.npmjs.com/package/@cloudagentfleet/hub)
 [![npm downloads](https://img.shields.io/npm/dm/@cloudagentfleet/hub)](https://www.npmjs.com/package/@cloudagentfleet/hub)
-[![License: MIT](https://img.shields.io/npm/l/@cloudagentfleet/hub)](https://github.com/hirenf14/cloudagentfleet/blob/master/LICENSE)
+[![License: MIT](https://img.shields.io/npm/l/@cloudagentfleet/hub)](https://github.com/techoblix/cloudagentfleet/blob/master/LICENSE)
 [![Node.js](https://img.shields.io/node/v/@cloudagentfleet/hub)](https://nodejs.org)
-[![CI](https://img.shields.io/github/actions/workflow/status/hirenf14/cloudagentfleet/ci.yml?branch=master)](https://github.com/hirenf14/cloudagentfleet/actions/workflows/ci.yml)
+[![CI](https://img.shields.io/github/actions/workflow/status/techoblix/cloudagentfleet/ci.yml?branch=master)](https://github.com/techoblix/cloudagentfleet/actions/workflows/ci.yml)
 
 The Cloud Agent Fleet **Hub**: the private dashboard (included) and the fleet
 API, with the `cloudagentfleet` CLI to run it as a service. It also carries
@@ -49,5 +49,5 @@ State, the generated password (`hub-ui-auth.json`), and the Worker token
 | `CLOUDAGENTFLEET_UI_PASSWORD` | generated | Your own dashboard password |
 | `CLOUDAGENTFLEET_AUTH_TOKEN` | generated | Your own Worker token |
 
-Guide: [Getting started](https://github.com/hirenf14/cloudagentfleet/blob/master/docs/GETTING-STARTED.md) ·
-Source: [hirenf14/cloudagentfleet](https://github.com/hirenf14/cloudagentfleet)
+Guide: [Getting started](https://github.com/techoblix/cloudagentfleet/blob/master/docs/GETTING-STARTED.md) ·
+Source: [techoblix/cloudagentfleet](https://github.com/techoblix/cloudagentfleet)

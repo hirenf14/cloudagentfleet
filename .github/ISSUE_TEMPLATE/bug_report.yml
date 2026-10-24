@@ -6,7 +6,7 @@ body:
     attributes:
       value: |
         Thanks for reporting. **Do not post secrets** (tokens, passwords, tailnet or machine names you want private).
-        For a security problem, use [private reporting](https://github.com/hirenf14/cloudagentfleet/security/advisories/new) instead.
+        For a security problem, use [private reporting](https://github.com/techoblix/cloudagentfleet/security/advisories/new) instead.
   - type: input
     id: version
     attributes:

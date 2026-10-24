@@ -1,8 +1,8 @@
 blank_issues_enabled: false
 contact_links:
   - name: Report a security vulnerability
-    url: https://github.com/hirenf14/cloudagentfleet/security/advisories/new
+    url: https://github.com/techoblix/cloudagentfleet/security/advisories/new
     about: Please report vulnerabilities privately, not as a public issue.
   - name: Getting started guide
-    url: https://hirenf14.github.io/cloudagentfleet/docs/getting-started.html
+    url: https://techoblix.github.io/cloudagentfleet/docs/getting-started.html
     about: Install, set up, and troubleshoot.
