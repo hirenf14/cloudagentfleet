@@ -1,5 +1,11 @@
 # @cloudagentfleet/worker
 
+## 0.3.1
+
+### Patch Changes
+
+- [#21](https://github.com/hirenf14/cloudagentfleet/pull/21) [`c921bc6`](https://github.com/hirenf14/cloudagentfleet/commit/c921bc60e97b8d3c3a82336546c5e4c3f72d17b9) Thanks [@hirenf14](https://github.com/hirenf14)! - Jobs on a new Codeman session no longer come back empty: the Worker waits for the agent to finish starting before typing the first prompt, and presses Enter again if the prompt was typed but never sent.
+
 ## 0.3.0
 
 ### Minor Changes
