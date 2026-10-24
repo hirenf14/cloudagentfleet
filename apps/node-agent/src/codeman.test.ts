@@ -640,3 +640,48 @@ test("CodemanWorkerRuntime does not report the previous job's response for a fol
   const completed = messages.at(-1);
   assert.equal(completed?.type === "job.event" ? completed.data : undefined, "kestrel");
 });
+
+test("CodemanWorkerRuntime ends a hookless agent's turn on a fresh reply and a still screen", async () => {
+  const fake = fakeCodemanFetch();
+  const inputs: string[] = [];
+  let reads = 0;
+  const fetchImpl: typeof fetch = async (input, init) => {
+    const url = String(input);
+    if (url.includes("/wait")) throw new Error("Codex never fires stop/working; the Worker must not wait on them");
+    if (url.endsWith("/input")) {
+      inputs.push(JSON.parse(String(init?.body)).input);
+      return Response.json({ success: true, data: { delivered: true } });
+    }
+    const entered = inputs.includes("\r");
+    if (url.includes("/terminal?tail=")) {
+      // Before the retried Enter the screen is still (prompt stuck in the box); after it the agent works for a few frames.
+      const frame = entered ? `working ${Math.min(++reads, 5)}` : "› Review the diff";
+      return Response.json({ success: true, data: { terminalBuffer: frame, status: "idle" } });
+    }
+    if (url.endsWith("/last-response")) {
+      const done = entered && reads >= 5;
+      return Response.json({ success: true, data: done ? { text: "LGTM", timestamp: "t2" } : { text: "", timestamp: "t0" } });
+    }
+    return fake.fetchImpl(input, init);
+  };
+  const messages: NodeMessage[] = [];
+  const runtime = new CodemanWorkerRuntime({
+    client: new CodemanClient({ baseUrl: "http://127.0.0.1:3000", fetchImpl }),
+    nodeId: "worker-1",
+    workspaces: [workspace],
+    workspacePolicy: { mode: "folders", roots: ["C:/workspaces"] },
+    send: async (message) => { messages.push(message); },
+    settleMs: 60,
+  });
+  await runtime.handle({
+    type: "job.assign",
+    job: {
+      id: "job-codex", provider: "codeman", nodeId: "worker-1", workspaceId: workspace.id, prompt: "Review the diff",
+      status: "queued", idempotencyKey: "codex-2", createdAt: new Date().toISOString(), agent: "codex",
+    },
+  });
+  assert.deepEqual(inputs, ["Review the diff\r", "\r"], "the prompt, then one Enter for the dropped one");
+  const completed = messages.at(-1);
+  assert.equal(completed?.type === "job.event" ? completed.event : undefined, "completed");
+  assert.equal(completed?.type === "job.event" ? completed.data : undefined, "LGTM");
+});
