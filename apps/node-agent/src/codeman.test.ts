@@ -536,3 +536,23 @@ test("CodemanWorkerRuntime continues an earlier job's session for a follow-up jo
   await assert.rejects(runtime.handle(job("job-3", "session-mine")), /was not started by a job/);
   await assert.rejects(runtime.handle(job("job-4", "session-gone")), /Session not found/);
 });
+
+test("CodemanWorkerRuntime starts the agent a job asks for", async () => {
+  const fake = fakeCodemanFetch();
+  const runtime = new CodemanWorkerRuntime({
+    client: new CodemanClient({ baseUrl: "http://127.0.0.1:3000", fetchImpl: fake.fetchImpl }),
+    nodeId: "worker-1",
+    workspaces: [workspace],
+    workspacePolicy: { mode: "folders", roots: ["C:/workspaces"] },
+    send: async () => {},
+  });
+  await runtime.handle({
+    type: "job.assign",
+    job: {
+      id: "job-codex", provider: "codeman", nodeId: "worker-1", workspaceId: workspace.id, prompt: "Review the diff",
+      status: "queued", idempotencyKey: "codex-1", createdAt: new Date().toISOString(), agent: "codex",
+    },
+  });
+  const create = fake.calls.find((call) => call.url.endsWith("/api/v1/sessions") && call.init?.method === "POST");
+  assert.equal(JSON.parse(String(create?.init?.body)).mode, "codex");
+});

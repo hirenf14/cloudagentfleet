@@ -483,7 +483,7 @@ export class CodemanWorkerRuntime {
     const followUp = job.sessionId ? await this.requireJobSession(job.sessionId) : undefined;
     const session = followUp ?? await this.client.createSession({
       workingDir: workspace.canonicalPath,
-      mode: this.mode,
+      mode: job.agent ?? this.mode,
       name: `${this.jobSessionPrefix()}${job.id}`,
     });
     this.activeJobs.set(job.id, { sessionId: session.id, abortController });
