@@ -51,7 +51,8 @@ interface InputData {
 
 interface LastResponseData {
   text: string;
-  timestamp: number;
+  /** Codeman sends an ISO date string; only compared for equality. */
+  timestamp: number | string;
 }
 
 export interface CodemanClientOptions {
@@ -511,6 +512,10 @@ export class CodemanWorkerRuntime {
         await this.client.startInteractive(session.id);
         await this.waitForSettled(session.id, abortController.signal);
       }
+      // A follow-up's session already has a last response (the previous job's); only a newer one is this job's.
+      const previous = followUp
+        ? await this.client.lastResponse(session.id, abortController.signal).catch(() => undefined)
+        : undefined;
       const input = await this.client.sendPrompt(
         session.id,
         job.prompt,
@@ -521,7 +526,7 @@ export class CodemanWorkerRuntime {
       if (input.wait?.timedOut || !input.wait) {
         await this.client.waitForCompletion(session.id, abortController.signal);
       }
-      let response = await this.readResponse(session.id, abortController.signal);
+      let response = await this.readResponse(session.id, abortController.signal, previous);
       // An agent that is still starting can take the typed text but drop the Enter. If nothing came
       // back and the prompt is still in the input box, press Enter again (twice at most).
       for (let attempt = 0; attempt < 2 && !response.text.trim(); attempt += 1) {
@@ -537,7 +542,7 @@ export class CodemanWorkerRuntime {
         if (retry.wait?.timedOut && (await this.client.terminal(session.id, 1, abortController.signal)).status === "busy") {
           await this.client.waitForCompletion(session.id, abortController.signal);
         }
-        response = await this.readResponse(session.id, abortController.signal);
+        response = await this.readResponse(session.id, abortController.signal, previous);
       }
       await this.send({
         type: "job.event",
@@ -613,16 +618,23 @@ export class CodemanWorkerRuntime {
     return head.length > 0 && flat(terminalBuffer).includes(head);
   }
 
+  /**
+   * Reads the session's last response, polling briefly until there is one. With `previous`, a
+   * response carrying the same timestamp is still the earlier job's, so it counts as none yet.
+   */
   private async readResponse(
     sessionId: string,
     signal: AbortSignal,
+    previous?: LastResponseData,
   ): Promise<LastResponseData> {
+    const fresh = (response: LastResponseData) =>
+      response.text.trim() !== "" && response.timestamp !== previous?.timestamp;
     let response = await this.client.lastResponse(sessionId, signal);
-    for (let attempt = 0; attempt < 10 && !response.text.trim(); attempt += 1) {
+    for (let attempt = 0; attempt < 20 && !fresh(response); attempt += 1) {
       await delay(250, signal);
       response = await this.client.lastResponse(sessionId, signal);
     }
-    return response;
+    return fresh(response) ? response : { ...response, text: "" };
   }
 
   private resolveWorkspace(workspaceId: string): WorkspaceDescriptor {

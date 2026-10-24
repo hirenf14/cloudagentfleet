@@ -21,6 +21,7 @@ const workspace: WorkspaceDescriptor = {
 
 function fakeCodemanFetch(sessions: Array<Record<string, unknown>> = []) {
   const calls: Array<{ url: string; init?: RequestInit }> = [];
+  let responses = 0;
   const fetchImpl: typeof fetch = async (input, init) => {
     const url = String(input);
     calls.push({ url, init });
@@ -50,7 +51,8 @@ function fakeCodemanFetch(sessions: Array<Record<string, unknown>> = []) {
     if (url.endsWith("/last-response")) {
       return Response.json({
         success: true,
-        data: { text: "Codeman completed the task", timestamp: Date.now() },
+        // Each read is a newer response, so a follow-up never sees "the previous job's" one here.
+        data: { text: "Codeman completed the task", timestamp: ++responses },
       });
     }
     if (url.endsWith("/session-1") && init?.method === "DELETE") {
@@ -601,4 +603,40 @@ test("CodemanWorkerRuntime waits for a new session to settle and re-sends a drop
   assert.equal(urls.filter((u) => u === "/session-1/input").length, 2, "one prompt, one retried Enter");
   const completed = messages.at(-1);
   assert.equal(completed?.type === "job.event" ? completed.data : undefined, "Done.");
+});
+
+test("CodemanWorkerRuntime does not report the previous job's response for a follow-up", async () => {
+  const fake = fakeCodemanFetch([{ id: "session-1", name: "hosted-worker-1-job-1" }]);
+  let sent = false;
+  let readsAfterSend = 0;
+  const fetchImpl: typeof fetch = async (input, init) => {
+    const url = String(input);
+    if (url.endsWith("/input")) sent = true;
+    if (url.endsWith("/last-response")) {
+      // The new answer lands a moment after the wait returns; until then the old one is served.
+      const fresh = sent && ++readsAfterSend > 2;
+      return Response.json({
+        success: true,
+        data: fresh ? { text: "kestrel", timestamp: "2026-10-24T08:36:43.316Z" } : { text: "first-ok", timestamp: "2026-10-24T08:36:31.000Z" },
+      });
+    }
+    return fake.fetchImpl(input, init);
+  };
+  const messages: NodeMessage[] = [];
+  const runtime = new CodemanWorkerRuntime({
+    client: new CodemanClient({ baseUrl: "http://127.0.0.1:3000", fetchImpl }),
+    nodeId: "worker-1",
+    workspaces: [workspace],
+    workspacePolicy: { mode: "folders", roots: ["C:/workspaces"] },
+    send: async (message) => { messages.push(message); },
+  });
+  await runtime.handle({
+    type: "job.assign",
+    job: {
+      id: "job-2", provider: "codeman", nodeId: "worker-1", workspaceId: workspace.id, prompt: "Which word?",
+      status: "queued", idempotencyKey: "job-2", createdAt: new Date().toISOString(), sessionId: "session-1",
+    },
+  });
+  const completed = messages.at(-1);
+  assert.equal(completed?.type === "job.event" ? completed.data : undefined, "kestrel");
 });
