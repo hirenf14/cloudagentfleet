@@ -494,6 +494,7 @@ export class CodemanWorkerRuntime {
     // A follow-up continues an earlier job's session (same conversation);
     // otherwise the job gets a fresh session.
     const followUp = job.sessionId ? await this.requireJobSession(job.sessionId) : undefined;
+    const mode: string = followUp?.mode ?? job.agent ?? this.mode;
     const session = followUp ?? await this.client.createSession({
       workingDir: workspace.canonicalPath,
       mode: job.agent ?? this.mode,
@@ -512,10 +513,18 @@ export class CodemanWorkerRuntime {
         await this.client.startInteractive(session.id);
         await this.waitForSettled(session.id, abortController.signal);
       }
-      // A follow-up's session already has a last response (the previous job's); only a newer one is this job's.
-      const previous = followUp
-        ? await this.client.lastResponse(session.id, abortController.signal).catch(() => undefined)
-        : undefined;
+      // Whatever the session reports as its last response before the prompt is not this job's: the
+      // previous job's on a follow-up, or (for a new Codex session with no rollout yet) another
+      // session's from the same folder. Only a newer one counts.
+      const previous = await this.client.lastResponse(session.id, abortController.signal).catch(() => undefined);
+      if (mode !== "claude") {
+        // Only Claude Code has the hooks behind Codeman's stop/working signals; other agents
+        // (Codex, OpenCode, ...) stay "idle" throughout, so watch the reply and the screen instead.
+        await this.client.sendInput(session.id, job.prompt);
+        const response = await this.waitForReply(session.id, abortController.signal, previous);
+        await this.send({ type: "job.event", jobId: job.id, event: "completed", data: response.text });
+        return;
+      }
       const input = await this.client.sendPrompt(
         session.id,
         job.prompt,
@@ -574,7 +583,7 @@ export class CodemanWorkerRuntime {
    * Finds a session this Worker created for an earlier job. Sessions people
    * started from the dashboard are refused, so a job can't type into them.
    */
-  private async requireJobSession(sessionId: string): Promise<{ id: string }> {
+  private async requireJobSession(sessionId: string): Promise<{ id: string; mode?: string }> {
     const sessions = await this.client.listSessions();
     const session = sessions.find((candidate) => candidate.id === sessionId);
     if (!session) throw new Error(`Session not found on this Worker: ${sessionId}`);
@@ -582,7 +591,7 @@ export class CodemanWorkerRuntime {
     if (!name.startsWith(this.jobSessionPrefix())) {
       throw new Error(`Session ${sessionId} was not started by a job; follow-ups only continue job sessions`);
     }
-    return { id: sessionId };
+    return { id: sessionId, ...(typeof session.mode === "string" ? { mode: session.mode } : {}) };
   }
 
   private async cancel(jobId: string): Promise<void> {
@@ -607,6 +616,38 @@ export class CodemanWorkerRuntime {
       if (quietFor >= this.settleMs) return;
       last = buffer;
       await delay(step, signal);
+    }
+  }
+
+  /**
+   * Waits for a hookless agent's turn to end: a newer last response than `previous`, with the
+   * screen unchanged for two settle periods (a working agent keeps redrawing its spinner/timer).
+   * A screen that stays still with no reply means the Enter was dropped, so Enter is pressed
+   * again (three times at most); after that, a still screen with no reply ends the job empty.
+   */
+  private async waitForReply(
+    sessionId: string,
+    signal: AbortSignal,
+    previous?: LastResponseData,
+  ): Promise<LastResponseData> {
+    const step = Math.max(50, Math.min(1000, this.settleMs / 3));
+    let last = "";
+    let stillFor = 0;
+    let enters = 0;
+    while (true) {
+      await delay(step, signal);
+      const { terminalBuffer = "" } = await this.client.terminal(sessionId, 4000, signal);
+      stillFor = terminalBuffer === last ? stillFor + step : 0;
+      last = terminalBuffer;
+      const response = await this.client.lastResponse(sessionId, signal);
+      const fresh = response.text.trim() !== "" && response.timestamp !== previous?.timestamp;
+      if (fresh && stillFor >= this.settleMs * 2) return response;
+      if (!fresh && stillFor >= this.settleMs * 5) {
+        if (enters >= 3) return { ...response, text: "" };
+        await this.client.sendInput(sessionId, "\r");
+        enters += 1;
+        stillFor = 0;
+      }
     }
   }
 
