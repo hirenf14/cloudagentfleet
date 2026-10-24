@@ -219,6 +219,11 @@ export class JobStore {
     return this.jobs.get(jobId);
   }
 
+  /** Jobs assigned to this node that it never accepted. */
+  queuedFor(nodeId: string): AgentJob[] {
+    return [...this.jobs.values()].filter((job) => job.nodeId === nodeId && job.status === "queued");
+  }
+
   getByIdempotencyKey(idempotencyKey: string): AgentJob | undefined {
     const jobId = this.byIdempotencyKey.get(idempotencyKey);
     return jobId ? this.jobs.get(jobId) : undefined;
