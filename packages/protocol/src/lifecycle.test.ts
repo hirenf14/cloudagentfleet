@@ -34,6 +34,7 @@ test("JobStore keeps the session, the answer and the failure reason", () => {
 
   const followUp = jobs.create({ ...request, idempotencyKey: "k2", sessionId: "session-1" }, "worker-1");
   assert.equal(followUp.sessionId, "session-1", "a follow-up names the session it continues");
+  assert.equal(jobs.create({ ...request, idempotencyKey: "k3", agent: "codex" }, "worker-1").agent, "codex");
   const failed = jobs.fail(followUp.id, "Codeman timed out");
   assert.deepEqual([failed.status, failed.error], ["failed", "Codeman timed out"]);
 });
