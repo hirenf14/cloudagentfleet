@@ -1,5 +1,11 @@
 # @cloudagentfleet/hub
 
+## 0.3.3
+
+### Patch Changes
+
+- [#26](https://github.com/hirenf14/cloudagentfleet/pull/26) [`4d34001`](https://github.com/hirenf14/cloudagentfleet/commit/4d34001670267008af3fd7f3df2355ee95d41054) Thanks [@hirenf14](https://github.com/hirenf14)! - Jobs created while a Worker is reconnecting are no longer stuck in "queued": the Hub re-sends them when the Worker connects.
+
 ## 0.3.2
 
 ## 0.3.1
