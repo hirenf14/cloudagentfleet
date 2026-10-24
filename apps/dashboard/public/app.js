@@ -124,8 +124,8 @@
   const RECENT_SESSIONS_SHOWN = 5;
   const MACHINES_SHOWN = 6;
 
-  const GUIDE_URL = "https://hirenf14.github.io/cloudagentfleet/docs/getting-started.html";
-  const CREDITS_URL = "https://hirenf14.github.io/cloudagentfleet/docs/credits.html";
+  const GUIDE_URL = "https://techoblix.github.io/cloudagentfleet/docs/getting-started.html";
+  const CREDITS_URL = "https://techoblix.github.io/cloudagentfleet/docs/credits.html";
 
   /** Per-browser conveniences (guide hidden, host UI opened); never required state. */
   function readLocal(key) {
@@ -945,7 +945,7 @@
     );
   }
 
-  const RELEASE_DOWNLOAD = "https://github.com/hirenf14/cloudagentfleet/releases/latest/download";
+  const RELEASE_DOWNLOAD = "https://github.com/techoblix/cloudagentfleet/releases/latest/download";
   // Release archives are built on each platform's standard runner.
   const ARCHIVE_PLATFORM = { windows: "win32-x64", macos: "darwin-arm64", linux: "linux-x64" };
 

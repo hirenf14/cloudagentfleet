@@ -109,11 +109,11 @@ async function packageEdition({ name, edition, files, binaries }) {
     "",
     FIRST_STEPS[edition],
     "",
-    "Guide: https://hirenf14.github.io/cloudagentfleet/docs/getting-started.html",
+    "Guide: https://techoblix.github.io/cloudagentfleet/docs/getting-started.html",
     "",
     "Cloud Agent Fleet is MIT-licensed (LICENSE). The bundled Node.js runtime is MIT-licensed (NODE-LICENSE.txt). Codeman, Open WebUI Computer,",
     "and the coding agents are not included; init installs the ones you pick with their official",
-    "installers, under their own licenses. Credits: https://hirenf14.github.io/cloudagentfleet/docs/credits.html",
+    "installers, under their own licenses. Credits: https://techoblix.github.io/cloudagentfleet/docs/credits.html",
     "",
   ].join(platform === "win32" ? "\r\n" : "\n"));
 

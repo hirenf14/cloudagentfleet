@@ -39,7 +39,7 @@ Linux (x64):
 
 ```bash
 mkdir -p ~/cloudagentfleet && cd ~/cloudagentfleet
-curl -fsSLO https://github.com/hirenf14/cloudagentfleet/releases/latest/download/EDITION-linux-x64.tar.gz
+curl -fsSLO https://github.com/techoblix/cloudagentfleet/releases/latest/download/EDITION-linux-x64.tar.gz
 tar -xzf EDITION-linux-x64.tar.gz
 ./EDITION-linux-x64/cloudagentfleet init
 ```
@@ -48,7 +48,7 @@ macOS (Apple silicon; on an Intel Mac use npm):
 
 ```bash
 mkdir -p ~/cloudagentfleet && cd ~/cloudagentfleet
-curl -fsSLO https://github.com/hirenf14/cloudagentfleet/releases/latest/download/EDITION-darwin-arm64.tar.gz
+curl -fsSLO https://github.com/techoblix/cloudagentfleet/releases/latest/download/EDITION-darwin-arm64.tar.gz
 tar -xzf EDITION-darwin-arm64.tar.gz
 ./EDITION-darwin-arm64/cloudagentfleet init
 ```
@@ -57,7 +57,7 @@ Windows (PowerShell, not inside WSL):
 
 ```powershell
 mkdir -Force $HOME\cloudagentfleet; cd $HOME\cloudagentfleet
-curl.exe -fsSLO https://github.com/hirenf14/cloudagentfleet/releases/latest/download/EDITION-win32-x64.tar.gz
+curl.exe -fsSLO https://github.com/techoblix/cloudagentfleet/releases/latest/download/EDITION-win32-x64.tar.gz
 tar -xzf EDITION-win32-x64.tar.gz
 .\EDITION-win32-x64\cloudagentfleet.cmd init
 ```
