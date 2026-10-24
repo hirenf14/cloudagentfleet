@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, readdir, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import assert from "node:assert/strict";
@@ -354,7 +354,8 @@ test("CodemanWorkerRuntime suggests only policy-approved real directories", asyn
       operation: "workspaces.suggest",
       payload: { prefix: join(root, "a") },
     });
-    assert.deepEqual(suggestions, [{ path: join(root, "alpha"), name: "alpha" }]);
+    // Suggestions are real paths (on macOS the tmp root is /var/..., really /private/var/...).
+    assert.deepEqual(suggestions, [{ path: await realpath(join(root, "alpha")), name: "alpha" }]);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
