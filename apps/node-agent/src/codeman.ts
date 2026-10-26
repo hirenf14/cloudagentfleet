@@ -689,8 +689,9 @@ export class CodemanWorkerRuntime {
   }
 
   /**
-   * Reads the session's last response, polling briefly until there is one. With `previous`, a
-   * response carrying the same timestamp is still the earlier job's, so it counts as none yet.
+   * Reads the session's last response, polling briefly until there is one, then until it stops
+   * changing. With `previous`, a response carrying the same timestamp is still the earlier job's,
+   * so it counts as none yet.
    */
   private async readResponse(
     sessionId: string,
@@ -704,7 +705,20 @@ export class CodemanWorkerRuntime {
       await delay(250, signal);
       response = await this.client.lastResponse(sessionId, signal);
     }
-    return fresh(response) ? response : { ...response, text: "" };
+    if (!fresh(response)) return { ...response, text: "" };
+    // The stop signal can beat Claude's transcript write, so the first fresh read may be an interim
+    // message ("Checking X, then I'll write the plan") with the final answer a moment behind. Keep
+    // reading until the response has held still for a settle period (10s at most).
+    const step = Math.max(50, Math.min(500, this.settleMs / 3));
+    let stableFor = 0;
+    for (let waited = 0; stableFor < this.settleMs && waited < 10_000; waited += step) {
+      await delay(step, signal);
+      const next = await this.client.lastResponse(sessionId, signal);
+      const changed = next.text !== response.text || next.timestamp !== response.timestamp;
+      stableFor = changed ? 0 : stableFor + step;
+      if (changed && next.text.trim() !== "") response = next;
+    }
+    return response;
   }
 
   private resolveWorkspace(workspaceId: string): WorkspaceDescriptor {

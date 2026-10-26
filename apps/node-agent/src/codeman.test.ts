@@ -642,6 +642,45 @@ test("CodemanWorkerRuntime does not report the previous job's response for a fol
   assert.equal(completed?.type === "job.event" ? completed.data : undefined, "kestrel");
 });
 
+test("CodemanWorkerRuntime reports the final message when the transcript write trails the stop signal", async () => {
+  const fake = fakeCodemanFetch();
+  let sent = false;
+  let readsAfterSend = 0;
+  const fetchImpl: typeof fetch = async (input, init) => {
+    const url = String(input);
+    if (url.endsWith("/input")) sent = true;
+    if (url.endsWith("/last-response")) {
+      // The interim "Checking..." line is on disk when the stop signal fires; the final answer lands a few reads later.
+      readsAfterSend += sent ? 1 : 0;
+      const data = readsAfterSend === 0
+        ? { text: "", timestamp: "t0" }
+        : readsAfterSend < 2
+          ? { text: "Checking the login, then I'll write the plan.", timestamp: "t1" }
+          : { text: "Plan written. Needs you: #28.", timestamp: "t2" };
+      return Response.json({ success: true, data });
+    }
+    return fake.fetchImpl(input, init);
+  };
+  const messages: NodeMessage[] = [];
+  const runtime = new CodemanWorkerRuntime({
+    client: new CodemanClient({ baseUrl: "http://127.0.0.1:3000", fetchImpl }),
+    nodeId: "worker-1",
+    workspaces: [workspace],
+    workspacePolicy: { mode: "folders", roots: ["C:/workspaces"] },
+    send: async (message) => { messages.push(message); },
+    settleMs: 60,
+  });
+  await runtime.handle({
+    type: "job.assign",
+    job: {
+      id: "job-final", provider: "codeman", nodeId: "worker-1", workspaceId: workspace.id, prompt: "Run for today",
+      status: "queued", idempotencyKey: "final-1", createdAt: new Date().toISOString(),
+    },
+  });
+  const completed = messages.at(-1);
+  assert.equal(completed?.type === "job.event" ? completed.data : undefined, "Plan written. Needs you: #28.");
+});
+
 test("CodemanWorkerRuntime ends a hookless agent's turn on a fresh reply and a still screen", async () => {
   const fake = fakeCodemanFetch();
   const inputs: string[] = [];
