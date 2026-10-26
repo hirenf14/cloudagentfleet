@@ -356,6 +356,8 @@ export interface CodemanWorkerRuntimeOptions {
   claudeCommand?: string;
   /** How long a new session's terminal must stay unchanged before the first prompt is typed. */
   settleMs?: number;
+  /** How often a running Claude job's reply is re-read and sent to the Hub as progress (default 2000). */
+  progressMs?: number;
   /** Where long prompts are written for the agent to read (default ~/.cloudagentfleet/prompts). */
   promptDir?: string;
 }
@@ -380,6 +382,7 @@ export class CodemanWorkerRuntime {
   private readonly cursorCommand?: string;
   private readonly claudeCommand?: string;
   private readonly settleMs: number;
+  private readonly progressMs: number;
   private readonly promptDir: string;
   private readonly activeJobs = new Map<string, ActiveJob>();
 
@@ -399,6 +402,7 @@ export class CodemanWorkerRuntime {
     this.cursorCommand = options.cursorCommand;
     this.claudeCommand = options.claudeCommand;
     this.settleMs = options.settleMs ?? 1500;
+    this.progressMs = options.progressMs ?? 2000;
     this.promptDir = options.promptDir ?? join(homedir(), ".cloudagentfleet", "prompts");
   }
 
@@ -548,8 +552,13 @@ export class CodemanWorkerRuntime {
         1,
         abortController.signal,
       );
-      if (input.wait?.timedOut || !input.wait) {
-        await this.client.waitForCompletion(session.id, abortController.signal);
+      const stopProgress = this.streamProgress(job.id, session.id, abortController.signal, previous);
+      try {
+        if (input.wait?.timedOut || !input.wait) {
+          await this.client.waitForCompletion(session.id, abortController.signal);
+        }
+      } finally {
+        stopProgress();
       }
       let response = await this.readResponse(session.id, abortController.signal, previous);
       // An agent that is still starting can take the typed text but drop the Enter. If nothing came
@@ -690,6 +699,47 @@ export class CodemanWorkerRuntime {
     return head.length > 0 && flat(terminalBuffer).includes(head);
   }
 
+  /** The session's last response with `text` widened to the agent's whole reply this turn. */
+  private async readTurn(sessionId: string, signal: AbortSignal): Promise<LastResponseData> {
+    const data = await this.client.lastResponse(sessionId, signal, true);
+    const turn = data.messages?.filter((message) => message.role === "assistant").at(-1)?.text.trim();
+    return turn ? { ...data, text: turn } : data;
+  }
+
+  /**
+   * While a job runs, re-reads the agent's reply every `progressMs` and sends it to the Hub as an
+   * "output" event whenever it grows, so the caller sees the work as it happens. Read errors are
+   * skipped (the final read still decides the result).
+   * @returns Function that stops the polling.
+   */
+  private streamProgress(
+    jobId: string,
+    sessionId: string,
+    signal: AbortSignal,
+    previous?: LastResponseData,
+  ): () => void {
+    let stopped = false;
+    let sent = "";
+    void (async () => {
+      while (!stopped && !signal.aborted) {
+        await delay(this.progressMs, signal).catch(() => undefined);
+        if (stopped || signal.aborted) return;
+        try {
+          const response = await this.readTurn(sessionId, signal);
+          const fresh = response.text.trim() !== "" && response.timestamp !== previous?.timestamp;
+          if (stopped || !fresh || response.text === sent) continue;
+          sent = response.text;
+          await this.send({ type: "job.event", jobId, event: "output", data: sent });
+        } catch {
+          // Transient Codeman or Hub error: the next tick tries again.
+        }
+      }
+    })();
+    return () => {
+      stopped = true;
+    };
+  }
+
   /**
    * Reads the agent's whole reply to the prompt, polling briefly until there is one, then until it
    * stops changing. With `previous`, a response carrying the same timestamp is still the earlier
@@ -701,11 +751,7 @@ export class CodemanWorkerRuntime {
     signal: AbortSignal,
     previous?: LastResponseData,
   ): Promise<LastResponseData> {
-    const read = async (): Promise<LastResponseData> => {
-      const data = await this.client.lastResponse(sessionId, signal, true);
-      const turn = data.messages?.filter((message) => message.role === "assistant").at(-1)?.text.trim();
-      return turn ? { ...data, text: turn } : data;
-    };
+    const read = () => this.readTurn(sessionId, signal);
     const fresh = (response: LastResponseData) =>
       response.text.trim() !== "" && response.timestamp !== previous?.timestamp;
     let response = await read();

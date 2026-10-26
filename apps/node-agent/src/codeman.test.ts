@@ -720,6 +720,55 @@ test("CodemanWorkerRuntime reports the whole turn: progress notes and the final 
   );
 });
 
+test("CodemanWorkerRuntime sends the reply so far to the Hub while a Claude job runs", async () => {
+  const fake = fakeCodemanFetch();
+  let sent = false;
+  let reads = 0;
+  const turns = ["Checking the login.", "Checking the login.\n\nWriting the plan.", "Checking the login.\n\nWriting the plan.\n\nDone: #28."];
+  const fetchImpl: typeof fetch = async (input, init) => {
+    const url = String(input);
+    if (url.endsWith("/input")) {
+      sent = true;
+      return Response.json({ success: true, data: { delivered: true, wait: { timedOut: true } } });
+    }
+    if (url.includes("/wait")) {
+      await new Promise((resolve) => setTimeout(resolve, 400)); // the agent works for a while
+      return Response.json({ success: true, data: { wait: { signal: "stop" } } });
+    }
+    if (url.includes("/last-response")) {
+      const turn = sent ? turns[Math.min(Math.floor(reads++ / 3), turns.length - 1)]! : "";
+      return Response.json({
+        success: true,
+        data: { text: turn, timestamp: sent ? `t${turn.length}` : "t0", messages: turn ? [{ role: "assistant", text: turn }] : [] },
+      });
+    }
+    return fake.fetchImpl(input, init);
+  };
+  const messages: NodeMessage[] = [];
+  const runtime = new CodemanWorkerRuntime({
+    client: new CodemanClient({ baseUrl: "http://127.0.0.1:3000", fetchImpl }),
+    nodeId: "worker-1",
+    workspaces: [workspace],
+    workspacePolicy: { mode: "folders", roots: ["C:/workspaces"] },
+    send: async (message) => { messages.push(message); },
+    settleMs: 60,
+    progressMs: 30,
+  });
+  await runtime.handle({
+    type: "job.assign",
+    job: {
+      id: "job-live", provider: "codeman", nodeId: "worker-1", workspaceId: workspace.id, prompt: "Run for today",
+      status: "queued", idempotencyKey: "live-1", createdAt: new Date().toISOString(),
+    },
+  });
+  const events = messages.filter((m) => m.type === "job.event");
+  const output = events.filter((m) => m.event === "output").map((m) => m.data);
+  assert.ok(output.length >= 2, "progress arrives before the job ends");
+  assert.equal(output[0], "Checking the login.");
+  assert.ok(output.every((text, i) => i === 0 || text!.startsWith(output[i - 1]!)), "each update extends the last");
+  assert.equal(events.at(-1)?.event, "completed", "the final result still closes the job");
+});
+
 test("CodemanWorkerRuntime ends a hookless agent's turn on a fresh reply and a still screen", async () => {
   const fake = fakeCodemanFetch();
   const inputs: string[] = [];

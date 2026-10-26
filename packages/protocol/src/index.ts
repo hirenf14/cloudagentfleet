@@ -316,6 +316,8 @@ export interface AgentJob {
   sessionId?: string;
   /** The agent Codeman starts for the job (unset: the Worker's configured mode). */
   agent?: CodemanAgentMode;
+  /** What the agent has written so far, while the job runs (the whole reply to the prompt, growing). */
+  progress?: string;
   /** The agent's final answer, once the job completes. */
   result?: string;
   /** Why the job failed, when it fails. */
@@ -466,6 +468,7 @@ export type NodeMessage =
       type: "job.event";
       jobId: string;
       event: "started" | "output" | "completed" | "failed" | "cancelled";
+      /** "output": the agent's whole reply so far; "completed": the final reply; "failed": the reason. */
       data?: string;
       /** The Codeman session the job runs in (sent with "started"). */
       sessionId?: string;
