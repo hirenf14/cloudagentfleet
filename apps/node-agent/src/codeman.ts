@@ -54,6 +54,8 @@ interface LastResponseData {
   text: string;
   /** Codeman sends an ISO date string; only compared for equality. */
   timestamp: number | string;
+  /** The whole conversation, sent with `context=full`; one assistant card holds a turn's every message. */
+  messages?: Array<{ role: string; text: string }>;
 }
 
 export interface CodemanClientOptions {
@@ -245,9 +247,9 @@ export class CodemanClient {
     }
   }
 
-  async lastResponse(sessionId: string, signal?: AbortSignal): Promise<LastResponseData> {
+  async lastResponse(sessionId: string, signal?: AbortSignal, full = false): Promise<LastResponseData> {
     return this.requestData<LastResponseData>(
-      `/api/v1/sessions/${encodeURIComponent(sessionId)}/last-response`,
+      `/api/v1/sessions/${encodeURIComponent(sessionId)}/last-response${full ? "?context=full" : ""}`,
       { signal },
     );
   }
@@ -689,22 +691,42 @@ export class CodemanWorkerRuntime {
   }
 
   /**
-   * Reads the session's last response, polling briefly until there is one. With `previous`, a
-   * response carrying the same timestamp is still the earlier job's, so it counts as none yet.
+   * Reads the agent's whole reply to the prompt, polling briefly until there is one, then until it
+   * stops changing. With `previous`, a response carrying the same timestamp is still the earlier
+   * job's, so it counts as none yet. The text is every message the agent wrote this turn (progress
+   * notes and the final answer, in order), not just the last one.
    */
   private async readResponse(
     sessionId: string,
     signal: AbortSignal,
     previous?: LastResponseData,
   ): Promise<LastResponseData> {
+    const read = async (): Promise<LastResponseData> => {
+      const data = await this.client.lastResponse(sessionId, signal, true);
+      const turn = data.messages?.filter((message) => message.role === "assistant").at(-1)?.text.trim();
+      return turn ? { ...data, text: turn } : data;
+    };
     const fresh = (response: LastResponseData) =>
       response.text.trim() !== "" && response.timestamp !== previous?.timestamp;
-    let response = await this.client.lastResponse(sessionId, signal);
+    let response = await read();
     for (let attempt = 0; attempt < 20 && !fresh(response); attempt += 1) {
       await delay(250, signal);
-      response = await this.client.lastResponse(sessionId, signal);
+      response = await read();
     }
-    return fresh(response) ? response : { ...response, text: "" };
+    if (!fresh(response)) return { ...response, text: "" };
+    // The stop signal can beat Claude's transcript write, so the first fresh read may be an interim
+    // message ("Checking X, then I'll write the plan") with the final answer a moment behind. Keep
+    // reading until the response has held still for a settle period (10s at most).
+    const step = Math.max(50, Math.min(500, this.settleMs / 3));
+    let stableFor = 0;
+    for (let waited = 0; stableFor < this.settleMs && waited < 10_000; waited += step) {
+      await delay(step, signal);
+      const next = await read();
+      const changed = next.text !== response.text || next.timestamp !== response.timestamp;
+      stableFor = changed ? 0 : stableFor + step;
+      if (changed && next.text.trim() !== "") response = next;
+    }
+    return response;
   }
 
   private resolveWorkspace(workspaceId: string): WorkspaceDescriptor {
