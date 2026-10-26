@@ -48,7 +48,7 @@ function fakeCodemanFetch(sessions: Array<Record<string, unknown>> = []) {
         data: { delivered: true, wait: { signal: "stop" } },
       });
     }
-    if (url.endsWith("/last-response")) {
+    if (url.includes("/last-response")) {
       return Response.json({
         success: true,
         // Each read is a newer response, so a follow-up never sees "the previous job's" one here.
@@ -575,7 +575,7 @@ test("CodemanWorkerRuntime waits for a new session to settle and re-sends a drop
       return Response.json({ success: true, data: { terminalBuffer: buffer, status: "idle" } });
     }
     if (url.endsWith("/input") && JSON.parse(String(init?.body)).input === "\r") entered = true;
-    if (url.endsWith("/last-response")) {
+    if (url.includes("/last-response")) {
       fake.calls.push({ url, init });
       return Response.json({ success: true, data: { text: entered ? "Done." : "", timestamp: Date.now() } });
     }
@@ -613,7 +613,7 @@ test("CodemanWorkerRuntime does not report the previous job's response for a fol
   const fetchImpl: typeof fetch = async (input, init) => {
     const url = String(input);
     if (url.endsWith("/input")) sent = true;
-    if (url.endsWith("/last-response")) {
+    if (url.includes("/last-response")) {
       // The new answer lands a moment after the wait returns; until then the old one is served.
       const fresh = sent && ++readsAfterSend > 2;
       return Response.json({
@@ -649,7 +649,7 @@ test("CodemanWorkerRuntime reports the final message when the transcript write t
   const fetchImpl: typeof fetch = async (input, init) => {
     const url = String(input);
     if (url.endsWith("/input")) sent = true;
-    if (url.endsWith("/last-response")) {
+    if (url.includes("/last-response")) {
       // The interim "Checking..." line is on disk when the stop signal fires; the final answer lands a few reads later.
       readsAfterSend += sent ? 1 : 0;
       const data = readsAfterSend === 0
@@ -681,6 +681,45 @@ test("CodemanWorkerRuntime reports the final message when the transcript write t
   assert.equal(completed?.type === "job.event" ? completed.data : undefined, "Plan written. Needs you: #28.");
 });
 
+test("CodemanWorkerRuntime reports the whole turn: progress notes and the final answer", async () => {
+  const fake = fakeCodemanFetch();
+  const fetchImpl: typeof fetch = async (input, init) => {
+    const url = String(input);
+    if (url.includes("/last-response")) {
+      const full = url.includes("context=full");
+      const turn = "Checking the login, then I'll write the plan.\n\nPlan written. Needs you: #28.";
+      return Response.json({
+        success: true,
+        data: full
+          ? { text: "Plan written. Needs you: #28.", timestamp: "t2", messages: [{ role: "user", text: "Run for today" }, { role: "assistant", text: turn }] }
+          : { text: "", timestamp: "t0" },
+      });
+    }
+    return fake.fetchImpl(input, init);
+  };
+  const messages: NodeMessage[] = [];
+  const runtime = new CodemanWorkerRuntime({
+    client: new CodemanClient({ baseUrl: "http://127.0.0.1:3000", fetchImpl }),
+    nodeId: "worker-1",
+    workspaces: [workspace],
+    workspacePolicy: { mode: "folders", roots: ["C:/workspaces"] },
+    send: async (message) => { messages.push(message); },
+    settleMs: 60,
+  });
+  await runtime.handle({
+    type: "job.assign",
+    job: {
+      id: "job-turn", provider: "codeman", nodeId: "worker-1", workspaceId: workspace.id, prompt: "Run for today",
+      status: "queued", idempotencyKey: "turn-1", createdAt: new Date().toISOString(),
+    },
+  });
+  const completed = messages.at(-1);
+  assert.equal(
+    completed?.type === "job.event" ? completed.data : undefined,
+    "Checking the login, then I'll write the plan.\n\nPlan written. Needs you: #28.",
+  );
+});
+
 test("CodemanWorkerRuntime ends a hookless agent's turn on a fresh reply and a still screen", async () => {
   const fake = fakeCodemanFetch();
   const inputs: string[] = [];
@@ -698,7 +737,7 @@ test("CodemanWorkerRuntime ends a hookless agent's turn on a fresh reply and a s
       const frame = entered ? `working ${Math.min(++reads, 5)}` : "› Review the diff";
       return Response.json({ success: true, data: { terminalBuffer: frame, status: "idle" } });
     }
-    if (url.endsWith("/last-response")) {
+    if (url.includes("/last-response")) {
       const done = entered && reads >= 5;
       return Response.json({ success: true, data: done ? { text: "LGTM", timestamp: "t2" } : { text: "", timestamp: "t0" } });
     }
@@ -741,7 +780,7 @@ test("CodemanWorkerRuntime ignores a reply that was there before a new session's
       if (typed) frames += 1;
       return Response.json({ success: true, data: { terminalBuffer: typed ? `frame ${Math.min(frames, 3)}` : "›", status: "idle" } });
     }
-    if (url.endsWith("/last-response")) {
+    if (url.includes("/last-response")) {
       // Until this session's own reply exists, Codeman serves another session's from the same folder.
       const own = typed && frames >= 12;
       return Response.json({ success: true, data: own ? { text: "first-ok", timestamp: "t9" } : { text: "long-ok", timestamp: "t1" } });
