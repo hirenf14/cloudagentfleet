@@ -200,6 +200,12 @@ test("enrolls, assigns, cancels, audits, and revokes a Worker", async () => {
       {
         type: "job.event",
         jobId: completedJob.job.id,
+        event: "output",
+        data: "Checking the login, then I'll write the plan.",
+      },
+      {
+        type: "job.event",
+        jobId: completedJob.job.id,
         event: "completed",
         data: "done",
       },
@@ -219,6 +225,7 @@ test("enrolls, assigns, cancels, audits, and revokes a Worker", async () => {
     );
     assert.equal(completedState.job.status, "completed");
     assert.equal(completedState.job.result, "done", "the agent's answer is kept on the job");
+    assert.equal(completedState.job.progress, "Checking the login, then I'll write the plan.", "what the agent wrote while running is kept too");
     assert.equal(completedState.job.sessionId, "session-42", "so a follow-up job can continue it");
     assert.ok(completedState.job.finishedAt);
 

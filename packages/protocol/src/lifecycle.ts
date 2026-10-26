@@ -189,6 +189,12 @@ export class JobStore {
     return this.update(jobId, { status: "running", ...(sessionId ? { sessionId } : {}) });
   }
 
+  /** Keeps what the agent has written so far; ignored once the job has finished. */
+  progress(jobId: string, progress: string): AgentJob {
+    const job = this.require(jobId);
+    return job.status === "running" ? this.update(jobId, { progress }) : job;
+  }
+
   /** Marks the job done and keeps the agent's final answer. */
   complete(jobId: string, result?: string): AgentJob {
     return this.update(jobId, {

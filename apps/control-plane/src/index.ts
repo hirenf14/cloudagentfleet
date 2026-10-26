@@ -137,6 +137,8 @@ export class ControlPlane {
     if (message.event === "started") {
       this.jobs.start(jobId, message.sessionId);
       this.audit.append("job.started", "node", jobId, { nodeId });
+    } else if (message.event === "output") {
+      if (message.data !== undefined) this.jobs.progress(jobId, message.data);
     } else if (message.event === "completed") {
       this.jobs.complete(jobId, message.data);
       this.audit.append("job.completed", "node", jobId, { nodeId });

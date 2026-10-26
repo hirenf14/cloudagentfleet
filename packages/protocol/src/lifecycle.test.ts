@@ -38,3 +38,14 @@ test("JobStore keeps the session, the answer and the failure reason", () => {
   const failed = jobs.fail(followUp.id, "Codeman timed out");
   assert.deepEqual([failed.status, failed.error], ["failed", "Codeman timed out"]);
 });
+
+test("JobStore keeps the agent's progress while a job runs and ignores it afterwards", () => {
+  const jobs = new JobStore();
+  const job = jobs.create({ provider: "codeman", workspaceId: "w", prompt: "p", idempotencyKey: "kp" }, "worker-1");
+  assert.equal(jobs.progress(job.id, "too early").progress, undefined, "a queued job has no progress yet");
+  jobs.start(job.id);
+  assert.equal(jobs.progress(job.id, "Checking...").progress, "Checking...");
+  assert.equal(jobs.progress(job.id, "Checking...\n\nWriting.").progress, "Checking...\n\nWriting.", "it grows");
+  jobs.complete(job.id, "Done");
+  assert.equal(jobs.progress(job.id, "late").progress, "Checking...\n\nWriting.", "a finished job keeps its last progress");
+});
