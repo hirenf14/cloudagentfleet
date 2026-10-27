@@ -131,7 +131,8 @@ export class ControllerTransport {
       errorCode: "connector_disabled",
     };
     try {
-      if (this.connectorInstanceIds && !this.connectorInstanceIds.has(request.instanceId)) {
+      // usage.read is about the machine, not a connector instance, so it needs no instance match.
+      if (request.operation !== "usage.read" && this.connectorInstanceIds && !this.connectorInstanceIds.has(request.instanceId)) {
         throw new Error("Connector instance authorization failed");
       }
       if (this.handledConnectorRequests.has(request.requestId)) {
