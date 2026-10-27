@@ -138,6 +138,7 @@ export async function runWorker(): Promise<void> {
     capabilities: [
       ...backends,
       ...(backends.includes("codeman") && agentProfiles.length > 0 ? ["cursor-worker" as const] : []),
+      "usage-read" as const,
     ],
     workspacePolicy: parsePolicy(),
     workspaces,

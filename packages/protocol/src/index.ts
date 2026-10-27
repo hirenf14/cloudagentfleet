@@ -52,7 +52,9 @@ export type NodeCapability =
   | "claude-runner"
   | "preview-relay"
   | "remote-browser"
-  | "docker";
+  | "docker"
+  /** The Worker answers the `usage.read` connector operation; older Workers drop their connection on it. */
+  | "usage-read";
 
 export interface HostedNode {
   id: string;

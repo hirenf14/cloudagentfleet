@@ -709,6 +709,11 @@ async function route(
   const usageMatch = url.pathname.match(/^\/api\/workers\/([^/]+)\/usage$/);
   if (method === "POST" && usageMatch) {
     const nodeId = decodeURIComponent(usageMatch[1]!);
+    const node = controlPlane.nodes.list().find((candidate) => candidate.id === nodeId);
+    if (node && !node.capabilities.includes("usage-read")) {
+      sendJson(response, 409, { error: "This Worker needs the updated Fleet worker to report usage" });
+      return;
+    }
     // The Worker answers for the machine, so no Codeman instance is needed; use one if the Hub knows it.
     const instance = hub.listInstances().find((candidate) => candidate.nodeId === nodeId && candidate.backend === "codeman");
     try {

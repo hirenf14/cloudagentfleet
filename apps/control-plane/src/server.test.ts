@@ -947,3 +947,17 @@ test("asking for usage from a Worker that is not connected fails clearly", async
     await new Promise<void>((resolve) => app.server.close(() => resolve()));
   }
 });
+
+test("a Worker that does not advertise usage-read is not sent the request", async () => {
+  const app = createControllerServer({ statePath: "" });
+  const baseUrl = await listen(app);
+
+  try {
+    await fetch(`${baseUrl}/api/workers`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(registration) });
+    const response = await fetch(`${baseUrl}/api/workers/${registration.nodeId}/usage`, { method: "POST" });
+    assert.equal(response.status, 409);
+    assert.match((await json(response)).error, /updated Fleet worker/);
+  } finally {
+    await new Promise<void>((resolve) => app.server.close(() => resolve()));
+  }
+});
