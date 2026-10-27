@@ -705,17 +705,14 @@ async function route(
     return;
   }
 
-  // Ask one Worker for its agents' usage limits; the Worker runs the checks itself and answers.
+  // Ask one Worker for its agents' usage limits; the Worker runs the checks itself and answers (no Codeman needed).
   const usageMatch = url.pathname.match(/^\/api\/workers\/([^/]+)\/usage$/);
   if (method === "POST" && usageMatch) {
     const nodeId = decodeURIComponent(usageMatch[1]!);
+    // The Worker answers for the machine, so no Codeman instance is needed; use one if the Hub knows it.
     const instance = hub.listInstances().find((candidate) => candidate.nodeId === nodeId && candidate.backend === "codeman");
-    if (!instance) {
-      sendJson(response, 404, { error: "No connector instance for this Worker" });
-      return;
-    }
     try {
-      const usage = await controlPlane.requestConnector(nodeId, instance.id, "usage.read", undefined, 45_000);
+      const usage = await controlPlane.requestConnector(nodeId, instance?.id ?? nodeId, "usage.read", undefined, 45_000);
       sendJson(response, 200, { nodeId, usage });
     } catch (error) {
       sendJson(response, 502, { error: error instanceof Error ? error.message : "Usage request failed" });

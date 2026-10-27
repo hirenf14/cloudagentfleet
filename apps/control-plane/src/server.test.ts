@@ -935,14 +935,14 @@ test("re-sends jobs a Worker never accepted when it reconnects", async () => {
   assert.equal(delivered.length, 1, "an accepted job is not handed out again");
 });
 
-test("asking a Worker for usage needs a connector instance for it", async () => {
+test("asking for usage from a Worker that is not connected fails clearly", async () => {
   const app = createControllerServer({ statePath: "" });
   const baseUrl = await listen(app);
 
   try {
     const response = await fetch(`${baseUrl}/api/workers/worker-local/usage`, { method: "POST" });
-    assert.equal(response.status, 404);
-    assert.match((await json(response)).error, /connector instance/);
+    assert.equal(response.status, 502);
+    assert.match((await json(response)).error, /no active connection/);
   } finally {
     await new Promise<void>((resolve) => app.server.close(() => resolve()));
   }

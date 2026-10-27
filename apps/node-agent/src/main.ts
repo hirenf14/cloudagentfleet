@@ -1,3 +1,4 @@
+import { collectUsage } from "./usage.ts";
 import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
@@ -229,6 +230,8 @@ export async function runWorker(): Promise<void> {
       }
       return cptrSessions.session();
     }
+    // Usage limits are read from the agents on this machine, with or without Codeman.
+    if (request.operation === "usage.read") return collectUsage();
     return codemanEnabled ? runtime.handleConnectorRequest(request) : codemanDisabled();
   };
 
