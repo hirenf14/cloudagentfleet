@@ -29,6 +29,7 @@ import {
   normalizeCodemanAgent,
   type CodemanStatus,
 } from "../../../packages/host-adapters/src/codeman/wire.ts";
+import { collectUsage } from "./usage.ts";
 import { readSseStream } from "../../../packages/host-adapters/src/shared/sse.ts";
 
 interface CodemanApiSession {
@@ -436,6 +437,8 @@ export class CodemanWorkerRuntime {
         return this.workspaces;
       case "workspaces.suggest":
         return this.suggestWorkspacePaths(typeof payload.prefix === "string" ? payload.prefix : "");
+      case "usage.read":
+        return collectUsage();
       case "sessions.list":
         return this.client.listSessions(true);
       case "sessions.create": {
