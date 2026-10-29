@@ -65,6 +65,12 @@ Good to know:
   machine. The machine's page says so.
 - **Agent chat needs the agent installed on that machine** and signed in there
   (`claude`, `agent login`). `init` can install them; the logins stay yours.
+- **Claude models are kept current by the Worker.** It has an older built-in
+  list, so each time the Worker starts (or finds it running) it adds the
+  current Claude Code models and sets a default. Models and a default you chose
+  are kept. To offer a different set, put `{"models": [...], "default": "..."}`
+  in `~/.cloudagentfleet/cptr-models.json` on that machine; set
+  `CLOUDAGENTFLEET_CPTR_SYNC_MODELS=false` to leave its list alone.
 - **On Windows**, its automatic list of running ports does not work (it needs a
   tool newer Windows 11 builds no longer include). Open a running app in its
   **Browser** tab at `http://localhost:<port>` instead.
