@@ -279,7 +279,7 @@ export class CodemanClient {
     await readSseStream(response.body, signal, (frame) => {
       try {
         const parsed = JSON.parse(frame.data) as Record<string, unknown>;
-        const sessionId = codemanEventSessionId(parsed);
+        const sessionId = codemanEventSessionId(parsed, frame.event ?? "");
         if (!sessionId) return;
         onEvent({
           sessionId,

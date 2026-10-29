@@ -58,15 +58,18 @@ export function codemanEventKind(type: string): HostSessionEvent["event"] | unde
 }
 
 /** Codeman nests the session ID differently across event types. */
-export function codemanEventSessionId(payload: Record<string, unknown>): string {
+export function codemanEventSessionId(payload: Record<string, unknown>, eventName = ""): string {
   const session = isRecord(payload.session) ? payload.session : undefined;
   const data = isRecord(payload.data) ? payload.data : undefined;
+  // `session:*` events (e.g. session:terminal, the live output) carry the session as plain `id`.
+  const name = eventName || String(payload.type ?? payload.event ?? "");
   return String(
     payload.sessionId
     ?? payload.session_id
     ?? session?.id
     ?? data?.sessionId
     ?? data?.session_id
+    ?? (name.startsWith("session:") ? payload.id : undefined)
     ?? "",
   );
 }
