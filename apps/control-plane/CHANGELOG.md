@@ -1,5 +1,13 @@
 # @cloudagentfleet/hub
 
+## 0.5.0
+
+### Minor Changes
+
+- [#47](https://github.com/techoblix/cloudagentfleet/pull/47) [`06e3ba3`](https://github.com/techoblix/cloudagentfleet/commit/06e3ba362c176a43c4247e44e49fb0a5116f46cf) Thanks [@hirenf14](https://github.com/hirenf14)! - Ask the Hub from the command line: `cloudagentfleet workers` lists enrolled Workers with their status, version and last seen; `workers usage <id>` shows a Worker's agent limits; `instances` and `sessions` list what the Hub holds. All are read-only, take `--json`, and use the saved Hub settings on a Hub or Worker machine, or `--hub <url> --token <secret>` from anywhere else.
+
+- [#46](https://github.com/techoblix/cloudagentfleet/pull/46) [`104fa6e`](https://github.com/techoblix/cloudagentfleet/commit/104fa6ec0622c417f164a1aa664698d176839333) Thanks [@hirenf14](https://github.com/hirenf14)! - Update notices, automatic Worker updates, and a real `cloudagentfleet doctor`. The Hub checks npm every few hours (`CLOUDAGENTFLEET_UPDATE_CHECK=0` turns it off) and the dashboard shows a banner when the Hub or any Worker is behind; Workers now report their version when they enroll. `cloudagentfleet update` installs the newest release (`--check` only looks), and a Worker service started with `run --restart` installs updates itself and restarts on them (`cloudagentfleet update auto off` or `CLOUDAGENTFLEET_AUTO_UPDATE=0` to stop; a Hub only reports unless you turn it on). `doctor` now checks Node, the CLI/Hub versions, the Hub link and token, whether each Worker is online, the Codeman and Open WebUI Computer backends, the service, and recent log errors, with a fix for each.
+
 ## 0.4.2
 
 ### Patch Changes
