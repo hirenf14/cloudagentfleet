@@ -3,7 +3,7 @@
   "changelog": [
     "@changesets/changelog-github",
     {
-      "repo": "hirenf14/cloudagentfleet"
+      "repo": "techoblix/cloudagentfleet"
     }
   ],
   "commit": false,

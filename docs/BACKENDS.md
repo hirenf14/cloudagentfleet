@@ -99,4 +99,4 @@ credentials.
   them isolated
 - [Credits](ACKNOWLEDGEMENTS.md): licenses and who makes what
 - For people building a new backend:
-  [the design notes](https://github.com/hirenf14/cloudagentfleet/blob/master/docs/BACKEND-ABSTRACTION.md)
+  [the design notes](https://github.com/techoblix/cloudagentfleet/blob/master/docs/BACKEND-ABSTRACTION.md)

@@ -1980,7 +1980,7 @@ async function init() {
   console.log([
     "",
     "Next: open the dashboard, pick a machine, and start a session or open its own UI.",
-    "Guide: https://hirenf14.github.io/cloudagentfleet/docs/getting-started.html",
+    "Guide: https://techoblix.github.io/cloudagentfleet/docs/getting-started.html",
   ].join("\n"));
 }
 
