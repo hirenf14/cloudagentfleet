@@ -65,12 +65,35 @@ Good to know:
   machine. The machine's page says so.
 - **Agent chat needs the agent installed on that machine** and signed in there
   (`claude`, `agent login`). `init` can install them; the logins stay yours.
-- **Claude models are kept current by the Worker.** It has an older built-in
-  list, so each time the Worker starts (or finds it running) it adds the
-  current Claude Code models and sets a default. Models and a default you chose
-  are kept. To offer a different set, put `{"models": [...], "default": "..."}`
-  in `~/.cloudagentfleet/cptr-models.json` on that machine; set
-  `CLOUDAGENTFLEET_CPTR_SYNC_MODELS=false` to leave its list alone.
+- **Models.** Codex and Cursor models are read from the agents themselves (Cursor
+  lists none until `agent login`). Open WebUI Computer has an older built-in
+  list of Claude models, so each time the Worker starts (or finds it running) it
+  adds the current Claude Code models and sets a default. Models and a default
+  you chose are kept. Set `CLOUDAGENTFLEET_CPTR_SYNC_MODELS=false` to leave its
+  lists alone.
+- **Your own and local models.** Put them in
+  `~/.cloudagentfleet/cptr-models.json` on that machine:
+
+  ```json
+  {
+    "claude_code": { "models": ["claude-..."], "default": "claude-..." },
+    "codex": { "models": ["my-codex-model"] },
+    "connections": [
+      { "name": "Ollama", "base_url": "http://127.0.0.1:11434/v1", "prefix_id": "ollama" }
+    ]
+  }
+  ```
+
+  An agent entry replaces the built-in list for Claude Code and adds ids to
+  any other agent. A connection is any OpenAI-compatible server (Ollama, LM
+  Studio, llama.cpp, vLLM; `"provider": "anthropic"` for an Anthropic-compatible
+  one) and gives Open WebUI Computer's plain chat those models as
+  `<prefix_id>/<model>`. Leave out `models` and it uses whatever the server has:
+  the Worker asks again every few minutes, so a model you pull or remove shows
+  up without a restart. List `models` only to show a subset. `api_key` is
+  optional (servers like Ollama ignore it; a placeholder is sent because
+  Open WebUI Computer cannot call a server with an empty key). Edits to the file
+  are read when the Worker starts.
 - **On Windows**, its automatic list of running ports does not work (it needs a
   tool newer Windows 11 builds no longer include). Open a running app in its
   **Browser** tab at `http://localhost:<port>` instead.

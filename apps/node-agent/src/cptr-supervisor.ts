@@ -3,7 +3,7 @@ import { appendFileSync, chmodSync, existsSync, mkdirSync, writeFileSync } from 
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { envFlagFrom } from "./codeman-supervisor.ts";
-import { syncCptrClaudeModels } from "./cptr-models.ts";
+import { cptrModelKeeper } from "./cptr-models.ts";
 import { completeCptrSetup, cptrCredentialsPath } from "./cptr-session.ts";
 import type { SupervisorHandle } from "./supervisor.ts";
 
@@ -29,8 +29,12 @@ export interface CptrSupervisorOptions {
    */
   autoSetup?: boolean;
   credentialsPath?: string;
-  /** Offer the current Claude models in cptr (see cptr-models.ts). Default on; `false` leaves its list alone. */
+  /** Keep cptr's model lists and connections current (see cptr-models.ts). Default on; `false` leaves them alone. */
   syncModels?: boolean;
+  /** The model config file; default `~/.cloudagentfleet/cptr-models.json`. */
+  modelsPath?: string;
+  /** How often cptr re-reads its local model servers; default 5 minutes. */
+  modelRefreshMs?: number;
   readyTimeoutMs?: number;
   pollIntervalMs?: number;
   fetchImpl?: typeof fetch;
@@ -73,20 +77,40 @@ export async function isCptrReachable(baseUrl: string, fetchImpl: typeof fetch =
   }
 }
 
-/** Best effort: a model-list problem must never stop the Worker or cptr. */
+const DEFAULT_MODEL_REFRESH_MS = 5 * 60_000;
+
+/**
+ * Best effort: a model-list problem must never stop the Worker or cptr.
+ * Returns a function that stops the periodic refresh of local model servers.
+ */
 async function syncModels(
   baseUrl: string,
   options: CptrSupervisorOptions,
   fetchImpl: typeof fetch,
   log: (message: string) => void,
-): Promise<void> {
-  if (options.syncModels === false || !envFlagFrom(process.env, "CLOUDAGENTFLEET_CPTR_SYNC_MODELS", true)) return;
+): Promise<() => void> {
+  if (options.syncModels === false || !envFlagFrom(process.env, "CLOUDAGENTFLEET_CPTR_SYNC_MODELS", true)) return () => undefined;
+  const keeper = cptrModelKeeper({
+    baseUrl,
+    credentialsPath: options.credentialsPath,
+    modelsPath: options.modelsPath,
+    fetchImpl,
+  });
   try {
-    const result = await syncCptrClaudeModels({ baseUrl, credentialsPath: options.credentialsPath, fetchImpl });
-    if (result === "updated") log("Updated Open WebUI Computer's Claude Code model list.");
+    const result = await keeper.sync();
+    if (result.profiles === "updated") log("Updated Open WebUI Computer's agent model lists.");
+    if (result.connections > 0) log(`Updated ${result.connections} Open WebUI Computer model connection(s) from cptr-models.json.`);
   } catch (error) {
     log(`Could not update Open WebUI Computer's model list: ${error instanceof Error ? error.message : error}`);
+    return () => undefined;
   }
+  if (!keeper.discovers()) return () => undefined;
+  // Local servers change (a model is pulled or removed) and cptr caches what it found, so look again now and then.
+  const timer = setInterval(() => {
+    keeper.refresh().catch(() => undefined);
+  }, options.modelRefreshMs ?? DEFAULT_MODEL_REFRESH_MS);
+  timer.unref();
+  return () => clearInterval(timer);
 }
 
 async function needsSetup(baseUrl: string, fetchImpl: typeof fetch): Promise<boolean> {
@@ -111,12 +135,13 @@ export async function ensureCptr(options: CptrSupervisorOptions = {}): Promise<S
 
   if (await isCptrReachable(baseUrl, fetchImpl)) {
     log(`Open WebUI Computer already reachable at ${baseUrl}`);
+    let stopRefresh = () => {};
     if (await needsSetup(baseUrl, fetchImpl)) {
       log("Open WebUI Computer still needs first-run setup; use the token it printed when it started.");
     } else {
-      await syncModels(baseUrl, options, fetchImpl, log);
+      stopRefresh = await syncModels(baseUrl, options, fetchImpl, log);
     }
-    return { startedByUs: false, stopIfOwned() {} };
+    return { startedByUs: false, stopIfOwned: stopRefresh };
   }
 
   const target = new URL(baseUrl);
@@ -202,10 +227,11 @@ export async function ensureCptr(options: CptrSupervisorOptions = {}): Promise<S
           + `${tokenPath} (owner-only); open the host from the fleet dashboard and go to /?token=<token>.`,
         );
       }
-      if (!(await needsSetup(baseUrl, fetchImpl))) await syncModels(baseUrl, options, fetchImpl, log);
+      const stopRefresh = (await needsSetup(baseUrl, fetchImpl)) ? () => {} : await syncModels(baseUrl, options, fetchImpl, log);
       return {
         startedByUs: true,
         stopIfOwned() {
+          stopRefresh();
           log("Stopping Open WebUI Computer started by this Worker …");
           child.kill();
         },
