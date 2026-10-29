@@ -1,5 +1,13 @@
 # @cloudagentfleet/hub
 
+## 0.4.2
+
+### Patch Changes
+
+- [#43](https://github.com/techoblix/cloudagentfleet/pull/43) [`de1a0b9`](https://github.com/techoblix/cloudagentfleet/commit/de1a0b95e057c8813f63029c4234a28e12f29d77) Thanks [@hirenf14](https://github.com/hirenf14)! - Open WebUI Computer offers the current Claude models. It hard-codes an older list, so the Worker now adds the current Claude Code models (and sets the default) through cptr's admin API each time it starts or finds cptr running. Models and a default you set yourself are kept; `~/.cloudagentfleet/cptr-models.json` replaces the built-in list, and `CLOUDAGENTFLEET_CPTR_SYNC_MODELS=false` turns this off.
+
+- [#45](https://github.com/techoblix/cloudagentfleet/pull/45) [`26e881b`](https://github.com/techoblix/cloudagentfleet/commit/26e881beb9d423766d58c65a24395a49e3f5c93e) Thanks [@hirenf14](https://github.com/hirenf14)! - Add your own and local models to Open WebUI Computer. `~/.cloudagentfleet/cptr-models.json` can add model ids to any agent and list local model servers (Ollama, LM Studio, llama.cpp, vLLM) as connections. A server without a model list is asked again every few minutes, so a model you pull or remove shows up without a restart. Codex and Cursor models are still read from the agents themselves.
+
 ## 0.4.1
 
 ### Patch Changes
