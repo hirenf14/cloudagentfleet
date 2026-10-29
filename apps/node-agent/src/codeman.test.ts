@@ -456,6 +456,59 @@ test("ControllerTransport correlates connector requests and rejects another inst
   });
 });
 
+test("ControllerTransport answers an operation it does not know and keeps the stream", async () => {
+  const posted: NodeMessage[] = [];
+  const events = [
+    { type: "codeman.request", requestId: "request-1", instanceId: "codeman-1", operation: "usage.read" },
+    { type: "codeman.request", requestId: "request-2", instanceId: "codeman-1", operation: "status" },
+  ];
+  const fetchImpl: typeof fetch = async (input, init) => {
+    const url = String(input);
+    if (url.endsWith("/api/workers") && init?.method === "POST") {
+      return Response.json({ worker: { id: "worker-1" } }, { status: 201 });
+    }
+    if (url.endsWith("/messages") && init?.method === "POST") {
+      posted.push(JSON.parse(String(init.body)) as NodeMessage);
+      return Response.json({ accepted: true }, { status: 202 });
+    }
+    if (url.endsWith("/connect")) {
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          for (const event of events) {
+            controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(event)}\n\n`));
+          }
+          controller.close();
+        },
+      });
+      return new Response(stream, { status: 200 });
+    }
+    return Response.json({ accepted: true }, { status: 202 });
+  };
+  const transport = new ControllerTransport({
+    nodeId: "worker-1",
+    name: "Worker",
+    platform: "windows",
+    capabilities: ["codeman"],
+    controlPlaneUrl: "http://127.0.0.1:8787",
+    connectorInstanceId: "codeman-1",
+    fetchImpl,
+  });
+
+  // Without reconnect, a thrown stream error would reject start().
+  await transport.start(
+    async () => undefined,
+    async () => ({ version: "1.0.0" }),
+  );
+  await new Promise((resolve) => setTimeout(resolve, 20));
+
+  const responses = posted.filter((message) => message.type === "codeman.response");
+  assert.deepEqual(responses.map((message) => message.requestId).sort(), ["request-1", "request-2"]);
+  const unknown = responses.find((message) => message.requestId === "request-1");
+  assert.equal(unknown?.success, false);
+  assert.equal(unknown?.errorCode, "connector_operation_unsupported");
+  assert.equal(responses.find((message) => message.requestId === "request-2")?.success, true);
+});
+
 test("ControllerTransport survives a Controller restart and re-enrolls", async () => {
   let enrolled = false;
   let enrollments = 0;

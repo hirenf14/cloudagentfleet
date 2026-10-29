@@ -6,8 +6,8 @@ import type {
   NodeRegistration,
 } from "../../../packages/protocol/src/index.ts";
 import {
+  isCodemanConnectorRequest,
   isTunnelMessage,
-  validateCodemanConnectorRequest,
   type TunnelMessage,
 } from "../../../packages/protocol/src/index.ts";
 import type { NodeAgentConfig } from "./index.ts";
@@ -119,9 +119,29 @@ export class ControllerTransport {
   }
 
   private async handleConnectorRequest(
-    request: CodemanConnectorRequest,
+    raw: Record<string, unknown>,
     connectorHandle?: (request: CodemanConnectorRequest) => Promise<unknown>,
   ): Promise<void> {
+    // A request this Worker does not understand (an operation added after this
+    // build) is answered with an error; throwing here would drop the stream.
+    if (!isCodemanConnectorRequest(raw)) {
+      const { requestId, instanceId } = raw;
+      if (typeof requestId !== "string" || typeof instanceId !== "string" || !requestId || !instanceId) {
+        console.error("Ignoring a connector request without a request or instance id");
+        return;
+      }
+      const operation = typeof raw.operation === "string" ? raw.operation : "unknown";
+      await this.send({
+        type: "codeman.response",
+        requestId,
+        instanceId,
+        success: false,
+        error: `Connector operation is not supported by this Worker: ${operation}`,
+        errorCode: "connector_operation_unsupported",
+      });
+      return;
+    }
+    const request = raw;
     const response: CodemanConnectorResponse = {
       type: "codeman.response",
       requestId: request.requestId,
@@ -211,7 +231,7 @@ async function readServerSentEvents(
   body: ReadableStream<Uint8Array>,
   handle: (message: ControlMessage) => Promise<void>,
   signal: AbortSignal,
-  handleConnectorRequest: (request: CodemanConnectorRequest) => Promise<void>,
+  handleConnectorRequest: (request: Record<string, unknown>) => Promise<void>,
   tunnelHandle?: (message: TunnelMessage) => void,
 ): Promise<void> {
   const reader = body.getReader();
@@ -243,9 +263,9 @@ async function readServerSentEvents(
       if (isTunnelMessage(parsed)) {
         tunnelHandle?.(parsed);
       } else if (parsed.type === "codeman.request") {
-        const request = validateCodemanConnectorRequest(parsed);
+        const request = parsed as Record<string, unknown>;
         void handleConnectorRequest(request).catch((error: unknown) => {
-          console.error(`Connector request ${request.requestId} failed: ${error instanceof Error ? error.message : error}`);
+          console.error(`Connector request ${String(request.requestId)} failed: ${error instanceof Error ? error.message : error}`);
         });
       } else if (typeof parsed.type === "string") {
         void handle(parsed as ControlMessage).catch((error: unknown) => {
