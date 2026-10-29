@@ -1,5 +1,13 @@
 # @cloudagentfleet/hub
 
+## 0.4.1
+
+### Patch Changes
+
+- [#33](https://github.com/techoblix/cloudagentfleet/pull/33) [`8eb3a41`](https://github.com/techoblix/cloudagentfleet/commit/8eb3a41d0ec1977f754179e5ef617b853c0375c7) Thanks [@hirenf14](https://github.com/hirenf14)! - The dashboard terminal streams live output smoothly instead of jumping on every refresh: the Worker now forwards Codeman's live output, and the dashboard appends it instead of repainting from snapshots.
+
+- [#20](https://github.com/techoblix/cloudagentfleet/pull/20) [`83cd279`](https://github.com/techoblix/cloudagentfleet/commit/83cd27945a8242acd57a24ac8a3c58d7d69a0f36) Thanks [@hirenf14](https://github.com/hirenf14)! - The project moved to github.com/techoblix/cloudagentfleet: package repository, homepage and docs links point there.
+
 ## 0.4.0
 
 ### Minor Changes
