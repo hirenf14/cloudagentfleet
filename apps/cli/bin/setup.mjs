@@ -17,6 +17,7 @@ import { createInterface } from "node:readline/promises";
 import { createHash, randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { diagnose, formatResults } from "./doctor.mjs";
+import { fleetHelp, parseFleetArgs, resolveHubTarget, runFleetCommand } from "./fleet.mjs";
 import {
   autoUpdateEnabled,
   cachedLatest,
@@ -2171,6 +2172,31 @@ function readLogTail(path) {
 }
 
 /** `doctor`: finds what keeps this machine's Worker or Hub from working, then lists local prerequisites. */
+/** `workers`, `workers usage <id>`, `instances` and `sessions`: what the Hub knows, read-only. */
+async function fleetCommand(name, args) {
+  if (args.includes("--help") || args[0] === "help") {
+    console.log(fleetHelp());
+    return;
+  }
+  let workerConfig;
+  try {
+    workerConfig = JSON.parse(readFileSync(configPath, "utf8"));
+  } catch {
+    // No Worker on this machine.
+  }
+  const hubConfig = existsSync(hubConfigPath) ? readHubConfig() : undefined;
+  const { flags } = parseFleetArgs(args);
+  const otherHub = Boolean(flags.hub || process.env.CLOUDAGENTFLEET_HUB_URL);
+  const target = resolveHubTarget({
+    flags,
+    workerConfig,
+    hubConfig,
+    // Only read the Hub's own token file when no other Hub was asked for.
+    hubWorkerToken: hubConfig && !otherHub ? readHubWorkerToken(hubConfig) : undefined,
+  });
+  console.log(await runFleetCommand(name, args, { target }));
+}
+
 async function doctor() {
   let workerConfig;
   try {
@@ -2320,6 +2346,7 @@ function help() {
     "  cloudagentfleet hub token        Print the Worker token new machines need",
     "  cloudagentfleet hub run          Run the Hub in this terminal",
     "  cloudagentfleet hub <serve|status|stop>  Publish the Hub privately with Tailscale Serve",
+    "  cloudagentfleet workers          Ask the Hub: Workers and their status (also `instances`, `sessions`, `workers usage <id>`)",
     "  cloudagentfleet doctor           Find what is wrong: versions, Hub link, Worker, logs, prerequisites",
     "  cloudagentfleet update [--check] Install the newest release (`update auto on|off` for background updates)",
     "",
@@ -2355,6 +2382,7 @@ if (isDirectCliEntrypoint()) {
     else if (commandName === "run") await runSavedWorker({ restart: process.argv.includes("--restart"), log: process.argv.includes("--log") });
     else if (commandName === "worker") workerServiceAction(process.argv[3] ?? "status");
     else if (commandName === "doctor") await doctor();
+    else if (["workers", "instances", "sessions"].includes(commandName)) await fleetCommand(commandName, process.argv.slice(3));
     else if (commandName === "update") await updateCommand(process.argv.slice(3));
     else if (commandName === "start") await startJob();
     else if (commandName === "enroll") await enrollInstance();
