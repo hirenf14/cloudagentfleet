@@ -277,6 +277,8 @@
     // Machine id -> open (true) or closed (false), when the user toggled it.
     const [machineOpen, setMachineOpen] = useState(() => new Map());
     const [hostUiOrigin, setHostUiOrigin] = useState(null);
+    const [updates, setUpdates] = useState(null);
+    const [updateDismissed, setUpdateDismissed] = useState(() => readLocal("updateDismissed") || "");
 
     useEffect(() => {
       api("/api/fleet/onboarding")
@@ -303,6 +305,14 @@
       };
       window.addEventListener("keydown", onKey);
       return () => window.removeEventListener("keydown", onKey);
+    }, []);
+
+    // Newer Hub/Worker releases on npm; the Hub looks every few hours, so asking now and then is enough.
+    useEffect(() => {
+      const load = () => api("/api/fleet/updates").then((data) => setUpdates(data)).catch(() => setUpdates(null));
+      load();
+      const timer = setInterval(load, 30 * 60_000);
+      return () => clearInterval(timer);
     }, []);
 
     useEffect(() => {
@@ -589,6 +599,22 @@
       }
     }
 
+    const updateNotice = (() => {
+      if (!updates || !updates.enabled) return null;
+      const behind = updates.outdatedWorkers || [];
+      if (!updates.hub.updateAvailable && behind.length === 0) return null;
+      const parts = [];
+      if (updates.hub.updateAvailable) {
+        parts.push(`Hub ${updates.hub.current} → ${updates.hub.latest}: run "npm i -g @cloudagentfleet/hub" on the Hub machine, then restart it.`);
+      }
+      if (behind.length > 0) {
+        const names = behind.slice(0, 3).map((worker) => `${worker.name} (${worker.version})`).join(", ");
+        const more = behind.length > 3 ? ` and ${behind.length - 3} more` : "";
+        parts.push(`${behind.length === 1 ? "Worker" : "Workers"} behind ${updates.worker.latest}: ${names}${more}. Run "cloudagentfleet update" there.`);
+      }
+      const key = `${updates.hub.latest || ""}|${updates.worker.latest || ""}`;
+      return key === updateDismissed ? null : { key, title: "Update available", detail: parts.join(" ") };
+    })();
     const onlineCount = instances.filter((instance) => instance.status === "online").length;
     const selectedSessions = selectedInstance ? sessionsByInstance.get(selectedInstance.id) || [] : [];
     const selectedLive = selectedSessions.filter((session) => !ENDED_STATUSES.has(session.status));
@@ -833,6 +859,23 @@
       h(
         "main",
         { className: `main-content ${embeddedInstance ? "main-content--embedded" : ""}` },
+        updateNotice && h(
+          "div",
+          { className: "alert alert--info", role: "status" },
+          h("strong", null, updateNotice.title),
+          h("span", null, updateNotice.detail),
+          h(
+            "button",
+            {
+              className: "button button--quiet",
+              onClick: () => {
+                setUpdateDismissed(updateNotice.key);
+                writeLocal("updateDismissed", updateNotice.key);
+              },
+            },
+            "Dismiss",
+          ),
+        ),
         error && h(
           "div",
           { className: "alert", role: "alert" },

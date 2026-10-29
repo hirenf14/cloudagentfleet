@@ -41,7 +41,8 @@ instead: it includes the Worker, and its `init` asks whether to run one.
 | Service | `cloudagentfleet worker <install\|start\|status\|stop\|remove>` |
 | Run in this terminal | `cloudagentfleet run` |
 | Register an instance by hand | `cloudagentfleet enroll …` |
-| Check this machine | `cloudagentfleet doctor` |
+| Find what is wrong | `cloudagentfleet doctor` |
+| Update (Worker services also update themselves) | `cloudagentfleet update` |
 
 Settings live in `~/.cloudagentfleet/worker.json`. By default the Worker
 starts Codeman and Open WebUI Computer when they are down

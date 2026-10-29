@@ -184,6 +184,7 @@ export class ControllerTransport {
       labels: this.config.labels,
       workspacePolicy: this.config.workspacePolicy,
       workspaces: this.config.workspaces,
+      version: this.config.version,
     };
     const response = await this.fetchImpl(`${this.baseUrl()}/api/workers`, {
       method: "POST",

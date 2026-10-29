@@ -65,6 +65,8 @@ export interface HostedNode {
   labels: Record<string, string>;
   workspacePolicy: WorkspacePolicy;
   workspaces: WorkspaceDescriptor[];
+  /** The Worker package version it reported when it enrolled. */
+  version?: string;
   lastSeenAt: string | null;
 }
 
@@ -294,6 +296,7 @@ export interface NodeRegistration {
   labels?: Record<string, string>;
   workspacePolicy?: WorkspacePolicy;
   workspaces?: WorkspaceDescriptor[];
+  version?: string;
 }
 
 export interface NodeHeartbeat {
