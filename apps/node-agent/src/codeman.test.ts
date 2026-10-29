@@ -459,7 +459,7 @@ test("ControllerTransport correlates connector requests and rejects another inst
 test("ControllerTransport answers an operation it does not know and keeps the stream", async () => {
   const posted: NodeMessage[] = [];
   const events = [
-    { type: "codeman.request", requestId: "request-1", instanceId: "codeman-1", operation: "usage.read" },
+    { type: "codeman.request", requestId: "request-1", instanceId: "codeman-1", operation: "future.operation" },
     { type: "codeman.request", requestId: "request-2", instanceId: "codeman-1", operation: "status" },
   ];
   const fetchImpl: typeof fetch = async (input, init) => {
