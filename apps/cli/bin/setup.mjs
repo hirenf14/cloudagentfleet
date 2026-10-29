@@ -16,11 +16,24 @@ import { dirname, join, resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { createHash, randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
+import { diagnose, formatResults } from "./doctor.mjs";
+import {
+  autoUpdateEnabled,
+  cachedLatest,
+  compareVersions,
+  installLatest,
+  readCliPackage,
+  refreshLatest,
+  updateNotice,
+  watchForUpdates,
+} from "./update.mjs";
 
 const thisFile = fileURLToPath(import.meta.url);
 const thisDir = dirname(thisFile);
 const configPath = join(homedir(), ".cloudagentfleet", "worker.json");
-const instancesConfigPath = join(homedir(), ".cloudagentfleet", "instances.json");
+const cliPackage = readCliPackage(thisDir);
+const updateCachePath = join(homedir(), ".cloudagentfleet", "update-check.json");
+const instancesConfigPath =join(homedir(), ".cloudagentfleet", "instances.json");
 /** Backends the Hub registry knows; keep in sync with packages/host-adapters. */
 const backends = ["codeman", "cptr"];
 const modes = ["claude", "shell", "opencode", "codex", "gemini", "antigravity", "pi", "grok", "deepseek"];
@@ -1429,20 +1442,20 @@ async function hubCommand(args) {
  */
 async function runSavedWorker(options = {}) {
   const config = JSON.parse(readFileSync(configPath, "utf8"));
-  await runService("worker", (output) => workerProcesses(config).map((entry) => runWorker(entry, output)), options);
+  await runService("worker", (output) => workerProcesses(config).map((entry) => runWorker(entry, output)), { ...options, config });
 }
 
 /** `hub run`: the Hub with its saved settings, supervised like the Worker. */
 async function runSavedHub(options = {}) {
   const config = readHubConfig();
-  await runService("hub", (output) => [runHub(config, output)], options);
+  await runService("hub", (output) => [runHub(config, output)], { ...options, config });
 }
 
 /**
  * Runs a service's processes until they exit; with `restart`, as the service
  * itself (pid file, no duplicates, restart after a failure).
  */
-async function runService(role, startProcesses, { restart = false, log = false } = {}) {
+async function runService(role, startProcesses, { restart = false, log = false, config } = {}) {
   const { label } = SERVICE_ROLES[role];
   const pidFile = servicePidPath(role);
   if (restart) {
@@ -1457,15 +1470,32 @@ async function runService(role, startProcesses, { restart = false, log = false }
   const logPath = join(dirname(configPath), `${role}.log`);
   const output = log ? createWriteStream(logPath, { flags: "a", mode: 0o600 }) : undefined;
   if (output) console.log(`${label} output: ${logPath}`);
+  // A service checks for a newer release now and then; one started with
+  // `--restart` may install it and restart its processes on the new files.
+  let restartForUpdate = false;
+  const say = (line) => (output ?? process.stderr).write(`${line}\n`);
+  const stopUpdates = watchForUpdates({
+    pkg: cliPackage,
+    cachePath: updateCachePath,
+    apply: restart && autoUpdateEnabled(role, config, cliPackage),
+    log: say,
+    onUpdated: () => {
+      restartForUpdate = true;
+      forwardStop("SIGTERM");
+    },
+  });
   try {
     for (;;) {
       output?.write(`\n--- ${new Date().toISOString()} starting ${label} ---\n`);
       const exitCode = await superviseChildren(startProcesses(output));
-      if (!restart || stopRequested || exitCode === 0) return;
+      const updating = restartForUpdate;
+      restartForUpdate = false;
+      if (!restart || stopRequested || (exitCode === 0 && !updating)) return;
       (output ?? process.stderr).write(`The ${label} exited with code ${exitCode}; restarting in 5 seconds.\n`);
       await new Promise((resolveDelay) => setTimeout(resolveDelay, 5000));
     }
   } finally {
+    stopUpdates();
     if (restart && readServicePid(role) === process.pid) unlinkSync(pidFile);
   }
 }
@@ -2130,6 +2160,100 @@ async function enrollWorkerConfig(config) {
   return enrolledAll;
 }
 
+/** The last ~20 KB of a service log (what a diagnosis needs), or empty. */
+function readLogTail(path) {
+  try {
+    const text = readFileSync(path, "utf8");
+    return text.length > 20_000 ? text.slice(-20_000) : text;
+  } catch {
+    return "";
+  }
+}
+
+/** `doctor`: finds what keeps this machine's Worker or Hub from working, then lists local prerequisites. */
+async function doctor() {
+  let workerConfig;
+  try {
+    workerConfig = JSON.parse(readFileSync(configPath, "utf8"));
+  } catch (error) {
+    workerConfig = error?.code === "ENOENT" ? undefined : "invalid";
+  }
+  const hubConfig = existsSync(hubConfigPath) ? readHubConfig() : undefined;
+  const services = {};
+  for (const role of ["worker", "hub"]) {
+    const pid = readServicePid(role);
+    services[role] = {
+      running: Boolean(pid && processAlive(pid)),
+      installed: servicePaths(role).path ? existsSync(servicePaths(role).path) : true,
+    };
+  }
+  const logPaths = { worker: join(dirname(configPath), "worker.log"), hub: join(dirname(configPath), "hub.log") };
+  const latest = cliPackage.version === "0.0.0-dev" ? undefined : await refreshLatest(updateCachePath, cliPackage.name, { timeoutMs: 3_000 });
+  const results = await diagnose({
+    cli: cliPackage,
+    latest,
+    nodeVersion: process.versions.node,
+    workerConfig,
+    workerConfigPath: configPath,
+    workerNodeIds: workerConfig && workerConfig !== "invalid" ? workerProcesses(workerConfig).map((entry) => entry.nodeId) : [],
+    hubConfig,
+    hubWorkerToken: hubConfig ? readHubWorkerToken(hubConfig) : undefined,
+    services,
+    logs: { worker: readLogTail(logPaths.worker), hub: readLogTail(logPaths.hub) },
+    logPaths,
+  });
+  console.log(formatResults(results));
+  console.log("\nPrerequisites on this machine:");
+  printEnvironment(detectEnvironment());
+  const failed = results.filter((result) => result.status === "fail").length;
+  const warned = results.filter((result) => result.status === "warn").length;
+  console.log(failed + warned === 0
+    ? "\nNo problems found."
+    : `\n${failed} problem${failed === 1 ? "" : "s"}, ${warned} warning${warned === 1 ? "" : "s"}.`);
+  if (failed > 0) process.exitCode = 1;
+}
+
+/** Saves the `autoUpdate` choice into the Worker and Hub settings that exist here. */
+function saveAutoUpdate(enabled) {
+  const targets = [
+    { label: "Worker", path: configPath },
+    { label: "Hub", path: hubConfigPath },
+  ].filter(({ path }) => existsSync(path));
+  if (targets.length === 0) throw new Error("Nothing is set up here yet; run `cloudagentfleet init` first.");
+  for (const { path } of targets) {
+    writeSafeJson(path, { ...JSON.parse(readFileSync(path, "utf8")), autoUpdate: enabled });
+  }
+  console.log(`Automatic updates ${enabled ? "on" : "off"} for the ${targets.map(({ label }) => label).join(" and ")}. Restart the service to apply.`);
+}
+
+/** `update [--check]`, `update auto <on|off>`: like `claude update`. */
+async function updateCommand(args) {
+  if (args[0] === "auto") {
+    if (args[1] !== "on" && args[1] !== "off") throw new Error("Usage: cloudagentfleet update auto <on|off>");
+    saveAutoUpdate(args[1] === "on");
+    return;
+  }
+  const latest = await refreshLatest(updateCachePath, cliPackage.name, { timeoutMs: 8_000 });
+  console.log(`Current version: ${cliPackage.version}`);
+  if (!latest) throw new Error("Could not reach the npm registry to look for a newer version.");
+  if (compareVersions(cliPackage.version, latest) >= 0) {
+    console.log("Up to date.");
+    return;
+  }
+  console.log(`Latest version: ${latest}`);
+  if (args.includes("--check")) {
+    console.log("Run `cloudagentfleet update` to install it.");
+    return;
+  }
+  if (!cliPackage.installed) {
+    throw new Error(`This copy was not installed with npm; update it yourself (npm i -g ${cliPackage.name}).`);
+  }
+  console.log(`Installing ${cliPackage.name}@${latest}...`);
+  const failure = installLatest(cliPackage.name);
+  if (failure) throw new Error(`Update failed: ${failure}`);
+  console.log(`Updated to ${latest}. Restart background services to use it: \`cloudagentfleet worker stop\` then \`start\` (hub: \`hub service\`).`);
+}
+
 async function startJob() {
   const config = JSON.parse(readFileSync(configPath, "utf8"));
   const headers = {
@@ -2196,7 +2320,8 @@ function help() {
     "  cloudagentfleet hub token        Print the Worker token new machines need",
     "  cloudagentfleet hub run          Run the Hub in this terminal",
     "  cloudagentfleet hub <serve|status|stop>  Publish the Hub privately with Tailscale Serve",
-    "  cloudagentfleet doctor           Print local prerequisites",
+    "  cloudagentfleet doctor           Find what is wrong: versions, Hub link, Worker, logs, prerequisites",
+    "  cloudagentfleet update [--check] Install the newest release (`update auto on|off` for background updates)",
     "",
     "The setup flow asks before installing Codeman and never performs provider login.",
   ].join("\n"));
@@ -2229,11 +2354,20 @@ if (isDirectCliEntrypoint()) {
     else if (commandName === "setup") await setup();
     else if (commandName === "run") await runSavedWorker({ restart: process.argv.includes("--restart"), log: process.argv.includes("--log") });
     else if (commandName === "worker") workerServiceAction(process.argv[3] ?? "status");
-    else if (commandName === "doctor") printEnvironment(detectEnvironment());
+    else if (commandName === "doctor") await doctor();
+    else if (commandName === "update") await updateCommand(process.argv.slice(3));
     else if (commandName === "start") await startJob();
     else if (commandName === "enroll") await enrollInstance();
     else if (commandName === "hub") await hubCommand(process.argv.slice(3));
     else help();
+    // Like Claude Code: a hint from the last lookup, and a quiet refresh for next time.
+    if (!["run", "hub", "update", "doctor"].includes(commandName) && cliPackage.version !== "0.0.0-dev") {
+      const notice = updateNotice(cliPackage, updateCachePath);
+      if (notice) console.log(`\n${notice}`);
+      if (cachedLatest(updateCachePath, cliPackage.name).stale && process.env.CLOUDAGENTFLEET_UPDATE_CHECK !== "0") {
+        await refreshLatest(updateCachePath, cliPackage.name, { timeoutMs: 1_500 });
+      }
+    }
   } catch (error) {
     console.error(error instanceof Error ? error.message : error);
     process.exitCode = 1;

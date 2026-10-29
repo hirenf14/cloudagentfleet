@@ -6,6 +6,7 @@ import { join } from "node:path";
 import test from "node:test";
 import { FleetHub } from "./hub.ts";
 import { createControllerServer, defaultHubStatePath } from "./server.ts";
+import { UpdateMonitor } from "./updates.ts";
 import type { HostAdapter } from "../../../packages/host-adapters/src/index.ts";
 import type {
   AgentProfile,
@@ -959,5 +960,36 @@ test("a Worker that does not advertise usage-read is not sent the request", asyn
     assert.match((await json(response)).error, /updated Fleet worker/);
   } finally {
     await new Promise<void>((resolve) => app.server.close(() => resolve()));
+  }
+});
+
+test("reports newer releases and the Workers that are behind", async () => {
+  const updateMonitor = new UpdateMonitor({
+    current: "0.3.4",
+    fetchImpl: (async () => Response.json({ version: "0.4.0" })) as typeof fetch,
+  });
+  await updateMonitor.check();
+  const app = createControllerServer({ statePath: "", updateMonitor });
+  const baseUrl = await listen(app);
+  try {
+    await fetch(`${baseUrl}/api/workers`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ ...registration, version: "0.3.4" }),
+    });
+    const report = await (await fetch(`${baseUrl}/api/fleet/updates`)).json() as {
+      hub: { updateAvailable: boolean; latest: string };
+      outdatedWorkers: Array<{ id: string; version: string }>;
+    };
+    assert.equal(report.hub.updateAvailable, true);
+    assert.equal(report.hub.latest, "0.4.0");
+    assert.deepEqual(report.outdatedWorkers.map((worker) => worker.id), [registration.nodeId]);
+
+    const health = await (await fetch(`${baseUrl}/healthz`)).json() as { version?: string };
+    assert.match(health.version ?? "", /^\d+\.\d+\.\d+|^0\.0\.0-dev/);
+  } finally {
+    await new Promise<void>((resolve, reject) => {
+      app.server.close((error) => (error ? reject(error) : resolve()));
+    });
   }
 });

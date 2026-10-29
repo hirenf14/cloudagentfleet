@@ -12,6 +12,8 @@ import { FleetHub } from "./hub.ts";
 import { resolveUiAuth, type UiAuth, type UiAuthRequest } from "./auth.ts";
 import { HttpError } from "./errors.ts";
 import { createHostUiServer } from "./host-ui.ts";
+import { UpdateMonitor } from "./updates.ts";
+import { readPackageInfo } from "../../../packages/protocol/src/version.ts";
 import {
   INSTANCE_COOKIE,
   instanceCookie,
@@ -98,6 +100,7 @@ export interface ControllerServerOptions {
   codemanCredentials?: Record<string, { username: string; password: string }>;
   controlPlane?: ControlPlane;
   hub?: FleetHub;
+  updateMonitor?: UpdateMonitor;
   statePath?: string;
 }
 
@@ -112,16 +115,21 @@ export interface ControllerServer {
   /** Read per request; tests and embedders may set explicit public URLs after binding. */
   origins: OriginPlan;
   hub: FleetHub;
+  /** Looks up newer releases on npm; started by `startControllerServer`, never by tests. */
+  updates: UpdateMonitor;
   /** Auto-generated Hub password still in bootstrap form (print on each start). */
   revealPassword?: string;
   /** Where the generated Worker token is stored, when the Hub generated one. */
   workerTokenPath?: string;
 }
 
+const packageInfo = readPackageInfo(import.meta.url);
+
 export function startControllerServer(
   options: ControllerServerOptions = {},
 ): ControllerServer {
   const controller = createControllerServer(options);
+  controller.updates.start();
   controller.hostServer.listen(controller.hostPort, controller.host, () => {
     console.log(`Host UIs listening on ${controller.host}:${controller.hostPort}`);
   });
@@ -170,6 +178,10 @@ export function createControllerServer(
   });
   const uiAuth = resolvedAuth.auth;
   const controlPlane = options.controlPlane ?? new ControlPlane();
+  const updates = options.updateMonitor ?? new UpdateMonitor({
+    current: packageInfo.version,
+    enabled: process.env.CLOUDAGENTFLEET_UPDATE_CHECK !== "0",
+  });
   const hub = options.hub ?? new FleetHub({
     statePath,
     credentials: options.codemanCredentials ?? readCodemanCredentials(),
@@ -236,7 +248,7 @@ export function createControllerServer(
         response.end();
         return;
       }
-      await route(request, response, target.url, controlPlane, hub, uiAuth, auth, origins, { workerTokenPath });
+      await route(request, response, target.url, controlPlane, hub, uiAuth, auth, origins, { workerTokenPath, updates });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Request failed";
       const status = error instanceof HttpError ? error.status : 400;
@@ -253,6 +265,7 @@ export function createControllerServer(
     hostServer,
     controlPlane,
     hub,
+    updates,
     host,
     port,
     hostPort,
@@ -327,7 +340,7 @@ async function route(
   uiAuth: UiAuth,
   auth: UiAuthRequest,
   origins: OriginPlan,
-  setup: { workerTokenPath?: string } = {},
+  setup: { workerTokenPath?: string; updates?: UpdateMonitor } = {},
 ): Promise<void> {
   const method = request.method ?? "GET";
 
@@ -335,6 +348,7 @@ async function route(
     sendJson(response, 200, {
       ok: true,
       role: "controller",
+      version: packageInfo.version,
       execution: "codeman-native-proxy-with-worker-fallback",
     });
     return;
@@ -421,6 +435,12 @@ async function route(
       workerTokenPath: setup.workerTokenPath ?? null,
       workers: controlPlane.nodes.list().length,
     });
+    return;
+  }
+
+  // Newer Hub/Worker releases on npm, and which enrolled Workers are behind.
+  if (method === "GET" && url.pathname === "/api/fleet/updates") {
+    sendJson(response, 200, setup.updates?.report(controlPlane.nodes.list()) ?? null);
     return;
   }
 

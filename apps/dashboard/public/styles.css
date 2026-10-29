@@ -102,6 +102,8 @@ h1, h2, p, dl, dd { margin: 0; }
 /* Main area */
 .main-content { min-width: 0; padding: 0 32px 48px; }
 .alert { display: flex; align-items: center; gap: 12px; margin: 12px 0 0; padding: 8px 12px; border: 1px solid rgb(248 113 113 / 25%); border-radius: 8px; color: #fecaca; background: rgb(248 113 113 / 6%); }
+.alert--info { border-color: rgb(96 165 250 / 25%); color: #bfdbfe; background: rgb(96 165 250 / 6%); }
+.alert--info span { color: #93c5fd; }
 .alert strong { font-weight: 500; white-space: nowrap; }
 .alert span { color: #fca5a5; overflow: hidden; text-overflow: ellipsis; }
 .alert .button { margin-left: auto; }

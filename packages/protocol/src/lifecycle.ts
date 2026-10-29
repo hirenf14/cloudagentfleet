@@ -9,6 +9,7 @@ import {
   type Provider,
   type WorkspaceDescriptor,
 } from "./index.ts";
+import { sanitizeVersion } from "./version.ts";
 
 type Clock = () => Date;
 
@@ -37,6 +38,7 @@ export class NodeRegistry {
   enroll(registration: NodeRegistration): HostedNode {
     const now = this.clock().toISOString();
     const existing = this.nodes.get(registration.nodeId);
+    const version = sanitizeVersion(registration.version);
 
     if (existing?.status === "revoked") {
       throw new Error(`Node is revoked: ${registration.nodeId}`);
@@ -51,6 +53,7 @@ export class NodeRegistry {
       labels: { ...registration.labels },
       workspacePolicy: registration.workspacePolicy ?? { mode: "folders", roots: [] },
       workspaces: [...(registration.workspaces ?? [])],
+      ...(version ? { version } : {}),
       lastSeenAt: now,
     };
 

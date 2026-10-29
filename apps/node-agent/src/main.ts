@@ -14,6 +14,7 @@ import { validateConfig, type NodeAgentConfig } from "./index.ts";
 import { ControllerTransport } from "./transport.ts";
 import { WorkerTunnels, type TunnelTarget } from "./tunnel.ts";
 import { CptrSessions } from "./cptr-session.ts";
+import { readPackageInfo } from "../../../packages/protocol/src/version.ts";
 import type {
   CodemanAgentMode,
   CodemanConnectorRequest,
@@ -142,6 +143,7 @@ export async function runWorker(): Promise<void> {
     ],
     workspacePolicy: parsePolicy(),
     workspaces,
+    version: readPackageInfo(import.meta.url).version,
     controlPlaneUrl: required("CLOUDAGENTFLEET_CONTROLLER_URL"),
     authToken: process.env.CLOUDAGENTFLEET_AUTH_TOKEN,
   });

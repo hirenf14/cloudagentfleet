@@ -170,13 +170,28 @@ when `init` finishes.
 | Worker service | `cloudagentfleet worker status` (also `start`, `stop`, `remove`) |
 | Publish the Hub on your tailnet | `cloudagentfleet hub serve` |
 | Token for new machines | `cloudagentfleet hub token` |
-| Check this machine | `cloudagentfleet doctor` |
+| Find what is wrong (versions, Hub link, Worker, backends, logs) | `cloudagentfleet doctor` |
+| Update | `cloudagentfleet update` (`--check` only looks) |
 | Change choices | `cloudagentfleet init` again |
 
 Logs and settings live in `~/.cloudagentfleet/` (`%USERPROFILE%\.cloudagentfleet\`
 on Windows), including `cptr.log`. Service output goes to `hub.log` and
 `worker.log` on Windows; on Linux the journal keeps it
 (`journalctl --user -u cloudagentfleet-worker`), and on macOS launchd does.
+
+## Updates
+
+The Hub looks for newer releases on npm every few hours; the dashboard shows
+a banner when the Hub or a Worker is behind (Workers report their version
+when they enroll). `cloudagentfleet update` installs the newest release.
+
+A Worker running as a service (`run --restart`, which `worker install` sets
+up) installs updates by itself and restarts on them, like Claude Code does.
+Turn it off with `cloudagentfleet update auto off` or
+`CLOUDAGENTFLEET_AUTO_UPDATE=0`. A Hub only reports by default, because
+restarting it drops its in-memory Worker registry until they reconnect; turn
+it on with `update auto on` or `CLOUDAGENTFLEET_AUTO_UPDATE=1`.
+`CLOUDAGENTFLEET_UPDATE_CHECK=0` stops all checks.
 
 ## Security in short
 
