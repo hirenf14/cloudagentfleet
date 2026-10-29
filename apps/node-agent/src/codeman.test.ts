@@ -954,7 +954,7 @@ test("CodemanClient forwards Codeman's live terminal output (session id in `id`)
     },
   }), { headers: { "content-type": "text/event-stream" } });
   const client = new CodemanClient({ baseUrl: "http://127.0.0.1:3000", fetchImpl });
-  const event = await new Promise<{ sessionId: string; type: string; data: unknown }>((resolve, reject) => {
+  const event = await new Promise<{ sessionId: string; type: string; data?: unknown }>((resolve, reject) => {
     const stop = client.subscribeEvents((e) => { stop(); resolve(e); });
     setTimeout(() => { stop(); reject(new Error("no event: the live output was dropped")); }, 2000);
   });
