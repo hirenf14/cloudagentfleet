@@ -170,9 +170,19 @@ when `init` finishes.
 | Worker service | `cloudagentfleet worker status` (also `start`, `stop`, `remove`) |
 | Publish the Hub on your tailnet | `cloudagentfleet hub serve` |
 | Token for new machines | `cloudagentfleet hub token` |
+| See Workers and their status | `cloudagentfleet workers` (`--json` for scripts) |
+| A Worker's agent limits | `cloudagentfleet workers usage <id>` |
+| Host instances and sessions | `cloudagentfleet instances`, `cloudagentfleet sessions [--instance <id>]` |
 | Find what is wrong (versions, Hub link, Worker, backends, logs) | `cloudagentfleet doctor` |
 | Update | `cloudagentfleet update` (`--check` only looks) |
 | Change choices | `cloudagentfleet init` again |
+
+`workers`, `instances` and `sessions` are read-only and ask the Hub over its API
+with the Worker token. They work on the Hub machine with no setup, and on a
+Worker machine they use its saved Hub address and token. From anywhere else, pass
+`--hub <url> --token <secret>` (or set `CLOUDAGENTFLEET_HUB_URL` and
+`CLOUDAGENTFLEET_AUTH_TOKEN`); the token printed by `cloudagentfleet hub token`
+is the one to use.
 
 Logs and settings live in `~/.cloudagentfleet/` (`%USERPROFILE%\.cloudagentfleet\`
 on Windows), including `cptr.log`. Service output goes to `hub.log` and
