@@ -1,5 +1,17 @@
 # @cloudagentfleet/worker
 
+## 0.4.0
+
+### Minor Changes
+
+- [#35](https://github.com/hirenf14/cloudagentfleet/pull/35) [`e94dbdb`](https://github.com/hirenf14/cloudagentfleet/commit/e94dbdb68b65ba4444d4ade461aceded9aba7019) Thanks [@hirenf14](https://github.com/hirenf14)! - A running job reports what the agent has written so far. The Worker re-reads a Claude job's reply every 2s and sends it as an "output" event; the Hub keeps it as the job's `progress` (the whole reply, growing), so a caller polling the job can show the work as it happens instead of only the final result.
+
+- [#38](https://github.com/hirenf14/cloudagentfleet/pull/38) [`4067122`](https://github.com/hirenf14/cloudagentfleet/commit/406712255134484babecdec7c7a81720380815f8) Thanks [@hirenf14](https://github.com/hirenf14)! - The Hub can ask a Worker for its coding agents' usage limits. New connector operation `usage.read` and Hub route `POST /api/workers/:id/usage`. The Worker answers by calling the agents themselves: Claude Code's `/usage` (session and weekly percent used), Codex's rate limits from its newest session, and the Cursor account from `agent status`.
+
+### Patch Changes
+
+- [#34](https://github.com/hirenf14/cloudagentfleet/pull/34) [`40b6bf0`](https://github.com/hirenf14/cloudagentfleet/commit/40b6bf0ce445098d057d93953ee5ac0bb2ba2887) Thanks [@hirenf14](https://github.com/hirenf14)! - A job's result is the agent's whole reply to the prompt (its progress notes and final answer, in order), not one interim message: the Worker reads Codeman's full conversation and keeps reading until it stops changing, because Claude can write its last message just after the stop signal.
+
 ## 0.3.4
 
 ### Patch Changes
