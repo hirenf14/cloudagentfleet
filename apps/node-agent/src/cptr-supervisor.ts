@@ -3,6 +3,7 @@ import { appendFileSync, chmodSync, existsSync, mkdirSync, writeFileSync } from 
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { envFlagFrom } from "./codeman-supervisor.ts";
+import { syncCptrClaudeModels } from "./cptr-models.ts";
 import { completeCptrSetup, cptrCredentialsPath } from "./cptr-session.ts";
 import type { SupervisorHandle } from "./supervisor.ts";
 
@@ -28,6 +29,8 @@ export interface CptrSupervisorOptions {
    */
   autoSetup?: boolean;
   credentialsPath?: string;
+  /** Offer the current Claude models in cptr (see cptr-models.ts). Default on; `false` leaves its list alone. */
+  syncModels?: boolean;
   readyTimeoutMs?: number;
   pollIntervalMs?: number;
   fetchImpl?: typeof fetch;
@@ -70,6 +73,22 @@ export async function isCptrReachable(baseUrl: string, fetchImpl: typeof fetch =
   }
 }
 
+/** Best effort: a model-list problem must never stop the Worker or cptr. */
+async function syncModels(
+  baseUrl: string,
+  options: CptrSupervisorOptions,
+  fetchImpl: typeof fetch,
+  log: (message: string) => void,
+): Promise<void> {
+  if (options.syncModels === false || !envFlagFrom(process.env, "CLOUDAGENTFLEET_CPTR_SYNC_MODELS", true)) return;
+  try {
+    const result = await syncCptrClaudeModels({ baseUrl, credentialsPath: options.credentialsPath, fetchImpl });
+    if (result === "updated") log("Updated Open WebUI Computer's Claude Code model list.");
+  } catch (error) {
+    log(`Could not update Open WebUI Computer's model list: ${error instanceof Error ? error.message : error}`);
+  }
+}
+
 async function needsSetup(baseUrl: string, fetchImpl: typeof fetch): Promise<boolean> {
   try {
     const response = await fetchImpl(`${trimSlash(baseUrl)}/api/config`, {
@@ -94,6 +113,8 @@ export async function ensureCptr(options: CptrSupervisorOptions = {}): Promise<S
     log(`Open WebUI Computer already reachable at ${baseUrl}`);
     if (await needsSetup(baseUrl, fetchImpl)) {
       log("Open WebUI Computer still needs first-run setup; use the token it printed when it started.");
+    } else {
+      await syncModels(baseUrl, options, fetchImpl, log);
     }
     return { startedByUs: false, stopIfOwned() {} };
   }
@@ -181,6 +202,7 @@ export async function ensureCptr(options: CptrSupervisorOptions = {}): Promise<S
           + `${tokenPath} (owner-only); open the host from the fleet dashboard and go to /?token=<token>.`,
         );
       }
+      if (!(await needsSetup(baseUrl, fetchImpl))) await syncModels(baseUrl, options, fetchImpl, log);
       return {
         startedByUs: true,
         stopIfOwned() {
