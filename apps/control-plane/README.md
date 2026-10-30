@@ -51,3 +51,7 @@ State, the generated password (`hub-ui-auth.json`), and the Worker token
 
 Guide: [Getting started](https://github.com/techoblix/cloudagentfleet/blob/master/docs/GETTING-STARTED.md) ·
 Source: [techoblix/cloudagentfleet](https://github.com/techoblix/cloudagentfleet)
+
+## Credits
+
+Cloud Agent Fleet builds on [Codeman](https://github.com/Ark0N/Codeman) by Ark0N and the Codeman contributors (MIT) and [Open WebUI Computer](https://openwebui.com/computer) by Open WebUI, Inc. ([Open Use License](https://github.com/open-webui/computer/blob/main/LICENSE); commercial or organizational use falls under [Open WebUI's terms](https://openwebui.com/terms)). Neither is bundled or modified, and Open WebUI Computer's interface and branding are shown unmodified. Cloud Agent Fleet is independent and not affiliated with either project. See [Credits and third-party software](https://techoblix.github.io/cloudagentfleet/docs/credits.html).
