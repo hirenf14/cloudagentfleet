@@ -1,5 +1,11 @@
 # @cloudagentfleet/hub
 
+## 0.5.2
+
+### Patch Changes
+
+- [#51](https://github.com/techoblix/cloudagentfleet/pull/51) [`e502a9a`](https://github.com/techoblix/cloudagentfleet/commit/e502a9af1043141ecda4a50948dd0374260e64d5) Thanks [@hirenf14](https://github.com/hirenf14)! - Re-running `cloudagentfleet init` or `setup` on a machine whose Worker is already running no longer gets stuck. The running Worker service is stopped first (it held its ports and files busy, and starting a task that is already running does nothing, so the new settings never loaded), then the new one is started; if setup fails, the old service is started again.
+
 ## 0.5.1
 
 ### Patch Changes
