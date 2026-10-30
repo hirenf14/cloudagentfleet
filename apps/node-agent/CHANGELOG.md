@@ -1,5 +1,11 @@
 # @cloudagentfleet/worker
 
+## 0.5.3
+
+### Patch Changes
+
+- [#52](https://github.com/techoblix/cloudagentfleet/pull/52) [`f46ad1d`](https://github.com/techoblix/cloudagentfleet/commit/f46ad1d251c15668ef874926b6a58f585ccba6d2) Thanks [@hirenf14](https://github.com/hirenf14)! - The package pages on npm now credit Codeman and Open WebUI Computer, with their licenses.
+
 ## 0.5.2
 
 ### Patch Changes

@@ -1,6 +1,6 @@
 {
   "name": "@cloudagentfleet/hub",
-  "version": "0.5.2",
+  "version": "0.5.3",
   "private": false,
   "license": "MIT",
   "description": "Cloud Agent Fleet Hub: the private dashboard (included) and fleet API, with the cloudagentfleet CLI; can also run a Worker on the same machine.",
