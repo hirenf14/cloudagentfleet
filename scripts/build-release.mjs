@@ -1,5 +1,5 @@
-import { build } from "esbuild";
-import { chmod, cp, mkdir, readdir, rm } from "node:fs/promises";
+import { build, transform } from "esbuild";
+import { chmod, cp, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -20,6 +20,8 @@ async function bundleCli(entryPoint, outfile, options = {}) {
     platform: "node",
     target: "node22",
     sourcemap: false,
+    minify: true,
+    legalComments: "none",
     outfile,
     absWorkingDir: root,
     logLevel: "info",
@@ -30,7 +32,7 @@ async function bundleCli(entryPoint, outfile, options = {}) {
   await chmod(outfile, 0o755);
 }
 
-/** Copies the production UI files to `distPublic` (the UI package, and each Hub). */
+/** Copies the production UI files (scripts and styles minified) to `distPublic` (the UI package, and each Hub). */
 async function stageUi(distPublic) {
   const sourcePublic = join(root, "apps", "dashboard", "public");
   await mkdir(distPublic, { recursive: true });
@@ -39,7 +41,17 @@ async function stageUi(distPublic) {
     if (!entry.isFile()) continue;
     if (uiPublishDeny.has(entry.name)) continue;
     if (entry.name.startsWith(".")) continue;
-    await cp(join(sourcePublic, entry.name), join(distPublic, entry.name));
+    const loader = entry.name.endsWith(".js") ? "js" : entry.name.endsWith(".css") ? "css" : null;
+    if (!loader) {
+      await cp(join(sourcePublic, entry.name), join(distPublic, entry.name));
+      continue;
+    }
+    const { code } = await transform(await readFile(join(sourcePublic, entry.name), "utf8"), {
+      loader,
+      minify: true,
+      legalComments: "none",
+    });
+    await writeFile(join(distPublic, entry.name), code);
   }
 }
 
