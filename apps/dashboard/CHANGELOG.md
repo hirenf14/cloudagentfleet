@@ -1,5 +1,11 @@
 # @cloudagentfleet/ui
 
+## 0.5.1
+
+### Patch Changes
+
+- [#49](https://github.com/techoblix/cloudagentfleet/pull/49) [`d7e20ee`](https://github.com/techoblix/cloudagentfleet/commit/d7e20ee26c19edb776650635b83681833774f064) Thanks [@hirenf14](https://github.com/hirenf14)! - Smaller packages: the Hub, Worker and CLI bundles and the dashboard's scripts and styles are now minified, roughly halving what you download.
+
 ## 0.5.0
 
 ### Minor Changes
