@@ -1537,6 +1537,34 @@ function stopWindowsServiceTree(role) {
   }
 }
 
+/**
+ * Stops a role's service if it is running, so setup can rewrite its config and
+ * replace tools it holds open (a running Worker keeps its ports, cptr and files
+ * busy, and a start request for an already running task does nothing, so the
+ * new settings would never load). True when it was running.
+ */
+function stopRunningService(role) {
+  const pid = readServicePid(role);
+  if (!pid || !processAlive(pid)) return false;
+  const { label } = SERVICE_ROLES[role];
+  console.log(`Stopping the running ${label} service so it can be reconfigured …`);
+  const service = servicePaths(role);
+  const [executable, args] = serviceArgs(service, "stop");
+  command(executable, args, { timeout: 15_000 });
+  if (service.kind === "schtasks") {
+    stopWindowsServiceTree(role);
+  } else if (processAlive(pid)) {
+    try {
+      process.kill(pid, "SIGTERM");
+    } catch {
+      // Already gone.
+    }
+  }
+  const deadline = Date.now() + 10_000;
+  while (processAlive(pid) && Date.now() < deadline) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 200);
+  return true;
+}
+
 let supervisedChildren = [];
 let stopRequested = false;
 let stopForwarding = false;
@@ -1727,6 +1755,7 @@ function installService(role) {
   if (!existsSync(definition.config())) {
     throw new Error(`${definition.label} configuration not found: ${definition.config()}. ${definition.setupHint}`);
   }
+  stopRunningService(role);
   const service = servicePaths(role);
   const executable = process.execPath;
   const script = fileURLToPath(import.meta.url);
@@ -2059,8 +2088,32 @@ async function initHub() {
   };
 }
 
+/**
+ * Runs `setup` with this machine's Worker service stopped, and starts it again
+ * if setup fails or (`restartAfter`) finishes, so reconfiguring a live Worker
+ * neither collides with it nor leaves it down. `init` installs, and so starts,
+ * the service itself.
+ */
+async function setupStoppingWorker(options, { restartAfter = false } = {}) {
+  const wasRunning = stopRunningService("worker");
+  try {
+    const config = await setup(options);
+    if (wasRunning && restartAfter) workerServiceAction("start");
+    return config;
+  } catch (error) {
+    if (wasRunning) {
+      try {
+        workerServiceAction("start");
+      } catch {
+        console.log("The Worker service did not start again; run `cloudagentfleet worker start`.");
+      }
+    }
+    throw error;
+  }
+}
+
 async function initWorker(hub) {
-  const config = await setup({
+  const config = await setupStoppingWorker({
     guided: true,
     ...(hub ? { controllerUrl: hub.controllerUrl, authToken: hub.token } : {}),
   });
@@ -2378,7 +2431,7 @@ if (isDirectCliEntrypoint()) {
       console.log("A legacy hosted-agents Worker service is still installed; run `cloudagentfleet worker install` to replace it.");
     }
     if (commandName === "init") await init();
-    else if (commandName === "setup") await setup();
+    else if (commandName === "setup") await setupStoppingWorker({}, { restartAfter: !process.argv.includes("--run") });
     else if (commandName === "run") await runSavedWorker({ restart: process.argv.includes("--restart"), log: process.argv.includes("--log") });
     else if (commandName === "worker") workerServiceAction(process.argv[3] ?? "status");
     else if (commandName === "doctor") await doctor();
